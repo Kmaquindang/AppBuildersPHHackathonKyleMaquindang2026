@@ -298,6 +298,12 @@ public final class OrgMemory {
         if let id = UUID(uuidString: ref.trimmingCharacters(in: .whitespaces)), let t = snapshot.tasks.first(where: { $0.id == id && $0.status == .open }) {
             return t
         }
+        // "Order cement #1a2b3c4d" from a Done button: the short id picks the exact task.
+        if let r = ref.range(of: #"#[0-9a-fA-F]{8}\b"#, options: .regularExpression) {
+            let short = ref[r].dropFirst().lowercased()
+            let hits = snapshot.tasks.filter { $0.status == .open && $0.shortID == short }
+            if hits.count == 1 { return hits[0] }
+        }
         let stop: Set<String> = ["the", "a", "an", "to", "my", "task", "is", "done", "for", "of", "and", "finished", "complete", "completed"]
         let words = Set(query.split(separator: " ").map(String.init)).subtracting(stop)
         func score(_ t: TaskItem) -> Int {
@@ -321,6 +327,7 @@ public final class OrgMemory {
         guard let index = snapshot.tasks.firstIndex(where: { $0.id == id }) else { return nil }
         snapshot.tasks[index].status = .done
         snapshot.tasks[index].completedBy = device
+        snapshot.tasks[index].completedAt = now
         snapshot.tasks[index].updatedAt = now
         save()
         return snapshot.tasks[index]
@@ -331,6 +338,7 @@ public final class OrgMemory {
         guard let index = snapshot.tasks.firstIndex(where: { $0.id == id }) else { return nil }
         snapshot.tasks[index].status = .open
         snapshot.tasks[index].completedBy = nil
+        snapshot.tasks[index].completedAt = nil
         snapshot.tasks[index].updatedAt = now
         save()
         return snapshot.tasks[index]
