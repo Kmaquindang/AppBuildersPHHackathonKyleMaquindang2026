@@ -164,6 +164,18 @@ public struct JoinLink: Equatable, Sendable {
         return .success(JoinLink(room: room, code: code, expiresAt: exp))
     }
 
+    /// Room-only link from the browser page's "Open in Pasa app" button (pasa://join?room=X&v=1,
+    /// no code): the room name to prefill, or nil when it is not such a link. "Town Square" comes
+    /// back as is (the caller switches to the open room).
+    public static func roomOnly(_ text: String) -> String? {
+        guard let c = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              c.scheme?.lowercased() == scheme, c.host?.lowercased() == "join" else { return nil }
+        let items = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
+        guard items["code"] == nil, let v = items["v"].flatMap(Int.init), v == version else { return nil }
+        let room = Room.cleanLabel(items["room"] ?? "")
+        return room.isEmpty ? nil : room
+    }
+
     public func isExpired(now: Date = Date()) -> Bool {
         guard let expiresAt else { return false }
         return now >= expiresAt

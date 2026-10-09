@@ -21,6 +21,13 @@ struct ContentView: View {
                     .environmentObject(mesh)
                     .interactiveDismissDisabled()
             }
+            .sheet(item: $mesh.joinPrefill) { prefill in
+                CodeJoinView(room: prefill.room)
+                    .environmentObject(mesh)
+                    #if os(macOS)
+                    .frame(minWidth: 460, minHeight: 420)
+                    #endif
+            }
     }
 
     private var tabs: some View {
