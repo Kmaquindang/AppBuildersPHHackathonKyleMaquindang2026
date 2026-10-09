@@ -42,6 +42,10 @@ struct ContentView: View {
 /// Timeline and composer under an iMessage-style title (room name, AI dot, one short subtitle).
 /// Tapping the title opens the connection sheet: devices, links, AI status, internet state,
 /// forced relay. Your own name lives in Settings, not in the header.
+/// Round 2 (Kyle's 8:55 PM screenshot: old bubbles showed through the title and gear): on iPhone
+/// the top bar is our own frosted `.bar` strip in the top safe area inset, and the composer sits
+/// in the bottom inset, so messages scroll under both and the timeline's content insets keep the
+/// first and last bubble clear of them. Text never sits on top of text.
 struct ChatScreen: View {
     @EnvironmentObject private var mesh: MeshService
     @State private var showSettings = false
@@ -49,37 +53,76 @@ struct ChatScreen: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ChatNotices()
-                ChatTimelineView()
-                ComposerView()
-            }
-            .navigationTitle(ChatTitle.roomName(mesh))
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    ChatTitle(onTap: { showConnection = true })
+            content
+                .sheet(isPresented: $showSettings) {
+                    SettingsView()
+                        .environmentObject(mesh)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .accessibilityHint("Name, room, AI and relay settings")
+                .sheet(isPresented: $showConnection) {
+                    ConnectionSheet()
+                        .environmentObject(mesh)
                 }
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-                    .environmentObject(mesh)
-            }
-            .sheet(isPresented: $showConnection) {
-                ConnectionSheet()
-                    .environmentObject(mesh)
-            }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(iOS)
+        ChatTimelineView()
+            .safeAreaInset(edge: .top, spacing: 0) { topBar }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ComposerView()
+                    .background(.bar)
+                    .overlay(alignment: .top) { Divider() }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        #else
+        VStack(spacing: 0) {
+            ChatNotices()
+            ChatTimelineView()
+            ComposerView()
+        }
+        .navigationTitle(ChatTitle.roomName(mesh))
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                ChatTitle(onTap: { showConnection = true })
+            }
+            ToolbarItem(placement: .primaryAction) { settingsButton }
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    /// Frosted top bar: an invisible 44 pt spacer, the centered title, the gear. The title takes
+    /// the space between them and wraps at large text sizes instead of sliding under the gear.
+    private var topBar: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 4) {
+                Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
+                ChatTitle(onTap: { showConnection = true })
+                    .frame(maxWidth: .infinity)
+                settingsButton
+                    .labelStyle(.iconOnly)
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            ChatNotices()
+        }
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+    #endif
+
+    private var settingsButton: some View {
+        Button {
+            showSettings = true
+        } label: {
+            Label("Settings", systemImage: "gearshape")
+        }
+        .accessibilityHint("Name, room, AI and relay settings")
     }
 }
 
@@ -108,7 +151,8 @@ struct ChatTitle: View {
                     Text(ChatTitle.roomName(mesh))
                         .font(.headline)
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
                     Circle()
                         .fill(ready ? Color.green : Color.gray)
                         .frame(width: 8, height: 8)
@@ -117,8 +161,8 @@ struct ChatTitle: View {
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
             .frame(minHeight: 44)
             .contentShape(Rectangle())

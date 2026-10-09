@@ -317,6 +317,10 @@ struct PhotoViewer: View {
     }
 }
 
+/// Round 2 (Kyle's 8:55 PM screenshot: a squared gray-blue box with the transcript floating in
+/// gray italics outside it). Your own voice notes are a normal blue bubble with white play button,
+/// waveform and duration; other people's use the gray bubble. The transcript lives inside the
+/// bubble under the waveform in smaller text.
 struct VoiceBubble: View {
     @EnvironmentObject private var mesh: MeshService
     @ObservedObject private var player = AudioPlayback.shared
@@ -324,39 +328,57 @@ struct VoiceBubble: View {
     let transcript: String?
     let isMine: Bool
 
+    private var ink: Color { isMine ? .white : .primary }
+
     var body: some View {
         let has = mesh.hasMedia(manifest.mediaId)
         let playing = player.playingID == manifest.mediaId
         VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Button {
-                    if let data = mesh.mediaData(manifest.mediaId) { player.toggle(manifest.mediaId, data: data) }
-                } label: {
-                    Image(systemName: playing ? "stop.circle.fill" : "play.circle.fill").font(.title2)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Button {
+                        if let data = mesh.mediaData(manifest.mediaId) { player.toggle(manifest.mediaId, data: data) }
+                    } label: {
+                        Image(systemName: playing ? "stop.circle.fill" : "play.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(isMine ? Color.white : Color.accentColor)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!has)
+                    .opacity(has ? 1 : 0.6)
+                    .accessibilityLabel(playing ? "Stop voice note" : "Play voice note, \(MediaManifest.clock(manifest.durationSeconds ?? 0))")
+                    Image(systemName: "waveform")
+                        .font(.title3)
+                        .foregroundStyle(ink.opacity(0.85))
+                        .accessibilityHidden(true)
+                    Text(MediaManifest.clock(manifest.durationSeconds ?? 0))
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(ink)
+                        .accessibilityHidden(true)
                 }
-                .buttonStyle(.plain)
-                .disabled(!has)
-                .accessibilityLabel(playing ? "Stop voice note" : "Play voice note")
-                Image(systemName: "waveform").foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(MediaManifest.clock(manifest.durationSeconds ?? 0))
-                    .font(.callout.monospacedDigit())
+                if mesh.transcribing.contains(manifest.mediaId) {
+                    Text("Transcribing on this Mac...")
+                        .font(.footnote)
+                        .foregroundStyle(ink)
+                        .padding(.bottom, 4)
+                } else if let transcript, !transcript.isEmpty {
+                    Text(transcript)
+                        .font(.footnote)
+                        .foregroundStyle(ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
+                        .accessibilityLabel("Transcript: \(transcript)")
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isMine ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.18), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.leading, 4)
+            .padding(.trailing, 12)
+            .padding(.vertical, 2)
+            .background(isMine ? BubbleStyle.mine : BubbleStyle.other,
+                        in: RoundedRectangle(cornerRadius: BubbleStyle.radius, style: .continuous))
             MediaTransferStatus(manifest: manifest, isMine: isMine)
-            if mesh.transcribing.contains(manifest.mediaId) {
-                Label("Transcribing on this Mac...", systemImage: "text.bubble").font(.caption).foregroundStyle(.secondary)
-            } else if let transcript, !transcript.isEmpty {
-                Text(transcript)
-                    .font(.caption.italic())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 280, alignment: isMine ? .trailing : .leading)
-                    .accessibilityLabel("Transcript: \(transcript)")
-            }
         }
     }
 }

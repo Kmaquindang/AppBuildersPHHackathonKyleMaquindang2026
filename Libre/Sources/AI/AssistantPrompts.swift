@@ -49,8 +49,13 @@ enum AssistantPrompts {
     If team knowledge answers the question, answer from it, then put the citation of every item you used at the very end, exactly as written, for example: [Rule: No site visits after 5 PM v2]. Only cite items listed in the team knowledge. Never invent a rule, version or note. Rules marked (locked by admin) take precedence over unlocked rules; if two rules conflict, say so and cite both.
     If the question is about this team's own rules, schedule, site, people, passwords or plans and no team knowledge covers it, say in one natural sentence that you don't have a team rule or info on that, and do not guess.
     For general questions (math, facts, definitions, translations, how-to), just answer briefly. No citation.
+    \(liveInfoLine)
     \(languageLine)
     """
+
+    /// Round 2 (Kyle's 8:54 PM screenshot: "Check a weather app or website for the latest forecast").
+    /// Pasa runs offline, so it must say so plainly and offer what it can do.
+    static let liveInfoLine = "You run fully offline on a local Mac and cannot get live or real-time information: weather, forecasts, news, prices, exchange rates, scores or traffic. If asked for any of these, say plainly that you can't get live info while offline, then offer what you can do instead, like checking the team's notes and rules or saving a reminder. Never tell them to check an app, a website or the internet."
 
     /// Keeps saved text from closing the data fence early.
     static func fenceSafe(_ text: Substring) -> String {
@@ -79,6 +84,7 @@ enum AssistantPrompts {
         }
         lines.append("</team_knowledge>")
         if noRelevantKnowledge { lines.append("Note from Pasa: no saved rule or note matched this question.") }
+        if LiveInfo.looksLive(question) { lines.append(LiveInfo.note) }
         lines.append("")
         lines.append("Question from \(asker): \(question)")
         return lines.joined(separator: "\n")
@@ -104,5 +110,23 @@ enum AssistantPrompts {
         {"title": "short title", "summary": "one sentence", "decisions": ["..."], "action_items": [{"title": "action in a few words", "assignee": "person or empty", "due": "when or empty"}]}
         Only include decisions and action items that are actually in the text. Known people and devices: \(people.isEmpty ? "none" : people.joined(separator: "; "))
         """
+    }
+}
+
+/// Questions that need live data (weather, news, prices, scores). The answer prompt gets a short
+/// note so a small model does not send people to an app or website it knows they cannot reach.
+public enum LiveInfo {
+    public static let note = "Note from Pasa: this asks for live information. Say you can't get live info offline, and offer to check team notes or rules instead."
+
+    static let phrases = [
+        "weather", "forecast", "temperature outside", "will it rain", "is it raining", "typhoon signal", "bagyo",
+        " news", "headline", "balita",
+        "exchange rate", "stock price", "share price", "bitcoin", "gas price", "fuel price", "price today", "presyo ngayon",
+        " score", "who won", " traffic",
+    ]
+
+    public static func looksLive(_ question: String) -> Bool {
+        let text = " " + question.lowercased() + " "
+        return phrases.contains { text.contains($0) }
     }
 }

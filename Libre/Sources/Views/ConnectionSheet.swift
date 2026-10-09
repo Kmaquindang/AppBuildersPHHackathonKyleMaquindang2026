@@ -8,6 +8,8 @@ import SwiftUI
 struct ConnectionSheet: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.dismiss) private var dismiss
+    /// Round 2: link-layer counters are for debugging, hidden unless turned on here.
+    @AppStorage("pasa.showDebugInfo") private var showDebug = false
 
     private var internet: InternetState? {
         mesh.isAIPeer ? mesh.internetState : mesh.aiDetail?.internet
@@ -81,22 +83,34 @@ struct ConnectionSheet: View {
                     let known = Array(Set(mesh.peers.map(\.name)).union(mesh.blocked)).sorted()
                     if known.isEmpty { Text("No devices seen yet.").foregroundStyle(.secondary) }
                     ForEach(known, id: \.self) { name in
-                        Toggle("Block direct link to \(mesh.label(for: name))", isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { mesh.blocked.contains(name) },
                             set: { mesh.setBlocked(name, $0) }
-                        ))
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Make messages hop through another phone")
+                                Text("No direct link to \(mesh.label(for: name))")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         .frame(minHeight: 44)
+                        .accessibilityLabel("Make messages hop through another phone. No direct link to \(mesh.label(for: name))")
                     }
                 } header: {
-                    Text("Forced relay")
+                    Text("Demo: forced relay")
                 } footer: {
-                    Text("A blocked device cannot link to this one directly, so messages must hop through another device.")
+                    Text("For showing the relay in a demo. When this is on, this phone and that device stop talking directly, so messages go through another phone in between. You need a third device nearby. Turn it off to go back to normal.")
                 }
 
-                Section("Link layer") {
-                    Text("\(mesh.discoveryRestarts) discovery restarts, \(mesh.discoveryRestartsCoalesced) folded or deferred")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Section {
+                    Toggle("Show debug info", isOn: $showDebug)
+                        .frame(minHeight: 44)
+                    if showDebug {
+                        Text("Link layer: \(mesh.discoveryRestarts) discovery restarts, \(mesh.discoveryRestartsCoalesced) folded or deferred")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle(ChatTitle.roomName(mesh))

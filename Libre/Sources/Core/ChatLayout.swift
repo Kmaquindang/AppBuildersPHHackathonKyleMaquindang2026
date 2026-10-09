@@ -60,9 +60,18 @@ public enum ChatLayout {
                 if gap > timestampGap || !calendar.isDate(next.message.createdAt, inSameDayAs: at) { breaksAfter = true }
             }
             let mine = isMine(entry)
+            // Pasa AI (it has its own avatar and color) shows its name only when someone else
+            // spoke since its last group, not after every one of your questions (round 2).
+            var showName = !mine && breaksBefore
+            if showName, stamp == nil, entry.message.kind == .answer,
+               let lastOther = entries[..<i].last(where: { !isMine($0) }), senderKey(lastOther) == senderKey(entry),
+               calendar.isDate(lastOther.message.createdAt, inSameDayAs: at),
+               at.timeIntervalSince(lastOther.message.createdAt) <= timestampGap {
+                showName = false
+            }
             out[entry.id] = ChatRowLayout(
                 timestamp: stamp,
-                showName: !mine && breaksBefore,
+                showName: showName,
                 firstInGroup: breaksBefore,
                 lastInGroup: breaksAfter,
                 statusWord: entry.id == lastMine ? statusWord(statuses[entry.id] ?? .received) : nil

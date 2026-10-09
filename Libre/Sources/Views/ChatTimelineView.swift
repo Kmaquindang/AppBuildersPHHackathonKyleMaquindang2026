@@ -3,7 +3,9 @@
 // - Your bubbles on the right in blue, other people on the left in gray, Pasa AI on the left in
 //   soft purple with a small sparkle avatar.
 // - Consecutive messages from one sender are grouped; other people's name shows once above their
-//   group, never yours. Centered timestamps only after 15 minutes or on a new day.
+//   group, never yours. Pasa's name shows only when someone else spoke since its last answer, and
+//   its avatar sits on the last bubble of a group. Centered timestamps only after 15 minutes or on
+//   a new day.
 // - One status word ("Queued", "Delivered", "Answered") under your last message only.
 // - No meta lines in bubbles. Model, speed, hops, path, internet state and checked rules live in
 //   the Details sheet (long-press, or the VoiceOver "Details" action) and on the Mac Proof panel.
@@ -67,6 +69,15 @@ struct ChatTimelineView: View {
             .onChange(of: entries.count) { _, _ in scrollToBottom(proxy) }
             .onChange(of: typing) { _, _ in scrollToBottom(proxy) }
             .onAppear { proxy.scrollTo(bottomID, anchor: .bottom) }
+            // "Answered above" in the composer: jump to that answer.
+            .onChange(of: mesh.scrollRequest) { _, request in
+                guard let request else { return }
+                if reduceMotion {
+                    proxy.scrollTo(request.id, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(request.id, anchor: .center) }
+                }
+            }
         }
         .sheet(item: $detailsEntry) { entry in
             MessageDetailsSheet(entry: entry, names: names)
@@ -104,14 +115,37 @@ struct ChipID: Identifiable {
 enum BubbleStyle {
     /// Deep blue so white text stays above 4.5:1 (system blue on white is about 4.0:1).
     static let mine = Color(red: 0.0, green: 0.37, blue: 0.80)
+    /// Other people: an opaque system gray (iMessage's received bubble), not a translucent fill
+    /// that disappears on a black background.
     static var other: Color {
         #if os(iOS)
-        Color(uiColor: .secondarySystemFill)
+        Color(uiColor: .systemGray5)
         #else
-        Color.gray.opacity(0.18)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 1)
+                : NSColor(srgbRed: 0.90, green: 0.90, blue: 0.92, alpha: 1)
+        })
         #endif
     }
-    static let pasa = Color.purple.opacity(0.14)
+    /// Pasa AI (round 2: the old 14% purple was nearly black on black). An opaque purple tint:
+    /// dark RGB(69, 51, 97), white text about 11:1, and 1.9:1 against the black background so the
+    /// bubble edge is visible; light RGB(232, 222, 250), black text about 16:1.
+    static var pasa: Color {
+        #if os(iOS)
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.27, green: 0.20, blue: 0.38, alpha: 1)
+                : UIColor(red: 0.91, green: 0.87, blue: 0.98, alpha: 1)
+        })
+        #else
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.27, green: 0.20, blue: 0.38, alpha: 1)
+                : NSColor(srgbRed: 0.91, green: 0.87, blue: 0.98, alpha: 1)
+        })
+        #endif
+    }
     static var card: Color {
         #if os(iOS)
         Color(uiColor: .secondarySystemBackground)
