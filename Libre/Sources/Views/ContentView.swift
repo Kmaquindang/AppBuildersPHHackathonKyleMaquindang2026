@@ -79,6 +79,12 @@ struct StatusHeader: View {
                 Text("You are \(mesh.displayName)")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                Text(mesh.activeRoom.isDefault ? "Default room" : "Room \(mesh.activeRoom.label)")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background((mesh.activeRoom.isDefault ? Color.gray : Color.green).opacity(0.2), in: Capsule())
+                    .lineLimit(1)
                 if mesh.isAIPeer {
                     Text("AI peer")
                         .font(.caption2.weight(.bold))
@@ -122,6 +128,10 @@ struct StatusHeader: View {
 struct NameOnboardingView: View {
     @EnvironmentObject private var mesh: MeshService
     @State private var draft = ""
+    @State private var roomChoice: RoomOnboardingPicker.Choice = .open
+    @State private var roomLabel = ""
+    @State private var joinText = ""
+    @State private var roomError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -133,9 +143,13 @@ struct NameOnboardingView: View {
             TextField("Your name, for example Kyle", text: $draft)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
+            RoomOnboardingPicker(choice: $roomChoice, label: $roomLabel, joinText: $joinText)
+            if let roomError {
+                Text(roomError).font(.caption).foregroundStyle(.red)
+            }
             Button("Continue", action: save)
                 .buttonStyle(.borderedProminent)
-                .disabled(PeopleDirectory.clean(draft).isEmpty)
+                .disabled(PeopleDirectory.clean(draft).isEmpty || (roomChoice == .join && joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             Text("Device id: \(mesh.displayName). You can change your name later in Settings.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -147,6 +161,18 @@ struct NameOnboardingView: View {
     }
 
     private func save() {
+        guard !PeopleDirectory.clean(draft).isEmpty else { return }
+        switch roomChoice {
+        case .open:
+            break
+        case .create:
+            mesh.createRoom(label: roomLabel)
+        case .join:
+            guard mesh.joinRoom(joinText) else {
+                roomError = "That is not a Pasa room join string. Copy the whole PASA1... text."
+                return
+            }
+        }
         mesh.setPersonName(draft)
     }
 }

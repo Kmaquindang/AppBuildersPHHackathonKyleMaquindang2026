@@ -9,3 +9,5 @@ __pycache__/
 *.sqlite
 .env
 
+.build/
+Package.resolved

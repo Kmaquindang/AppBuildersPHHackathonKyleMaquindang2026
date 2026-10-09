@@ -13,6 +13,7 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case rule     // team knowledge base entry (milestone 3)
     case task     // to-do item (milestone 3)
     case sync     // timeline backfill: phone asks the AI Mac for missed messages, Mac replies in chunks
+    case sealed   // protocol v2: a room packet; the real kind and body are inside `sealed`
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.
@@ -38,7 +39,7 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     /// Wire format version this build reads and writes. Messages without `v` are version 1
     /// (builds before Oct 9, 2026 evening). A device that meets a newer version relays the raw
     /// bytes untouched (see MeshCodec.decodeLenient) instead of dropping them.
-    public static let protocolVersion = 1
+    public static let protocolVersion = 2   // 2 = rooms: sealed payload plus clear room tag
 
     public var id: UUID
     /// Display name of the device that created the message.
@@ -76,6 +77,10 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var since: Date?
     /// For answers: titles of the rules and notes the AI checked for this answer.
     public var checked: [String]?
+    /// Protocol v2: room tag (hex, derived from the room key). Clear, for relays.
+    public var room: String?
+    /// Protocol v2: ChaCha20-Poly1305 box (base64url) holding the real message.
+    public var sealed: String?
 
     public init(
         id: UUID = UUID(),

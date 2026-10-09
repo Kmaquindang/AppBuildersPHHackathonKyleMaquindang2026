@@ -78,12 +78,18 @@ final class MeshService: ObservableObject {
 
     /// Team memory: source of truth on the AI Mac, read-only cache on phones.
     @Published private(set) var org: OrgSnapshot
+    /// Room this device reads and writes (one at a time). Other rooms' packets are only relayed.
+    @Published private(set) var activeRoom: Room
+    @Published private(set) var joinedRooms: [Room]
+    /// Other rooms' packets this device passed on without reading them.
+    @Published private(set) var foreignRelayedCount = 0
 
     // AI peer settings and dashboard (used on macOS; harmless defaults elsewhere).
     @Published private(set) var aiEngine: AIEngine
     @Published private(set) var ollamaModel: String
     @Published private(set) var ollamaFallbackModel: String
-    /// Admin device ids chosen on the Mac (the Mac itself is always an admin too).
+    /// Admin device ids chosen on the Mac for the active room (the Mac itself and the room's
+    /// creator are always admins too).
     @Published private(set) var adminDevices: [String]
     @Published private(set) var roster: [String: String]
     @Published private(set) var assistantLog: [AssistantLogEntry] = []
@@ -105,11 +111,12 @@ final class MeshService: ObservableObject {
     /// Sent with asks so "what did I miss" covers only what came after.
     private var awaySince: Date?
     private var isAway = false
-    private let timelineURL: URL?
+    private var timelineURL: URL?
+    private let rooms: RoomStore
     private let timelineLimit: Int
     private let saveQueue = DispatchQueue(label: "pasa.timeline.save", qos: .utility)
     private let defaults = UserDefaults.standard
-    private let memory: OrgMemory
+    private var memory: OrgMemory
     #if os(macOS)
     private let assistant: ExecutiveAssistant
     /// Keeps the Mac from idle-sleeping and App Nap from throttling timers while it is the AI peer.
@@ -166,28 +173,32 @@ final class MeshService: ObservableObject {
             admins = AdminPolicy.migrate(legacy: store.stringArray(forKey: Keys.legacyAdmins) ?? [], knownDevices: Set(dir.keys))
             store.set(admins, forKey: Keys.admins)
         }
-        let cleared = store.object(forKey: Keys.clearedAt) as? Date
+        // Rooms: data from before rooms moves into the Default room on first launch. Admins and
+        // the clear watermark become the Default room's (and are kept per room from now on).
+        let roomStore = RoomStore(baseURL: MeshService.storageURL("rooms.json")?.deletingLastPathComponent(),
+                                  legacyFiles: ["org-memory.json", "org-cache.json", "timeline.json"],
+                                  legacyAdmins: admins,
+                                  legacyClearedAt: store.object(forKey: Keys.clearedAt) as? Date)
+        let room = roomStore.active
+        let cleared = room.clearedAt
         let away = store.object(forKey: Keys.awaySince) as? Date
 
-        #if os(macOS)
-        let fileName = "org-memory.json"   // source of truth
-        #else
-        let fileName = "org-cache.json"    // read-only cache from the mesh
-        #endif
+        let fileName = MeshService.memoryFileName
         #if os(macOS)
         let limit = TimelineStore.macLimit   // the Mac keeps the long history (source of truth for backfill)
         #else
         let limit = TimelineStore.phoneLimit
         #endif
-        let url = MeshService.storageURL("timeline.json")
+        let url = roomStore.fileURL("timeline.json")
         let saved = url.map { TimelineStore.load(from: $0, limit: limit) } ?? PersistedTimeline()
         for entry in saved.entries {
             if let sender = entry.message.senderName, !sender.isEmpty, entry.message.origin != name, dir[entry.message.origin] == nil {
                 dir[entry.message.origin] = sender
             }
         }
-        let mem = OrgMemory(fileURL: MeshService.storageURL(fileName), admins: AdminPolicy.devices(adminIDs: admins, selfID: name))
+        let mem = OrgMemory(fileURL: roomStore.fileURL(fileName), admins: room.adminDevices(selfID: name))
         let relay = RelayEngine(selfName: name, roles: ai ? [MeshDestination.aiRole] : [])
+        relay.roomID = room.id
         relay.senderName = person.isEmpty ? nil : person
         relay.restoreOutbox(saved.outbox)
         for entry in saved.entries.suffix(300) { relay.markSeen(entry.id) }
@@ -198,8 +209,11 @@ final class MeshService: ObservableObject {
         aiEngine = engineChoice
         ollamaModel = model
         ollamaFallbackModel = fallback
-        adminDevices = admins
+        adminDevices = room.admins
         clearedAt = cleared
+        rooms = roomStore
+        activeRoom = room
+        joinedRooms = roomStore.rooms
         awaySince = away
         roster = rosterMap
         memory = mem
@@ -235,6 +249,12 @@ final class MeshService: ObservableObject {
         return "iPhone \(suffix)"
         #endif
     }
+
+    #if os(macOS)
+    static let memoryFileName = "org-memory.json"   // source of truth
+    #else
+    static let memoryFileName = "org-cache.json"    // read-only cache from the mesh
+    #endif
 
     /// Application Support/Libre/<file> (folder keeps the working name so saved team memory survives the rename). Inside the app sandbox container on macOS.
     static func storageURL(_ fileName: String) -> URL? {
@@ -297,7 +317,68 @@ final class MeshService: ObservableObject {
     }
 
     func isAdminDevice(_ device: String) -> Bool {
-        device == displayName || adminDevices.contains(device)
+        device == displayName || adminDevices.contains(device) || device == activeRoom.creator
+    }
+
+    // MARK: Rooms
+
+    /// Creates a room with a fresh 256-bit key and switches to it. This device is its pinned admin.
+    func createRoom(label: String) {
+        let room = Room.create(label: label, creator: displayName)
+        switchRoom { rooms.join(room) }
+    }
+
+    /// Joins a room from a pasted or scanned join string. False when the string is not valid.
+    @discardableResult
+    func joinRoom(_ joinString: String) -> Bool {
+        guard let room = Room.parse(joinString: joinString) else { return false }
+        switchRoom { rooms.join(room) }
+        return true
+    }
+
+    func activateRoom(_ id: String) {
+        guard id != activeRoom.id, rooms.room(withID: id) != nil else { return }
+        switchRoom { rooms.activate(id) }
+    }
+
+    /// Leaves a room (not the last one). Its saved chat and memory stay on disk.
+    func leaveRoom(_ id: String) {
+        guard joinedRooms.count > 1 else { return }
+        if id == activeRoom.id {
+            switchRoom { rooms.leave(id) }
+        } else {
+            rooms.leave(id)
+            joinedRooms = rooms.rooms
+        }
+    }
+
+    /// Saves the current room, applies `change`, then loads the (new) active room's chat and
+    /// memory. Outbox packets are already sealed for the room they were written in.
+    private func switchRoom(_ change: () -> Void) {
+        saveNow()
+        _ = memory.save()
+        change()
+        let room = rooms.active
+        activeRoom = room
+        joinedRooms = rooms.rooms
+        engine.roomID = room.id
+        clearedAt = room.clearedAt
+        adminDevices = room.admins
+        timelineURL = rooms.fileURL("timeline.json")
+        let saved = timelineURL.map { TimelineStore.load(from: $0, limit: timelineLimit) } ?? PersistedTimeline()
+        memory = OrgMemory(fileURL: rooms.fileURL(MeshService.memoryFileName), admins: room.adminDevices(selfID: displayName))
+        sentAsks.removeAll()
+        waitingAsks.removeAll()
+        entries = TimelineStore.dropping(saved.entries, before: clearedAt)
+        for entry in entries.suffix(300) { engine.markSeen(entry.id) }
+        refreshOrg()
+        #if os(macOS)
+        assistant.switchRoom(memory: memory, clearedAt: clearedAt)
+        assistantLog.removeAll()
+        for (name, state) in peerStates where state == .connected && !blocked.contains(name) { syncMemory(to: name) }
+        #endif
+        lastBackfillRequest = .distantPast
+        if connectedCount > 0 { requestBackfill() }
     }
 
     // MARK: Lifecycle
@@ -447,7 +528,7 @@ final class MeshService: ObservableObject {
             directory[clean] = personName
             defaults.set(directory, forKey: Keys.directory)
         }
-        memory.admins = AdminPolicy.devices(adminIDs: adminDevices, selfID: clean)
+        memory.admins = activeRoom.adminDevices(selfID: clean)
         #if os(macOS)
         assistant.selfName = clean
         assistant.directory = directory
@@ -473,7 +554,7 @@ final class MeshService: ObservableObject {
         sentAsks.removeAll()
         waitingAsks.removeAll()
         clearedAt = now
-        defaults.set(now, forKey: Keys.clearedAt)
+        rooms.update(activeRoom.id) { $0.clearedAt = now }
         #if os(macOS)
         assistant.clearedAt = now
         if isAIPeer { pushManifestToLinkedPeers() }
@@ -484,7 +565,7 @@ final class MeshService: ObservableObject {
     private func adoptClear(_ macClearedAt: Date?) {
         guard let macClearedAt, macClearedAt > (clearedAt ?? .distantPast) else { return }
         clearedAt = macClearedAt
-        defaults.set(macClearedAt, forKey: Keys.clearedAt)
+        rooms.update(activeRoom.id) { $0.clearedAt = macClearedAt }
         let kept = TimelineStore.dropping(entries, before: macClearedAt)
         if kept.count != entries.count { entries = kept }
     }
@@ -535,8 +616,10 @@ final class MeshService: ObservableObject {
         var ids = adminDevices.filter { $0 != clean }
         if on { ids.append(clean) }
         adminDevices = ids.sorted()
-        defaults.set(adminDevices, forKey: Keys.admins)
-        memory.admins = AdminPolicy.devices(adminIDs: adminDevices, selfID: displayName)
+        rooms.update(activeRoom.id) { $0.admins = ids.sorted() }
+        activeRoom = rooms.active
+        joinedRooms = rooms.rooms
+        memory.admins = activeRoom.adminDevices(selfID: displayName)
     }
 
     // MARK: Keep the AI peer awake and warm
@@ -768,10 +851,24 @@ final class MeshService: ObservableObject {
     }
 
     /// Hands a message to the transport. Parks it in the outbox if nobody can take it.
+    /// Everything this device writes is sealed for the active room here, before it is sent or
+    /// queued, so the outbox never holds plaintext. Already sealed packets (relayed ones, or
+    /// outbox items) pass through untouched. `foreign` marks another room's packet (capped).
     @discardableResult
-    private func transmit(_ message: MeshMessage, excluding: Set<String>) -> [String] {
+    private func transmit(_ plain: MeshMessage, excluding: Set<String>, foreign: Bool = false) -> [String] {
+        let message: MeshMessage
+        if plain.kind == .sealed {
+            message = plain
+        } else {
+            do {
+                message = try RoomEnvelope.seal(plain, in: activeRoom)
+            } catch {
+                lastProblem = "Could not seal message: \(error.localizedDescription)"
+                return []
+            }
+        }
         guard let transport else {
-            engine.enqueue(message, excluding: excluding)
+            engine.enqueue(message, excluding: excluding, foreign: foreign)
             outboxCount = engine.outbox.count
             return []
         }
@@ -784,7 +881,7 @@ final class MeshService: ObservableObject {
         }
         let sentTo = transport.send(data, excluding: excluding)
         if sentTo.isEmpty {
-            engine.enqueue(message, excluding: excluding)
+            engine.enqueue(message, excluding: excluding, foreign: foreign)
             scheduleSave()
         }
         outboxCount = engine.outbox.count
@@ -795,7 +892,7 @@ final class MeshService: ObservableObject {
         let items = engine.drainOutbox()
         outboxCount = 0
         for item in items {
-            let sentTo = transmit(item.message, excluding: item.excluding)
+            let sentTo = transmit(item.message, excluding: item.excluding, foreign: item.foreign == true)
             if !sentTo.isEmpty, let index = entries.firstIndex(where: { $0.id == item.message.id && $0.direction == .sent }) {
                 entries[index].sentTo = sentTo
             }
@@ -902,12 +999,24 @@ final class MeshService: ObservableObject {
         let decision = engine.handleIncoming(message, from: sender)
         if decision.isDuplicate { return }
 
+        let foreign = message.kind == .sealed && message.room != activeRoom.id
         if let forward = decision.forward {
-            transmit(forward, excluding: decision.forwardExcluding)
+            transmit(forward, excluding: decision.forwardExcluding, foreign: foreign)
             relayedCount += 1
+            if foreign { foreignRelayedCount += 1 }
         }
 
-        guard let delivered = decision.deliver else { return }
+        guard var delivered = decision.deliver else { return }
+        if delivered.kind == .sealed {
+            // Another room's packet (or one that fails authentication): relayed above, never
+            // shown or stored here.
+            guard !foreign, let opened = RoomEnvelope.open(delivered, in: activeRoom) else { return }
+            delivered = opened
+            if delivered.kind == .sealed { return }
+        } else if !activeRoom.isDefault {
+            // Plaintext from a build before rooms belongs to the Default room only.
+            return
+        }
         if let name = delivered.senderName, delivered.origin != displayName {
             learn(device: delivered.origin, name: name)
         }
@@ -954,7 +1063,7 @@ final class MeshService: ObservableObject {
             #if os(macOS)
             if isAIPeer { answer(delivered) }
             #endif
-        case .answer, .ack, .sync:
+        case .answer, .ack, .sync, .sealed:
             break
         }
     }
