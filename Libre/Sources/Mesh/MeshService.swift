@@ -143,6 +143,8 @@ final class MeshService: ObservableObject {
     // Rooms and media.
     /// True while a room key is being derived from a passcode (slow on purpose).
     @Published private(set) var roomBusy = false
+    /// Code rooms with "Approve new members": valid join requests waiting for an admin, per room.
+    @Published private(set) var pendingJoins: [String: [PendingJoin]] = [:]
     /// Media id -> fraction of chunks received (incoming) or sent (outgoing), while in flight.
     @Published private(set) var mediaProgress: [UUID: Double] = [:]
     /// Bumped whenever a media file lands in the cache, so bubbles reload.
@@ -610,6 +612,14 @@ final class MeshService: ObservableObject {
         guard !roomBusy else { return .failed }
         roomBusy = true
         let name = beacon.label
+        if let codeRoom = Room.fromCode(name: name, creator: ""), codeRoom.id == beacon.room {
+            roomBusy = false
+            switch await joinCodeRoom(name: name, code: passcode) {
+            case .sent(let room): return .joined(room)
+            case .badCode, .expired: return .wrongPasscode
+            case .failed: return .failed
+            }
+        }
         let made = await Task.detached(priority: .userInitiated) {
             Room.fromPasscode(name: name, passcode: passcode, creator: "")
         }.value
@@ -970,14 +980,20 @@ final class MeshService: ObservableObject {
             let result = RoomGovernor.accept(blob, into: &room, identity: identity)
             guard case .applied(let change) = result else {
                 if case .rejected(let why) = result, roomID == activeRoom.id {
-                    lastProblem = "Ignored a room update for \(room.label): \(why)."
+                    lastProblem = why == "the room code does not match"
+                        ? "That code does not match room \(room.label). Check the code and try again."
+                        : "Ignored a room update for \(room.label): \(why)."
                 }
                 return
             }
             let gov = room.gov
             rooms.update(roomID) { $0.gov = gov }
             refreshRoomState()
-            if change.removed { lastProblem = "An admin removed this device from \(room.label)." }
+            if change.removed {
+                lastProblem = change.codeChanged
+                    ? "The admin made a new code for \(room.label). Enter the new code to rejoin."
+                    : "An admin removed this device from \(room.label)."
+            }
             if change.admitted {
                 if roomID == activeRoom.id { lastProblem = nil }
                 if roomID == activeRoom.id, connectedCount > 0 { lastBackfillRequest = .distantPast; requestBackfill() }
@@ -991,6 +1007,21 @@ final class MeshService: ObservableObject {
             sendJoinRequestIfNeeded(roomID)
         case .join:
             guard let blob = control.blob, RoomGovernor.isAdmin(room, identity: identity) else { return }
+            if room.gov?.manifest?.approval == true {
+                // "Approve new members": a valid request waits for an admin's tap.
+                switch RoomGovernor.vet(blob, room: room, identity: identity) {
+                case .ok(let request):
+                    var list = pendingJoins[roomID] ?? []
+                    list.removeAll { $0.request.signKey == request.signKey }
+                    list.append(PendingJoin(request: request, blob: blob))
+                    pendingJoins[roomID] = list
+                case .already, .refused:
+                    if let signed = room.gov?.signed { publishManifest(signed, roomID: roomID) }
+                case .invalid:
+                    break
+                }
+                return
+            }
             switch RoomGovernor.admit(blob, room: &room, identity: identity) {
             case .admitted(let manifest):
                 let gov = room.gov
@@ -1035,6 +1066,127 @@ final class MeshService: ObservableObject {
     @discardableResult
     func setCoAdmin(_ member: RoomMember, _ on: Bool) -> Bool {
         adminAction { room in RoomGovernor.setCoAdmin(member.signKey, on: on, room: &room, identity: identity) }
+    }
+
+    // MARK: Code rooms (name + short code, QR join link)
+
+    struct PendingJoin: Identifiable, Equatable {
+        var id: String { RoomCrypto.base64url(request.signKey) }
+        var request: JoinRequest
+        var blob: SignedBlob
+    }
+
+    /// Mac onboarding "Create your room": a code room with this device as creator and first admin.
+    @discardableResult
+    func createCodeRoom(name: String, expiry: CodeExpiry = .off, approval: Bool = false) async -> Room? {
+        guard !roomBusy, var room = Room.fromCode(name: name, creator: displayName) else { return nil }
+        guard rooms.room(withID: room.id) == nil else {
+            lastProblem = "A room called \(room.label) is already on this device. Pick another name."
+            return nil
+        }
+        roomBusy = true
+        defer { roomBusy = false }
+        let code = JoinCode.generate()
+        let label = room.label
+        guard let key = await Task.detached(priority: .userInitiated, operation: { CodeRoom.codeKey(name: label, code: code) }).value else { return nil }
+        guard RoomGovernor.setUp(&room, identity: identity, device: displayName, name: personName.isEmpty ? displayName : personName,
+                                 code: code, codeKey: key, codeExpiresAt: expiry.date(from: Date()), approval: approval) != nil else { return nil }
+        switchRoom { rooms.join(room) }
+        afterJoin(activeRoom.id)
+        return activeRoom
+    }
+
+    /// Join link for the active code room (creator only: it holds the code).
+    var activeJoinLink: JoinLink? {
+        guard activeRoom.usesCode, let code = activeRoom.gov?.joinCode else { return nil }
+        return JoinLink(room: activeRoom.label, code: code, expiresAt: activeRoom.gov?.manifest?.codeExpiresAt)
+    }
+
+    /// Joins (or re-enters the code of) a code room by name and code. The admin checks the code.
+    enum CodeJoin: Equatable { case sent(Room), badCode, expired, failed }
+    func joinCodeRoom(name: String, code: String, expiresAt: Date? = nil) async -> CodeJoin {
+        if let expiresAt, Date() >= expiresAt { return .expired }
+        guard JoinCode.isValid(code), let fresh = Room.fromCode(name: name, creator: "") else { return .badCode }
+        guard !roomBusy else { return .failed }
+        roomBusy = true
+        defer { roomBusy = false }
+        let label = fresh.label
+        guard let key = await Task.detached(priority: .userInitiated, operation: { CodeRoom.codeKey(name: label, code: code) }).value else { return .badCode }
+        var room = rooms.room(withID: fresh.id) ?? fresh
+        if RoomGovernor.isCreatorAdmin(room) { switchRoom { rooms.activate(room.id) }; return .sent(activeRoom) }
+        RoomGovernor.enterCode(key, room: &room, identity: identity)
+        if rooms.room(withID: room.id) != nil {
+            let gov = room.gov
+            rooms.update(room.id) { $0.gov = gov }
+            if room.id != activeRoom.id { switchRoom { rooms.activate(room.id) } } else { refreshRoomState() }
+        } else {
+            switchRoom { rooms.join(room) }
+        }
+        lastJoinRequest[room.id] = nil
+        afterJoin(activeRoom.id)
+        return .sent(activeRoom)
+    }
+
+    /// pasa://join?... from a scanned QR code or a tapped link.
+    func handleJoinURL(_ url: URL) {
+        switch JoinLink.parse(url.absoluteString) {
+        case .failure:
+            lastProblem = "That link is not a Pasa room link."
+        case .success(let link):
+            if link.isExpired() { lastProblem = "That room code expired. Ask the admin for a new one."; return }
+            Task {
+                switch await joinCodeRoom(name: link.room, code: link.code, expiresAt: link.expiresAt) {
+                case .sent(let room): lastProblem = "Joining \(room.label). The admin device lets you in when it is nearby."
+                case .expired: lastProblem = "That room code expired. Ask the admin for a new one."
+                case .badCode: lastProblem = "That room code is not valid."
+                case .failed: lastProblem = "Could not join right now. Try again."
+                }
+            }
+        }
+    }
+
+    /// "New code": members who are not admins must enter the new code.
+    @discardableResult
+    func newRoomCode(expiry: CodeExpiry) async -> Bool {
+        guard activeRoom.usesCode, RoomGovernor.isCreatorAdmin(activeRoom), !roomBusy else { return false }
+        roomBusy = true
+        defer { roomBusy = false }
+        let code = JoinCode.generate()
+        let label = activeRoom.label
+        guard let key = await Task.detached(priority: .userInitiated, operation: { CodeRoom.codeKey(name: label, code: code) }).value else { return false }
+        pendingJoins[activeRoom.id] = nil
+        return adminAction { room in RoomGovernor.rotateCode(code, codeKey: key, expiresAt: expiry.date(from: Date()), room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setCodeExpiry(_ expiry: CodeExpiry) -> Bool {
+        adminAction { room in RoomGovernor.setCodeExpiry(expiry.date(from: Date()), room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setJoinApproval(_ on: Bool) -> Bool {
+        adminAction { room in RoomGovernor.setApproval(on, room: &room, identity: identity) }
+    }
+
+    func approveJoin(_ pending: PendingJoin) {
+        let id = activeRoom.id
+        pendingJoins[id]?.removeAll { $0.id == pending.id }
+        var room = activeRoom
+        switch RoomGovernor.admit(pending.blob, room: &room, identity: identity) {
+        case .admitted(let manifest):
+            let gov = room.gov
+            rooms.update(id) { $0.gov = gov }
+            refreshRoomState()
+            publishManifest(manifest, roomID: id, force: true)
+        case .refused(let why):
+            lastProblem = "Could not let \(pending.request.name) in: \(why)."
+        case .already, .invalid:
+            break
+        }
+    }
+
+    func denyJoin(_ pending: PendingJoin) {
+        pendingJoins[activeRoom.id]?.removeAll { $0.id == pending.id }
     }
 
     private func adminAction(_ action: (inout Room) -> SignedBlob?) -> Bool {
