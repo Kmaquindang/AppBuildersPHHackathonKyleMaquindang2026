@@ -48,8 +48,17 @@ public struct DiscoveryRestartPolicy: Equatable, Sendable {
     public private(set) var coalescedCount = 0
     /// A restart asked for during the gap or while a restart was in flight.
     public private(set) var pending: Reason?
+    /// Restart a quiet mesh every `staleAfter` seconds. Off on the Mac (QA, Oct 9, 9:35 PM PHT): the
+    /// same `_BrowserCancel` crash came back at 9:25 PM on the build with the 8:42 PM fix, after
+    /// about 15 minutes alone with no phones linked, which is exactly when stale restarts fire
+    /// (about one every 2 minutes). A Mac never suspends Multipeer, so its browser keeps running
+    /// and reports phones again on its own; every stop it does not make is one fewer chance to
+    /// hit the framework bug. Phones keep it (iOS can silently stop browsing after background).
+    public var allowsStaleRestart = true
 
-    public init() {}
+    public init(allowsStaleRestart: Bool = true) {
+        self.allowsStaleRestart = allowsStaleRestart
+    }
 
     /// The browser and advertiser were started for the first time (or after `shutdown`).
     /// Returns false when they are already running (start must not be called twice).
@@ -118,7 +127,7 @@ public struct DiscoveryRestartPolicy: Equatable, Sendable {
     /// Stale mesh: running, no links, nothing discovered, and quiet for `staleAfter` seconds
     /// since the last restart and the last sighting.
     public func isStale(linked: Int, discovered: Int, lastFound: Date, now: Date) -> Bool {
-        phase == .running && linked == 0 && discovered == 0
+        allowsStaleRestart && phase == .running && linked == 0 && discovered == 0
             && now.timeIntervalSince(lastRestartAt) >= DiscoveryRestartPolicy.staleAfter
             && now.timeIntervalSince(lastFound) >= DiscoveryRestartPolicy.staleAfter
     }
