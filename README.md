@@ -34,11 +34,12 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 3. Open `Libre.xcodeproj` (or run `xcodegen generate` first if you prefer to regenerate it from `project.yml`).
 4. Pick your Team (a free Apple ID works) under Signing & Capabilities for the `Libre-macOS` and `Libre-iOS` targets. (Targets, schemes, folders and bundle ids keep the working name Libre; the app shows as Pasa on the device.)
 5. Run `Libre-macOS` on your Mac. Run `Libre-iOS` on one or two iPhones (iOS 17+). On each iPhone trust the developer profile in Settings > General > VPN & Device Management, and allow Local Network access.
-6. On first launch each app asks for your name (for example Kyle, Ana). That is the name everyone sees. Each device also has a stable device id (shown in Settings). Send a chat, or start a message with `@pasa` to ask the AI.
+6. On first launch each app asks for your name (for example Kyle, Ana) and a room: stay in the open Default room, create a room (for example `BOHOL-7`), or paste a teammate's join string. That name is what everyone sees. Each device also has a stable device id (shown in Settings). Send a chat, or start a message with `@pasa` to ask the AI.
 7. To test offline: put the iPhones in Airplane Mode, then turn Wi-Fi back on without joining a network. Keep the Mac's Wi-Fi on. Messages still flow.
 8. To see a real 2-hop path: on one iPhone, block the Mac in Settings, and on the Mac block that iPhone. Blocking ends any existing direct link, and the chat header shows "Forced relay mode". Its messages now relay through the other iPhone, and the timeline shows the full path (tap the caption under the answer to see `Ask path: Ana -> Kyle -> Site Office, 2 hops`).
 9. Mac only, no iPhones: run the Mac app, type `@pasa` followed by one of the assistant commands below; the Mac answers itself. Only one Mac should be the AI peer on a mesh; turn "Act as AI peer" off on any second Mac.
-10. Pick admins on the Mac: Settings > Admins lists every device it has seen, by the person's name and device id. Tick the phones that may edit, lock, unlock and delete rules. The Mac is always an admin.
+10. Pick admins on the Mac: Settings > Admins lists every device it has seen, by the person's name and device id. Tick the phones that may edit, lock, unlock and delete rules in the active room. The Mac and the room's creator are always admins.
+    - Rooms: Settings > Room shows the active room's QR code and join string, and lets you create, join, switch or leave rooms. Join on another device by pasting the join string (camera scanning is not built yet). The AI Mac and the phones must be in the same room.
 11. Try the assistant (from any device, one chat for everything: start the message with `@pasa`; typing `@` offers it as a chip; the old `@libre ...` still works):
     - `save rule: No site visits after 5 PM`
     - `remind Ana to order cement Friday` (the task pops up on the phone whose person picked the name Ana; if two people use the same name, Pasa asks which one. A manual roster on the Mac is an optional override)
@@ -46,7 +47,7 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
     - `can I visit the site at 6 PM?` (the answer cites `[Rule: No site visits after 5 PM v1]`)
     - `what did I miss?` (on a phone: a summary of team chat since that phone was last away, meaning the app was in the background or had no links; on the Mac, or when there is no away time, a labelled recap of the latest messages. Also `recap` and `ano'ng na-miss ko?`), `my tasks`, `team tasks`, `the cement is ordered`, `more`
     - Paste a long meeting transcript (or start with `notes:`) to get decisions and auto-created tasks.
-12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`
+12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`. On macOS it uses CryptoKit and needs no downloads. On Linux it builds with SwiftPM and fetches Apple's swift-crypto once (see Disclosures).
 
 ## How it works
 - **Link layer:** Apple MultipeerConnectivity on service type `libre-mesh`. It opens encrypted links over peer-to-peer Wi-Fi with no router or internet. We describe this as an offline device-to-device mesh, not a Bluetooth mesh.
@@ -59,13 +60,14 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 - **Forced relay demo:** a per-device block list refuses invites both ways, rejects the connection handshake from a blocked device (this also covers MultipeerConnectivity joining two members of the same session on its own), drops any packet that arrives straight from a blocked device, and ends an existing direct link when you block it (if MultipeerConnectivity keeps the link up, Pasa restarts its links once and they re-form within seconds). The chat header shows "Forced relay mode" while a block is on. The handshake and disconnect behavior is still to be confirmed on devices.
 - **Checked citations:** every `[Rule: ...]`, `[Skill: ...]` or `[Note: ...]` tag in a model answer is checked against team memory before the answer leaves the Mac. A wrong version is corrected to the current one, and a tag that names nothing saved is marked `(unverified)`. The prompt marks team knowledge as data (never instructions), puts admin-locked rules first and says they take precedence, and asks the model to reply in the language of the question (English, Tagalog, Cebuano or Taglish).
 - **Waiting status:** if an `@pasa` question has no answer after 20 s, the asker sees "Waiting for the AI Mac... It answers when it is in range."
-- **Protocol version:** every message carries a wire format version (`v`). A device that receives a newer version, or a message kind it does not know, still relays it with only the hop count and path changed, and shows "update Pasa on this device", instead of dropping it.
+- **Rooms (protocol v2):** see [Rooms](#rooms). Every packet is sealed for one room; devices relay other rooms' packets without reading them.
+- **Protocol version:** every message carries a wire format version (`v`, now 2). A device that receives a newer version, or a message kind it does not know, still relays it with only the hop count and path changed, and shows "update Pasa on this device", instead of dropping it. Builds from before Oct 9, 2026 evening do not have this and drop room packets, so update every device.
 - **Clear that sticks:** Clear timeline records a watermark, so backfill and catch-ups never bring old messages back. On the AI Mac it clears the whole team's chat: linked phones drop older messages right away, the rest on their next link.
 - **AI peer (Mac):** `ExecutiveAssistant` handles every ask. Common phrases (save rule, my tasks, what did I miss, more) skip the model entirely. Everything else gets one JSON-mode classification call, the action runs against team memory, and a second call writes the reply when needed. Replies are cut to a first packet of at most 300 characters (marked `compact`), and `@pasa more` sends the rest.
 - **Team memory rules:** anyone can add a rule or skill. Only admin devices (ticked by device id in the Mac's Settings, plus the Mac itself) can edit, lock, unlock or delete an existing rule. Every edit becomes a new version and the old one stays in history. When copies meet, the newest version wins. Deleting keeps a tombstone (same id, version plus 1, retired, who and when): the Mac broadcasts it so phones drop their copy, and sends tombstones again whenever a phone links so stale caches catch up. Deleted rules are never sent to the model.
 - **Small, grounded prompts:** the answer prompt carries only the rules and notes that match the question (BM25-style keyword scoring, title words count double, top 8 rules within about 2,500 tokens), plus every admin-locked rule. Catch-ups read the newest chat that fits in about 3,000 tokens. Pasa asks Ollama for an 8,192-token context (`num_ctx`), estimates each prompt at about 4 characters per token, and the Mac dashboard shows the estimate next to Ollama's `prompt_eval_count`, with a warning above 80% of the context. When no saved rule or note matches, the answer starts with "No saved team rule covers this." instead of guessing, and every answer's details list the rule titles it checked.
 - **Model pinning and low-memory Macs:** the dashboard shows the digest of the model Ollama is serving and says whether it is the build we tested. Macs with less than 12 GB of memory default to `qwen3:4b-instruct`; you can change the model in Settings.
-- **Backup:** on the Mac, Settings > Export team memory saves rules, tasks, notes and the chat log as a JSON file you choose. Import asks for confirmation, replaces team memory, and updates linked phones.
+- **Backup:** on the Mac, Settings > Export saves the active room's rules, tasks, notes and chat log as a JSON file you choose. Import asks for confirmation, replaces only the active room's memory, and updates linked phones.
 - **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it, and shows as a card only when it changed the phone's copy. When a phone links, the Mac first sends a manifest of the rule and task ids it holds (the phone drops cached copies the Mac no longer has, for example after Reset team memory), then the current rules and the phone's open tasks as silent updates that refresh the cache without adding cards to the chat.
 
 ## Hardware tested on
@@ -102,13 +104,14 @@ Notes:
 - Memory: the default `qwen3:8b` is meant for Macs with 12 GB of memory or more (tested on 16 GB). Its memory use while loaded has not been measured yet (check with `ollama ps`). Macs under 12 GB default to `qwen3:4b-instruct`.
 - Qwen3 4B (`qwen3:4b`, 2.5 GB, Apache 2.0) as the fallback. Note: in the Ollama library `qwen3:4b` now points to the 2507 thinking build; `qwen3:4b-instruct` (2.5 GB) is the non-thinking build and may be faster for short replies.
 ### Technologies and frameworks
-- Swift, SwiftUI, Apple MultipeerConnectivity, Foundation.
+- Swift, SwiftUI, Apple MultipeerConnectivity, Foundation, CryptoKit (room encryption: HKDF-SHA256 and ChaCha20-Poly1305), CoreImage (room QR codes).
+- swift-crypto (https://github.com/apple/swift-crypto, Apache 2.0): Apple's open-source version of the CryptoKit API, used only by the Linux test build (`Package.swift`, fetched by SwiftPM). The app itself does not include it.
 - XcodeGen (project generation from `project.yml`).
 - Ollama (local model runtime, HTTP API on 127.0.0.1:11434). License: MIT (https://github.com/ollama/ollama/blob/main/LICENSE).
 ### APIs and cloud services
 - None at runtime. The only API used is the local Ollama server on the same Mac.
 ### Existing code and assets
-- No pre-existing project code and no third-party packages. All app code was written during the hackathon.
+- No pre-existing project code. The app has no third-party packages; the Linux test build uses Apple's swift-crypto (above). All app code was written during the hackathon.
 - Design inspiration only (no code used): the bitchat whitepaper (TTL flooding, dedup cache, store and forward).
 ### AI development tools
 - Grok Bot (Remy): wrote and tested most of the code from Kyle's direction.
@@ -119,20 +122,26 @@ Notes:
 ## Security
 Honest status for this prototype:
 - **Links are encrypted.** The mesh uses Apple MultipeerConnectivity with `MCSession(..., encryptionPreference: .required)` (set in `Libre/Sources/Mesh/MeshTransport.swift`), so each device-to-device link is encrypted.
-- **Relays can read messages.** Encryption is per link, not end to end. A phone that relays a message decrypts it before passing it on, so any device on the path can read it.
-- **No end-to-end encryption and no device authentication.** Devices are not verified (`securityIdentity: nil`). Admins are chosen by device id on the Mac, so changing your display name does not grant admin, but a modified or renamed device could still claim another device's id. The admin check is a safeguard for honest teams, not real security. Phones also accept rule, task and manifest updates from any device on the mesh.
-- **Data stays local.** Nothing goes to the internet. Team memory and timelines are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected by the device's own storage encryption.
+- **Room messages are sealed with the room key.** Each room has a random 256-bit key. Message content (kind, text, sender name, answers, rules, tasks, backfill) is sealed with ChaCha20-Poly1305 under a key derived from it (HKDF-SHA256). A relay that is not in the room cannot read the content.
+- **Anyone with the join string can read the room.** The key is a shared, per-room symmetric key, not per person. Anyone who has the QR code or join string (and every past member) can read and write in that room. There is no per-user end-to-end encryption, no key rotation and no way to remove a member yet; to cut someone off, create a new room. The label (for example `BOHOL-7`) is not secret.
+- **The Default room is open.** Its key is public (it is derived from a fixed string in the code) so every updated device lands in the same room without setup. Treat Default as readable by anyone running Pasa nearby.
+- **Relays see routing metadata.** The clear header carries the version, message id, room tag, origin device id, destination, hop budget and path, so a relay can see which devices talk and how often, but not what they say.
+- **No device authentication.** Devices are not verified (`securityIdentity: nil`). Admins are per room and chosen by device id on the Mac (the room's creator is pinned), so changing your display name does not grant admin, but a modified device could claim another device's id. Inside a room, phones accept rule, task and manifest updates from any member. The admin check is a safeguard for honest teams, not real security.
+- **The AI Mac can read its room.** It holds the key of every room it has joined and stores that room's memory in plain JSON.
+- **Data stays local.** Nothing goes to the internet. Room keys (`rooms.json`), team memory and timelines are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected only by the device's own storage encryption. Keys are not in the Keychain yet.
 
 ## Limitations
 - **Phones relay only while Pasa is open and on screen.** iOS suspends Pasa in the background and its links drop, so there is no pocket relaying yet. Keep the app in the foreground on every phone that should pass messages on.
 - The Mac must stay awake: lid open, plugged in, Ollama running. Pasa prevents idle sleep while it is the AI peer, but closing the lid still sleeps the Mac.
 - Peer-to-peer Wi-Fi must be on (no network needs to be joined). Bluetooth-only behavior is untested.
-- One AI peer per mesh. A second Mac must turn "Act as AI peer" off. A MultipeerConnectivity session links at most 8 devices directly; relays extend reach beyond that.
+- One AI peer per room, and an AI Mac serves one room at a time (its active room). Two teams on one mesh each need their own AI Mac, or must take turns switching the Mac's room. A second Mac in the same room must turn "Act as AI peer" off. A MultipeerConnectivity session links at most 8 devices directly; relays extend reach beyond that.
 - Tagalog and Cebuano answer quality of qwen3:8b has not been measured yet; tested in English.
 - Due dates are free text, with no reminders or notifications.
 - Range is whatever peer-to-peer Wi-Fi reaches between two devices (roughly a room to a building floor); the mesh extends it hop by hop. We will publish measured numbers only.
 - One-way latency compares two device clocks, so it can be off by the clock difference. The app hides one-way times that are negative or implausible. The round trip for an `@pasa` ask is measured on one device and is exact.
-- Links are encrypted by MultipeerConnectivity, but devices are not authenticated and relayed messages are readable by relaying devices (see Security). This is a prototype, not a secure messenger.
+- Room content is sealed, but the key is shared by the whole room, devices are not authenticated, and relays see routing metadata (see Security). This is a prototype, not a secure messenger.
+- Joining a room means pasting its join string; scanning the QR code with the camera is not built yet (any QR reader shows the string). Leaving a room does not revoke the key.
+- Every device must run this build or newer: older Pasa builds cannot read or relay room packets.
 - Device ids must be unique; they are the mesh addresses. People's display names should be unique too; when two people share a name, task assignment asks which one.
 - Free Apple ID builds expire after 7 days on iPhones.
 - The AI only runs on the Mac in this milestone; phones ask it over the mesh. On-phone models are a stretch goal.
@@ -144,9 +153,15 @@ Honest status for this prototype:
 - Any device on the mesh can claim any name, and a modified device could claim another device's id, so the admin check is a prototype safeguard, not real authentication.
 - The relay layer is transport independent, so MultipeerConnectivity could be swapped for another link layer (for example Android Wi-Fi Direct) later.
 
-## Roadmap / Next: Rooms
-Designed, not built yet. Two or more unrelated teams (for example two businesses on one site) share one physical mesh, and each sees only its own chat, rules, tasks and AI answers.
-- Each room has a spoken label (for example `BOHOL-7`) and a random 256-bit key shared by QR code or a long join string. The label is not the secret.
-- Messages keep a clear routing header (version, id, room tag derived from the key, origin, destination, hop budget, path) and seal everything else with ChaCha20-Poly1305. Phones relay other rooms' packets without being able to read or store them.
-- The Mac keeps memory and chat per room and the AI answers only from that room's rules. Admins are per room, keyed by device, with the room creator pinned as admin.
-- Honest limits: anyone with the join string can read the room, there is no per-person end-to-end encryption, the AI Mac can read every room it serves, and relays still see routing metadata.
+## Rooms
+Two or more unrelated teams (for example two businesses on one site) can share one physical mesh while each sees only its own chat, rules, tasks and AI answers. Code: `Libre/Sources/Core/Rooms.swift`, tests: `Tests/CoreTests/RoomTests.swift`.
+- **Label and key:** each room has a spoken label (for example `BOHOL-7`) and a random 256-bit key. The label is for people and is not secret. The key travels only in the room's QR code and its join string (`PASA1.<label>.<creator>.<key>`), shown in Settings > Room on any member device.
+- **Wire format (v2):** each packet keeps a clear routing header (version, id, room tag, origin, destination, hop budget, path) so any device can dedupe and relay it. Everything else is sealed with ChaCha20-Poly1305 (CryptoKit). The room tag is the first 8 bytes of HKDF-SHA256 of the key, so it does not reveal the label or the key. The sealed part is bound to the header (version, id, room tag, origin, destination), so a relay can change only the hop budget and path.
+- **Relaying other rooms:** a device forwards another room's packets unchanged (only hop budget and path), never shows or stores them, and does not treat an `@pasa` question from another room as its own, so it reaches that room's AI Mac. When no device is linked, at most 50 foreign packets wait in the outbox, for at most an hour.
+- **One active room per device:** switch in Settings > Room. Each room has its own folder of chat history and team memory, its own clear watermark and its own admins (by device id, with the creator pinned). The AI answers only from the active room's memory.
+- **Migration:** on first launch of this build, existing chat, team memory, admins and the clear watermark move into the Default room (the old files stay as `.bak`). Default uses a public key so every updated device lands in the same room without setup.
+- **Limits:** see Security. Anyone with the join string can read the room, there is no per-person end-to-end encryption, the AI Mac reads the rooms it joins, and relays see routing metadata.
+
+## Roadmap
+- An AI Mac that serves several rooms at once.
+- Join by scanning the QR code with the camera; room keys in the Keychain; new room keys to remove a member.
