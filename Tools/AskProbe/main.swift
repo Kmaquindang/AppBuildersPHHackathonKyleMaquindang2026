@@ -50,6 +50,7 @@ for q in questions {
             print("   call \(n + 1) \(c.json ? "json" : "text"): wall \(c.wallMs) ms, total \(total) ms, prompt \(r.promptEvalCount ?? -1) tok, gen \(r.evalCount ?? -1) tok in \(gen) ms")
         }
         print("   reply: \((out.fullReply ?? out.reply).replacingOccurrences(of: "\n", with: " "))")
+        print("   rulesUsed: \(out.rulesUsed) unverified: \(out.unverifiedRules) noRule: \(out.noRule.map(String.init) ?? "-")")
     }
     let sorted = walls.sorted()
     print("[\(q)] median \(sorted[sorted.count / 2]) ms over \(runs) runs\n")
