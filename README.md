@@ -2,11 +2,21 @@
 
 *Walang signal? Pasa lang.* Pasa is Tagalog for "pass it on": every phone passes the message on until it reaches the team.
 
-Pasa is an offline team chat for groups with no signal or no data budget: nearby iPhones and Macs form their own device-to-device mesh, messages hop from device to device, and a local AI assistant on the Mac answers the team with zero cost per question.
+Pasa is multiplayer AI with no internet. One teacher's laptop runs a local AI model, and every phone in the class joins it phone to phone: students and the teacher share one chat, one assistant and the class's own knowledge, with no signal, no data plan and no subscription. Messages hop from device to device until they reach everyone, and every question costs nothing.
+
+The same setup works for crews on a site with no signal and for barangay teams: one laptop, the phones they already own.
 
 Name note: the working name was Libre ("free"). On Oct 9, 2026 at 5:18 PM PHT Kyle renamed it Pasa, because the name describes how the mesh works (each phone passes the message on) and is easy to say on camera.
 
 > Status: milestone 2 (AI executive assistant). Milestone 1 proved the mesh: devices discover each other with no internet, messages travel through our own multi-hop relay layer, and every message shows its hop path and measured timing. Milestone 2 adds the team's executive assistant on the Mac, running a local model through Ollama: it saves rules and skills, turns plain sentences into tasks and pushes them to the assignee's phone, catches people up on what they missed, takes notes from transcripts, and answers questions grounded in the team's own rules with citations.
+
+## Problem
+
+Half of Filipino households still have no internet at home ([48.8% connected, PSA 2024 NICTHS](https://www.sunstar.com.ph/cebu/filipino-households-spend-less-on-internet-in-2024-access-usage-expand)), dropping to [21.2% in Zamboanga Peninsula and 27.7% in BARMM](https://ptvnews.ph/psa-dict-record-spike-in-internet-connected-households-increased-online-access-among-filipino-populace/), and [58.3% of unconnected households name cost as the main reason](https://insiderph.com/internet-access-in-ph-expands-but-cost-still-a-barrier-psa-dict-survey). Paid AI is out of reach too: ChatGPT Plus costs [₱999 a month](https://geosub.org/en/ai-pricing/chatgpt/regions/philippines), more than a full day of [Metro Manila minimum wage (₱755)](https://nwpc.dole.gov.ph/ncr/) and about two and a half days in parts of [BARMM (₱401 to ₱436)](https://nwpc.dole.gov.ph/wp-content/uploads/2026/10/Summary-of-Current-Regl-MWRs-Non-Agri-and-Agri-by-Region-Oct_6_2026.pdf), so [most Filipino college students fall back on free tools on their phones because of financial constraints](https://arxiv.org/abs/2512.11821). Yet phones are everywhere ([98.8% of internet users go online by cellphone](https://insiderph.com/internet-access-in-ph-expands-but-cost-still-a-barrier-psa-dict-survey)) and DepEd is putting [283,000 laptops in teachers' hands this year](https://www.gmanetwork.com/news/topstories/nation/1001450/deped-seeks-p10b-more-for-laptops-as-proposed-2027-budget-funds-only-50-000/story/), so one computer plus the phones a class already owns can give everyone the same AI, with no signal, no data, and no subscription.
+
+Source note: the ChatGPT Plus price comes from a third-party tracker of Apple App Store prices in the Philippines (observed Oct 9, 2026), not from OpenAI's own page. Public schools are not the gap: DICT says [96% of public schools had free Wi-Fi by Jul 3, 2026](https://www.dzrh.com.ph/post/96percent-of-public-schools-nationwide-now-have-free-wi-fi-dict) (the agency's own figure). The gap is at home and per person.
+
+**What Pasa does NOT solve:** Pasa still needs one laptop with 8 to 16 GB of memory and a one-time model download over internet; it does not replace the internet for live information, and it does not help a group with no computer at all.
 
 ## Why does this product benefit from running AI locally?
 The people we build for cannot rely on cloud AI: they have no signal, or they cannot afford mobile data. Cloud-only AI is impossible for them at the moment they need it and expensive at scale. With Pasa, one laptop running a local model serves everyone in mesh range, so every question costs nothing and works with no cell towers. Team notes, rules and to-dos are private by design because they never leave the group's own devices.
