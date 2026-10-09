@@ -30,6 +30,7 @@ runMacSetupTests()
 runChatStatusTests()
 runDiscoveryRestartTests()
 await runAnswerStyleTests()
+runChatLayoutTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

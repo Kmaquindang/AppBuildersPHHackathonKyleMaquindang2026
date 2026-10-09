@@ -2,7 +2,7 @@
 // Pasa: proof that every AI answer was made on the Mac, offline. Pure Swift, tested on Linux.
 //
 // - InternetState: what the Mac's network path monitor (NWPathMonitor, no network calls out)
-//   says about internet routes. "connected (not used)" means a route exists (Wi-Fi network or
+//   says about internet routes. "available, not used" means a route exists (Wi-Fi network or
 //   Ethernet joined); Pasa still never sends anything to it. It is not a ping.
 // - AIProof: rides on every AI answer and summary or photo card. The phone shows it as a compact
 //   badge: "On-device: Site Office · qwen3:8b · offline · 16.6 tok/s · 6470 ms".
@@ -22,8 +22,19 @@ public enum InternetState: String, Codable, Hashable, Sendable {
     public var label: String {
         switch self {
         case .offline: return "Internet: none"
-        case .connected: return "Internet: connected (not used)"
+        case .connected: return "Internet: available, not used"
         case .unknown: return "Internet: not checked yet"
+        }
+    }
+
+    /// Details sheet wording (the bubble itself never shows internet state).
+    /// "Available" means the Mac has a network route (NWPathMonitor: satisfied over Wi-Fi,
+    /// Ethernet or cellular). It is not a ping, and Pasa sends nothing to it either way.
+    public var detailsLabel: String {
+        switch self {
+        case .offline: return "No internet"
+        case .connected: return "Internet available, not used"
+        case .unknown: return "Internet not checked yet"
         }
     }
 
@@ -31,7 +42,7 @@ public enum InternetState: String, Codable, Hashable, Sendable {
     public var badgeWord: String {
         switch self {
         case .offline: return "offline"
-        case .connected: return "internet on, not used"
+        case .connected: return "internet available, not used"
         case .unknown: return "local"
         }
     }
@@ -51,8 +62,11 @@ public struct AIProof: Codable, Hashable, Sendable {
     public var internet: InternetState
     public var tokensPerSecond: Double?
     public var latencyMs: Int
+    /// Model digest (first 12 hex characters), for the Details sheet. nil from older Macs.
+    public var digest: String?
 
-    public init(mac: String, model: String?, internet: InternetState, tokensPerSecond: Double?, latencyMs: Int) {
+    public init(mac: String, model: String?, internet: InternetState, tokensPerSecond: Double?, latencyMs: Int, digest: String? = nil) {
+        self.digest = digest
         self.mac = mac
         self.model = model
         self.internet = internet

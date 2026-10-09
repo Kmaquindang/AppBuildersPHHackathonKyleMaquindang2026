@@ -1,4 +1,6 @@
 // ComposerView.swift
+// iMessage-style composer: photo and mic on the left, a rounded field with the send arrow inside
+// it, and one row of suggestion chips that hides while you type.
 // One chat for everyone. Plain text goes to the team; a line that starts with "@pasa" (or the old
 // "@libre") goes to the AI peer. Typing "@" offers an "@pasa" chip. Quick buttons send @pasa asks.
 // Photo button: pick a photo (shrunk to about 200 KB before sending). Mic button: hold to record a
@@ -20,14 +22,25 @@ struct ComposerView: View {
     @State private var primer: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Quick asks scroll sideways at large text sizes instead of truncating. Each one goes
-            // gray while the same question is still waiting, so it cannot be queued twice.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    quickButton("What did I miss?", ask: "what did I miss?")
-                    quickButton("My tasks", ask: "my tasks")
-                    quickButton("More", ask: "more")
+        VStack(alignment: .leading, spacing: 6) {
+            // One scrollable row of suggestions, only while the field is empty. Starter prompts in
+            // an empty conversation, quick asks otherwise. Each goes gray while the same question
+            // is still waiting, so it cannot be queued twice.
+            if text.isEmpty && mesh.activeRoom.canSend {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        if mesh.entries.isEmpty || mesh.showStarterChips {
+                            ForEach(StarterChips.prompts, id: \.self) { prompt in
+                                chip(AssistantMention.strip(prompt).map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? prompt,
+                                     ask: AssistantMention.strip(prompt) ?? prompt, starter: true)
+                            }
+                        } else {
+                            chip("What did I miss?", ask: "what did I miss?")
+                            chip("My tasks", ask: "my tasks")
+                            chip("More", ask: "more")
+                        }
+                    }
+                    .padding(.horizontal, 2)
                 }
             }
 
@@ -37,57 +50,71 @@ struct ComposerView: View {
                 } label: {
                     Label("@pasa  ask the AI", systemImage: "sparkles")
                         .font(.callout.weight(.semibold))
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
                 .tint(.purple)
-                .frame(minHeight: 44)
                 .accessibilityHint("Starts your message with @pasa")
             }
 
             if recorder.isRecording {
                 TintedLabel(text: "Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30. Release to send.", symbol: "record.circle", tint: .red, font: .callout.weight(.semibold))
             } else if let problem = recorder.problem ?? note ?? mesh.composerNote {
-                TintedLabel(text: problem, symbol: "info.circle", tint: .orange, font: .callout)
+                TintedLabel(text: problem, symbol: "info.circle", tint: .orange, font: .footnote)
             }
 
-            HStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 4) {
                 Button {
                     if mesh.primerNeeded("photos") { primer = "photos" } else { showPicker = true }
                 } label: {
-                    if preparingPhoto {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "photo")
+                    Group {
+                        if preparingPhoto {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "photo.on.rectangle").font(.title3)
+                        }
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
                 .disabled(preparingPhoto)
                 .accessibilityLabel("Photo")
                 .accessibilityHint("Pick a photo to send to the room")
 
                 micButton
 
-                TextField("Message the team...", text: $text)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(minHeight: 44)
-                    .onSubmit(send)
-                    .accessibilityLabel("Message")
-                    .accessibilityHint("Start with @pasa to ask the AI")
-                Button(action: send) {
-                    Image(systemName: isAsk ? "sparkles" : "paperplane.fill")
-                        .frame(minWidth: 32, minHeight: 32)
+                HStack(alignment: .bottom, spacing: 4) {
+                    TextField("Message, or @pasa to ask", text: $text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .padding(.vertical, 10)
+                        .onSubmit(send)
+                        .accessibilityLabel("Message")
+                        .accessibilityHint("Start with @pasa to ask the AI")
+                    if !trimmed.isEmpty {
+                        Button(action: send) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(isAsk ? Color.purple : BubbleStyle.mine)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isAsk ? "Ask Pasa" : "Send")
+                        .keyboardShortcut(.return, modifiers: .command)
+                    }
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityLabel(isAsk ? "Ask Pasa" : "Send")
-                .buttonStyle(.borderedProminent)
-                .tint(isAsk ? Color.purple : Color.accentColor)
-                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .keyboardShortcut(.return, modifiers: .command)
+                .padding(.leading, 14)
+                .padding(.trailing, trimmed.isEmpty ? 14 : 0)
+                .frame(minHeight: 44)
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.secondary.opacity(0.35), lineWidth: 1))
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .photosPicker(isPresented: $showPicker, selection: $photoItem, matching: .images, photoLibrary: .shared())
         .alert(primer == "mic" ? "Record a voice note" : "Share a photo", isPresented: Binding(get: { primer != nil }, set: { if !$0 { primer = nil } })) {
             Button("Continue") {
@@ -106,20 +133,33 @@ struct ComposerView: View {
         }
     }
 
-    private func quickButton(_ title: String, ask: String) -> some View {
-        Button(title) { mesh.quickAsk(ask) }
-            .buttonStyle(.bordered)
-            .frame(minHeight: 44)
-            .disabled(mesh.isAskPending(ask))
-            .accessibilityHint(mesh.isAskPending(ask) ? "Already asked, waiting for the answer" : "Asks the AI Mac")
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func chip(_ title: String, ask: String, starter: Bool = false) -> some View {
+        Button {
+            mesh.quickAsk(ask)
+            if starter { mesh.hideStarterChips() }
+        } label: {
+            Label(title, systemImage: "sparkles")
+                .font(.footnote)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .tint(.purple)
+        .disabled(mesh.isAskPending(ask))
+        .accessibilityLabel("Ask Pasa: \(title)")
+        .accessibilityHint(mesh.isAskPending(ask) ? "Already asked, waiting for the answer" : "Sends this question to the AI Mac")
     }
 
     /// Hold to record, release to send.
     private var micButton: some View {
         Image(systemName: recorder.isRecording ? "mic.fill" : "mic")
+            .font(.title3)
             .foregroundStyle(recorder.isRecording ? Color.white : Color.accentColor)
-            .frame(minWidth: 44, minHeight: 44)
-            .background(recorder.isRecording ? Color.red : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
+            .frame(width: 44, height: 44)
+            .background(recorder.isRecording ? Color.red : Color.clear, in: Circle())
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)

@@ -2367,7 +2367,8 @@ final class MeshService: ObservableObject {
     var macProofName: String { personName.isEmpty ? displayName : personName }
 
     private func proof(model: String?, tps: Double?, ms: Int) -> AIProof {
-        AIProof(mac: macProofName, model: model, internet: internetState, tokensPerSecond: tps, latencyMs: ms)
+        AIProof(mac: macProofName, model: model, internet: internetState, tokensPerSecond: tps, latencyMs: ms,
+                digest: model != nil && model == ollamaModel && !modelDigest.isEmpty ? String(modelDigest.prefix(12)) : nil)
     }
 
     private func logProof(_ p: AIProof, room roomID: String, kind: String) {

@@ -1,31 +1,62 @@
 // ChatTimelineView.swift
-// One timeline, messenger style: your messages on the right, others on the left, sender name and
-// time on every bubble. AI replies are purple and render basic Markdown. Rules and tasks show as
-// cards. The hop path and timing sit in a small caption you can tap to expand.
+// iMessage-style timeline (Oct 9 night redesign, after Kyle's 8:33 PM screenshot):
+// - Your bubbles on the right in blue, other people on the left in gray, Pasa AI on the left in
+//   soft purple with a small sparkle avatar.
+// - Consecutive messages from one sender are grouped; other people's name shows once above their
+//   group, never yours. Centered timestamps only after 15 minutes or on a new day.
+// - One status word ("Queued", "Delivered", "Answered") under your last message only.
+// - No meta lines in bubbles. Model, speed, hops, path, internet state and checked rules live in
+//   the Details sheet (long-press, or the VoiceOver "Details" action) and on the Mac Proof panel.
+// - Rules an answer relied on show as small tappable chips under Pasa's bubble.
+// - Pasa's typing dots while your question is on its way and the AI Mac is awake.
+// Layout decisions are pure and unit tested (Core/ChatLayout.swift, AI/AnswerStyle.swift).
 
 import SwiftUI
 
 struct ChatTimelineView: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var detailsEntry: ChatEntry?
+    @State private var openChip: String?
+
+    private let bottomID = "timeline-bottom"
 
     var body: some View {
+        let entries = mesh.entries
+        let answered = AskCoalescer.answered(entries)
+        let statuses = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.id, BubbleStatus.of($0, answered: answered, waiting: mesh.waitingAsks.contains($0.id)))
+        })
+        let layout = ChatLayout.layout(entries, statuses: statuses)
+        let pending = ChatLayout.pendingAsks(entries, device: mesh.displayName).count
+        let typing = TypingState.of(pending: pending, isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability)
+        let names = nameMap
+
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    if mesh.entries.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if entries.isEmpty {
                         ChatEmptyState()
                     }
-                    let names = nameMap
-                    let answered = AskCoalescer.answered(mesh.entries)
-                    ForEach(mesh.entries) { entry in
-                        MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names,
-                                   waiting: mesh.waitingAsks.contains(entry.id), waitingNote: mesh.waitingText,
-                                   status: BubbleStatus.of(entry, answered: answered, waiting: mesh.waitingAsks.contains(entry.id)),
-                                   myDevice: mesh.displayName, canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
-                                   onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") })
+                    ForEach(entries) { entry in
+                        let row = layout[entry.id] ?? ChatRowLayout(timestamp: nil, showName: true, firstInGroup: true, lastInGroup: true, statusWord: nil)
+                        MessageRow(entry: entry, layout: row, sender: mesh.senderLabel(for: entry.message), names: names,
+                                   status: statuses[entry.id] ?? .received, myDevice: mesh.displayName,
+                                   canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
+                                   onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") },
+                                   onDetails: { detailsEntry = entry },
+                                   onChip: { openChip = $0 })
                             .id(entry.id)
                     }
+                    switch typing {
+                    case .typing:
+                        TypingBubble().padding(.top, 8)
+                    case .note(let line):
+                        SystemLine(text: line).padding(.top, 10)
+                    case .none:
+                        EmptyView()
+                    }
+                    Color.clear.frame(height: 4).id(bottomID)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -33,18 +64,25 @@ struct ChatTimelineView: View {
             // Stays pinned to the newest message when the keyboard or composer changes the height.
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: mesh.entries.count) { _, _ in
-                if let last = mesh.entries.last {
-                    if reduceMotion {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    } else {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-            }
-            .onAppear {
-                if let last = mesh.entries.last { proxy.scrollTo(last.id, anchor: .bottom) }
-            }
+            .onChange(of: entries.count) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: typing) { _, _ in scrollToBottom(proxy) }
+            .onAppear { proxy.scrollTo(bottomID, anchor: .bottom) }
+        }
+        .sheet(item: $detailsEntry) { entry in
+            MessageDetailsSheet(entry: entry, names: names)
+                .environmentObject(mesh)
+        }
+        .sheet(item: Binding(get: { openChip.map(ChipID.init) }, set: { openChip = $0?.citation })) { chip in
+            RuleDetailSheet(citation: chip.citation)
+                .environmentObject(mesh)
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        if reduceMotion {
+            proxy.scrollTo(bottomID, anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(bottomID, anchor: .bottom) }
         }
     }
 
@@ -56,134 +94,166 @@ struct ChatTimelineView: View {
     }
 }
 
+struct ChipID: Identifiable {
+    let citation: String
+    var id: String { citation }
+}
+
+// MARK: - Colors
+
+enum BubbleStyle {
+    /// Deep blue so white text stays above 4.5:1 (system blue on white is about 4.0:1).
+    static let mine = Color(red: 0.0, green: 0.37, blue: 0.80)
+    static var other: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemFill)
+        #else
+        Color.gray.opacity(0.18)
+        #endif
+    }
+    static let pasa = Color.purple.opacity(0.14)
+    static var card: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemBackground)
+        #else
+        Color.gray.opacity(0.10)
+        #endif
+    }
+    static let radius: CGFloat = 18
+    static let avatar: CGFloat = 26
+}
+
+// MARK: - Row
+
 struct MessageRow: View {
     let entry: ChatEntry
+    let layout: ChatRowLayout
     let sender: String
     /// Device id -> chosen display name.
     let names: [String: String]
-    /// An ask of ours with no answer after 20 s.
-    var waiting: Bool = false
-    /// What to say while waiting (AI Mac asleep, offline, not in this room, or queue depth).
-    var waitingNote: String = "Waiting for the AI Mac... It answers when it is in range."
-    /// Delivery state, shown as an icon with a VoiceOver label.
     var status: BubbleStatus = .received
     /// This device's id (for its own line on a summary card).
     var myDevice: String = ""
     /// Admin devices see "Add task" on photo suggestions (the Mac checks again).
     var canAccept: Bool = false
     var onAccept: (String) -> Void = { _ in }
-    @State private var showDetails = false
+    var onDetails: () -> Void = {}
+    var onChip: (String) -> Void = { _ in }
     @State private var accepted: Set<String> = []
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var message: MeshMessage { entry.message }
-    private var isMine: Bool { entry.direction == .sent && message.kind != .answer }
-    private var isCard: Bool { message.kind == .rule || message.kind == .task }
+    private var isMine: Bool { ChatLayout.isMine(entry) }
+    private var isPasa: Bool { message.kind == .answer }
+    private var isCard: Bool { message.kind == .rule || message.kind == .task || message.card != nil }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            if isMine { Spacer(minLength: 48) }
-            VStack(alignment: isMine ? .trailing : .leading, spacing: 3) {
-                if message.kind == .media {
-                    header
-                    bubble
-                } else {
-                    // VoiceOver reads sender, time, text, then status, as one element.
-                    VStack(alignment: isMine ? .trailing : .leading, spacing: 3) {
-                        header
-                        bubble
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(spokenLabel)
-                    .accessibilityHint(hasDetails ? "Double tap the details button below for hop path and timing" : "")
-                }
-                cardExtras
-                proofBadge
-                detailsCaption
+        VStack(alignment: .leading, spacing: 2) {
+            if let stamp = layout.timestamp {
+                Text(stamp)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                    .accessibilityAddTraits(.isHeader)
             }
-            if !isMine { Spacer(minLength: 48) }
+            if layout.showName {
+                Text(sender)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, (isPasa ? BubbleStyle.avatar + 6 : 0) + 12)
+                    .padding(.top, layout.timestamp == nil ? 8 : 0)
+                    .accessibilityHidden(true)
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                if isMine { Spacer(minLength: 56) }
+                if isPasa {
+                    if layout.lastInGroup { PasaAvatar() } else { Color.clear.frame(width: BubbleStyle.avatar, height: 1) }
+                }
+                VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+                    content
+                    chips
+                    cardExtras
+                }
+                if !isMine { Spacer(minLength: 40) }
+            }
+            if let word = layout.statusWord {
+                Text(word)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 6)
+                    .accessibilityHidden(true)   // read as part of the bubble
+            }
+        }
+        .padding(.top, layout.firstInGroup && layout.timestamp == nil && !layout.showName ? 8 : 0)
+    }
+
+    // MARK: Bubble content
+
+    @ViewBuilder
+    private var content: some View {
+        if message.kind == .media {
+            MediaBubble(entry: entry, isMine: isMine)
+                .contextMenu { detailsButton }
+                .accessibilityAction(named: "Details", onDetails)
+        } else {
+            bubble
+                .contextMenu {
+                    detailsButton
+                    Button {
+                        copyToPasteboard(plainText)
+                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(spokenLabel)
+                .accessibilityHint("Actions available: Details")
+                .accessibilityAction(named: "Details", onDetails)
         }
     }
 
-    // MARK: Pieces
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            if message.kind == .answer {
-                Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
-            }
-            Text(isMine ? "You" : sender)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-            if message.kind == .ask {
-                Text("to Pasa AI").font(.caption).foregroundStyle(.secondary)
-            } else if case .peer(let device)? = message.destination, message.kind != .answer {
-                Text("to \(labelFor(device))").font(.caption).foregroundStyle(.secondary)
-            }
-            Text(message.createdAt.formatted(date: .omitted, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if !status.symbol.isEmpty {
-                Image(systemName: status.symbol)
-                    .font(.caption)
-                    .foregroundStyle(status == .queued ? Color.orange : Color.secondary)
-            }
-        }
+    private var detailsButton: some View {
+        Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
     }
 
     @ViewBuilder
     private var bubble: some View {
-        if message.kind == .media {
-            MediaBubble(entry: entry, isMine: isMine)
-        } else if isCard {
-            VStack(alignment: .leading, spacing: 4) {
-                KindBadge(kind: message.kind)
-                Text(MeshPayload.displayText(for: message))
-                    .font(.callout)
-                    .textSelection(.enabled)
-            }
-            .padding(10)
-            .frame(maxWidth: 320, alignment: .leading)
-            .background(cardColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(cardColor.opacity(0.5), lineWidth: 1))
-        } else if message.kind == .answer, let card = message.card {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(card == "summary" ? "DAILY SUMMARY" : "PHOTO CHECK")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.purple.opacity(0.25), in: Capsule())
-                Text(bodyText)
-                    .font(.callout)
-                    .textSelection(.enabled)
-            }
-            .padding(10)
-            .frame(maxWidth: 340, alignment: .leading)
-            .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.4), lineWidth: 1))
+        if isCard {
+            CardView(message: message, text: plainText)
         } else {
             Text(bodyText)
                 .font(.body)
                 .textSelection(.enabled)
-                .padding(.horizontal, 12)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 13)
                 .padding(.vertical, 8)
-                .foregroundStyle(isMine || message.kind == .ask ? Color.white : Color.primary)
-                .background(bubbleColor, in: RoundedRectangle(cornerRadius: 16))
+                .foregroundStyle(isMine ? Color.white : Color.primary)
+                .background(isMine ? BubbleStyle.mine : (isPasa ? BubbleStyle.pasa : BubbleStyle.other),
+                            in: RoundedRectangle(cornerRadius: BubbleStyle.radius, style: .continuous))
+        }
+    }
+
+    /// Rule chips under Pasa's answer (tap for the rule), plus a warning chip for any tag that
+    /// named nothing saved.
+    @ViewBuilder
+    private var chips: some View {
+        if isPasa, message.card == nil, !(styled.rulesUsed.isEmpty && styled.unverifiedRules.isEmpty) {
+            FlowChips(used: styled.rulesUsed, unverified: styled.unverifiedRules, onTap: onChip)
         }
     }
 
     /// Summary card: this person's own open tasks. Photo card: suggested tasks an admin can add.
     @ViewBuilder
     private var cardExtras: some View {
-        if message.kind == .answer, message.card == "summary", let personal = message.personal {
+        if isPasa, message.card == "summary", let personal = message.personal {
             Label(personal[myDevice] ?? "You have no open tasks.", systemImage: "person.crop.circle.badge.checkmark")
-                .font(.caption)
-                .padding(8)
+                .font(.footnote)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .frame(maxWidth: 320, alignment: .leading)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .background(BubbleStyle.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        if message.kind == .answer, message.card == "vision", let suggestions = message.suggestions, !suggestions.isEmpty, canAccept {
+        if isPasa, message.card == "vision", let suggestions = message.suggestions, !suggestions.isEmpty, canAccept {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(suggestions, id: \.self) { title in
                     Button {
@@ -192,10 +262,11 @@ struct MessageRow: View {
                     } label: {
                         Label(accepted.contains(title) ? "Sent: \(title)" : "Add task: \(title)",
                               systemImage: accepted.contains(title) ? "checkmark.circle.fill" : "plus.circle")
-                            .font(.caption)
+                            .font(.footnote)
+                            .frame(minHeight: 44)
                     }
                     .buttonStyle(.bordered)
-                    .frame(minHeight: 44)
+                    .buttonBorderShape(.capsule)
                     .disabled(accepted.contains(title))
                     .accessibilityHint("Asks the AI Mac to add this task")
                 }
@@ -203,82 +274,21 @@ struct MessageRow: View {
         }
     }
 
-    /// Always visible under AI answers: where and how it was made.
-    @ViewBuilder
-    private var proofBadge: some View {
-        if message.kind == .answer, let proof = message.proof {
-            Label {
-                Text(proof.badge)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            } icon: {
-                Image(systemName: proof.internet == .offline ? "wifi.slash" : "cpu")
-                    .font(.caption2)
-                    .foregroundStyle(proof.internet == .offline ? Color.green : Color.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(proof.badge.replacingOccurrences(of: " · ", with: ", "))
-        }
-    }
-
-    private var detailsCaption: some View {
-        VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
-            if waiting && message.kind == .ask {
-                Label {
-                    Text(waitingText).font(.caption).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "hourglass").foregroundStyle(.orange)
-                }
-                .accessibilityElement(children: .combine)
-            }
-            if hasDetails {
-                Button {
-                    if reduceMotion { showDetails.toggle() } else { withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() } }
-                } label: {
-                    HStack(spacing: 3) {
-                        if !summaryLine.isEmpty { Text(summaryLine) }
-                        Image(systemName: showDetails ? "chevron.up" : "chevron.down")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44, alignment: isMine ? .trailing : .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, -8)   // keeps the 44 pt target without a tall gap between bubbles
-                .accessibilityLabel(showDetails ? "Hide details" : "Details\(summaryLine.isEmpty ? "" : ": \(summaryLine)")")
-                .accessibilityHint("Hop path and timing")
-            } else {
-                Color.clear.frame(height: 6)
-            }
-            if showDetails {
-                ForEach(detailLines, id: \.self) { line in
-                    Text(line)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(isMine ? .trailing : .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
     // MARK: Text
 
-    /// On the AI Mac itself the ask is local, so it is the model that is slow, not the mesh.
-    private var waitingText: String {
-        entry.sentTo == ["this Mac (AI peer)"]
-            ? "Pasa is still thinking..."
-            : waitingNote
+    /// Answers: citation tags and old preambles removed (new Macs already send clean text).
+    private var styled: StyledAnswer {
+        AnswerStyle.display(body: MeshPayload.displayText(for: message), rulesUsed: message.rulesUsed, unverified: message.unverifiedRules)
     }
 
-    /// AI replies render bold, italics, inline code and bullets. Anything that does not parse
-    /// shows as plain text.
+    private var plainText: String {
+        isPasa ? MarkdownLite.plain(styled.text) : MeshPayload.displayText(for: message)
+    }
+
+    /// AI replies render bold, italics and inline code. Anything that does not parse is plain.
     private var bodyText: AttributedString {
-        let raw = MeshPayload.displayText(for: message)
-        guard message.kind == .answer else { return AttributedString(raw) }
+        guard isPasa else { return AttributedString(MeshPayload.displayText(for: message)) }
+        let raw = styled.text
         let prepared = MarkdownLite.prepare(raw)
         if let rich = try? AttributedString(markdown: prepared, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             return rich
@@ -286,93 +296,333 @@ struct MessageRow: View {
         return AttributedString(MarkdownLite.plain(raw))
     }
 
-    /// What VoiceOver reads for the bubble: sender, time, text, status.
+    /// VoiceOver: sender, text, rules, time, status.
     private var spokenLabel: String {
-        var parts = [isMine ? "You" : sender]
-        if message.kind == .ask { parts[0] += ", to Pasa AI" }
-        if message.kind == .answer { parts[0] = "Pasa AI answer" }
-        parts.append(message.createdAt.formatted(date: .omitted, time: .shortened))
-        if isCard { parts.append(message.kind == .task ? "Task" : "Rule") }
+        var parts = [isMine ? "You" : (isPasa ? "Pasa" : sender)]
+        if message.kind == .task { parts.append("Task") }
+        if message.kind == .rule { parts.append("Rule") }
         if let card = message.card { parts.append(card == "summary" ? "Daily summary" : "Photo check") }
-        parts.append(String(bodyText.characters))
-        if status != .received { parts.append(status.accessibilityLabel) }
+        parts.append(plainText)
+        if isPasa, !styled.rulesUsed.isEmpty {
+            parts.append("Based on " + styled.rulesUsed.map { AnswerStyle.title(in: $0) }.joined(separator: ", "))
+        }
+        if isPasa, !styled.unverifiedRules.isEmpty { parts.append("Warning: cites a rule that is not saved") }
+        parts.append(message.createdAt.formatted(date: .omitted, time: .shortened))
+        if isMine, status != .received { parts.append(status.accessibilityLabel) }
         return parts.joined(separator: ". ")
     }
+}
 
-    /// Mine and still queued: the clock icon says it, so no caption.
-    private var hasDetails: Bool {
-        !(entry.direction == .sent && entry.sentTo.isEmpty && entry.backfilled != true) || message.kind == .answer
+func copyToPasteboard(_ text: String) {
+    #if os(iOS)
+    UIPasteboard.general.string = text
+    #else
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+    #endif
+}
+
+// MARK: - Pieces
+
+struct PasaAvatar: View {
+    var body: some View {
+        Image(systemName: "sparkles")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(width: BubbleStyle.avatar, height: BubbleStyle.avatar)
+            .background(Color(red: 0.42, green: 0.20, blue: 0.62), in: Circle())
+            .accessibilityHidden(true)
     }
+}
 
-    /// Short caption: "2 hops, 522 ms" or "Round trip 6664 ms". Empty for our own sent messages
-    /// (the status icon in the header shows queued, sent or answered).
-    private var summaryLine: String {
-        if entry.backfilled == true { return "synced" }
-        if isMine || (entry.direction == .sent && message.kind == .answer) { return "" }
-        var parts: [String] = []
-        parts.append(message.hopCount == 0 ? "local" : hopWord(message.hopCount))
-        if let rtt = entry.roundTripMs {
-            parts.append("round trip \(rtt) ms")
-        } else if let ms = timingMs {
-            parts.append("\(ms) ms")
+/// Rule, task, summary and photo cards: a clean rounded card with an icon, a short title and the text.
+struct CardView: View {
+    let message: MeshMessage
+    let text: String
+
+    private var title: String {
+        switch message.kind {
+        case .task: return MeshPayload.decodeTask(message.body)?.status == .done ? "Task done" : "Task"
+        case .rule:
+            if let rule = MeshPayload.decodeRule(message.body) { return rule.isRetired ? "\(rule.kind.label) deleted" : rule.kind.label }
+            return "Rule"
+        default: return message.card == "summary" ? "Daily summary" : "Photo check"
         }
-        return parts.joined(separator: ", ")
     }
 
-    private var detailLines: [String] {
-        var lines: [String] = []
-        if entry.direction == .sent && !entry.sentTo.isEmpty {
-            lines.append("Sent to \(entry.sentTo.map(labelFor).joined(separator: ", "))")
+    private var symbol: String {
+        switch message.kind {
+        case .task: return "checklist"
+        case .rule: return "book.closed"
+        default: return message.card == "summary" ? "sun.horizon" : "camera.viewfinder"
         }
-        if message.hops.count > 1 {
-            lines.append("Path: \(message.hops.map(labelFor).joined(separator: " -> ")), \(hopWord(message.hopCount))")
+    }
+
+    /// Rule cards: the rule title as the headline, its body as the text.
+    private var lines: (String?, String) {
+        if message.kind == .rule, let rule = MeshPayload.decodeRule(message.body), !rule.isRetired {
+            return (rule.title + (rule.locked ? " (locked)" : ""), rule.body)
         }
-        if let replyPath = message.replyPath, !replyPath.isEmpty {
-            lines.append("Ask path: \(replyPath.map(labelFor).joined(separator: " -> ")), \(hopWord(replyPath.count - 1))")
+        if message.kind == .task, let task = MeshPayload.decodeTask(message.body) {
+            return (task.title, [task.assignee, task.due].compactMap { $0 }.joined(separator: " · "))
         }
-        if let meta = answerMeta { lines.append(meta) }
-        if message.kind == .answer, let checked = message.checked {
-            lines.append(checked.isEmpty ? "Checked: no saved rule matched" : "Checked: \(checked.joined(separator: "; "))")
+        return (nil, text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let headline = lines.0 {
+                Text(headline).font(.subheadline.weight(.semibold))
+            }
+            if !lines.1.isEmpty {
+                Text(lines.1)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        if let rtt = entry.roundTripMs { lines.append("Round trip \(rtt) ms (measured on this device)") }
-        if lines.isEmpty { lines.append("From \(message.origin)") }
-        return lines
+        .padding(12)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(BubbleStyle.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.secondary.opacity(0.2), lineWidth: 0.5))
+    }
+}
+
+/// Small rule chips that wrap onto more lines at large text sizes.
+struct FlowChips: View {
+    let used: [String]
+    let unverified: [String]
+    let onTap: (String) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { chipViews }
+            VStack(alignment: .leading, spacing: 6) { chipViews }
+        }
     }
 
-    /// One-way time, only when it looks real. Device clocks differ, so a negative or huge value
-    /// is not shown at all (no "clock skew" label).
-    private var timingMs: Int? {
-        let ms = entry.oneWayMs
-        return (0...120_000).contains(ms) ? ms : nil
+    @ViewBuilder
+    private var chipViews: some View {
+        ForEach(used, id: \.self) { citation in
+            Button { onTap(citation) } label: {
+                Label(AnswerStyle.title(in: citation), systemImage: AnswerStyle.kind(in: citation) == "Note" ? "note.text" : "book.closed")
+                    .font(.caption)
+                    .lineLimit(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(BubbleStyle.card, in: Capsule())
+                    .overlay(Capsule().stroke(Color.purple.opacity(0.35), lineWidth: 0.5))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, -8)   // 44 pt target without a tall gap
+            .accessibilityLabel("Rule: \(AnswerStyle.title(in: citation))")
+            .accessibilityHint("Shows the saved rule")
+        }
+        ForEach(unverified, id: \.self) { tag in
+            Label("Not a saved rule: \(AnswerStyle.title(in: tag))", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.orange.opacity(0.15), in: Capsule())
+                .accessibilityLabel("Warning. \(AnswerStyle.title(in: tag)) is not a saved rule.")
+        }
+    }
+}
+
+/// Pasa is typing: three dots in a purple bubble. Static dots with Reduce Motion.
+struct TypingBubble: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            PasaAvatar()
+            Group {
+                if reduceMotion {
+                    dots(phase: -1)
+                } else {
+                    TimelineView(.periodic(from: .now, by: 0.35)) { context in
+                        dots(phase: Int(context.date.timeIntervalSinceReferenceDate / 0.35) % 3)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(BubbleStyle.pasa, in: RoundedRectangle(cornerRadius: BubbleStyle.radius, style: .continuous))
+            Spacer(minLength: 40)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pasa is typing")
     }
 
-    /// "qwen3:8b, 1840 ms, 22.4 tok/s, compact" for AI answers.
-    private var answerMeta: String? {
-        guard message.kind == .answer, message.model != nil || message.latencyMs != nil else { return nil }
-        var parts: [String] = [message.model ?? "no model call"]
-        if let ms = message.latencyMs { parts.append("\(ms) ms") }
-        if let tps = message.tokensPerSecond { parts.append(String(format: "%.1f tok/s", tps)) }
-        if message.compact == true { parts.append("compact, say @pasa more") }
-        return parts.joined(separator: ", ")
+    private func dots(phase: Int) -> some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(Color.secondary)
+                    .frame(width: 8, height: 8)
+                    .opacity(phase < 0 ? 0.6 : (i == phase ? 1 : 0.35))
+            }
+        }
+    }
+}
+
+/// A small centered line for system notes ("Pasa is asleep...").
+struct SystemLine: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+    }
+}
+
+// MARK: - Details sheet
+
+/// Everything that used to clutter the bubble: where and how the answer was made, the hop path,
+/// timing, internet state and the rules Pasa checked.
+struct MessageDetailsSheet: View {
+    @EnvironmentObject private var mesh: MeshService
+    @Environment(\.dismiss) private var dismiss
+    let entry: ChatEntry
+    let names: [String: String]
+
+    private var message: MeshMessage { entry.message }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if message.kind == .answer {
+                    Section("Pasa") {
+                        if let proof = message.proof {
+                            row("Answered on \(proof.mac)", symbol: "laptopcomputer")
+                            row(proof.model ?? "No model call needed", symbol: "cpu")
+                            if let digest = proof.digest { row("Model digest \(digest)", symbol: "number") }
+                            if let tps = proof.tokensPerSecond, tps.isFinite, tps > 0 {
+                                row(String(format: "%.1f tokens per second", tps), symbol: "speedometer")
+                            }
+                            row("\(proof.latencyMs) ms on the Mac", symbol: "timer")
+                            row(proof.internet.detailsLabel, symbol: proof.internet == .offline ? "wifi.slash" : "wifi")
+                        } else if let model = message.model {
+                            row(model, symbol: "cpu")
+                            if let ms = message.latencyMs { row("\(ms) ms on the Mac", symbol: "timer") }
+                        }
+                        if message.compact == true { row("Shortened. Ask \(AssistantMention.primary) more for the rest.", symbol: "text.append") }
+                    }
+                    let shown = AnswerStyle.display(body: message.body, rulesUsed: message.rulesUsed, unverified: message.unverifiedRules)
+                    Section("Rules") {
+                        if !shown.rulesUsed.isEmpty {
+                            ForEach(shown.rulesUsed, id: \.self) { row("Used: \($0)", symbol: "book.closed") }
+                        }
+                        ForEach(shown.unverifiedRules, id: \.self) { row("Not a saved rule: \($0)", symbol: "exclamationmark.triangle") }
+                        if let checked = message.checked {
+                            row(checked.isEmpty ? "Checked: no saved rule matched" : "Checked: \(checked.joined(separator: "; "))", symbol: "magnifyingglass")
+                        }
+                        if shown.rulesUsed.isEmpty && shown.unverifiedRules.isEmpty && message.checked == nil {
+                            row("No saved rule used", symbol: "book.closed")
+                        }
+                    }
+                }
+                Section("Delivery") {
+                    row("From \(label(message.origin))", symbol: "person")
+                    row(message.createdAt.formatted(date: .abbreviated, time: .standard), symbol: "clock")
+                    if entry.direction == .sent {
+                        row(entry.sentTo.isEmpty ? "Queued. Sends when a teammate is in range." : "Handed to \(entry.sentTo.map(label).joined(separator: ", "))",
+                            symbol: entry.sentTo.isEmpty ? "clock.badge.exclamationmark" : "paperplane")
+                    }
+                    if message.hops.count > 1 {
+                        row("Path: \(message.hops.map(label).joined(separator: " → ")) (\(hopWord(message.hopCount)))", symbol: "point.3.connected.trianglepath.dotted")
+                    } else if entry.direction == .received {
+                        row("Direct, no hops", symbol: "point.3.connected.trianglepath.dotted")
+                    }
+                    if let replyPath = message.replyPath, !replyPath.isEmpty {
+                        row("Question path: \(replyPath.map(label).joined(separator: " → ")) (\(hopWord(replyPath.count - 1)))", symbol: "arrow.uturn.left")
+                    }
+                    if let rtt = entry.roundTripMs { row("Round trip \(rtt) ms (measured on this device)", symbol: "arrow.triangle.2.circlepath") }
+                    if entry.backfilled == true { row("Synced from the AI Mac after this device missed it", symbol: "arrow.triangle.2.circlepath") }
+                }
+            }
+            .navigationTitle(message.kind == .answer ? "Answer details" : "Message details")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 420)
+        #endif
     }
 
-    private var bubbleColor: Color {
-        if message.kind == .answer { return Color.purple.opacity(0.15) }
-        // Deep fills so white text stays above 4.5:1 (system blue and purple are about 4.0 and 3.6).
-        if message.kind == .ask { return Color(red: 0.42, green: 0.20, blue: 0.62) }
-        return isMine ? Color(red: 0.0, green: 0.37, blue: 0.80) : Color.gray.opacity(0.18)
+    private func row(_ text: String, symbol: String) -> some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(.secondary)
+        }
     }
 
-    private var cardColor: Color {
-        message.kind == .task ? .green : .teal
+    private func label(_ device: String) -> String {
+        if device == "this Mac (AI peer)" { return device }
+        return PeopleDirectory.label(for: device, directory: names)
     }
 
-    private func labelFor(_ device: String) -> String {
-        PeopleDirectory.label(for: device, directory: names)
-    }
+    private func hopWord(_ n: Int) -> String { n == 1 ? "1 hop" : "\(n) hops" }
+}
 
-    private func hopWord(_ n: Int) -> String {
-        n == 1 ? "1 hop" : "\(n) hops"
+/// Tapping a rule chip: the saved rule as this device has it.
+struct RuleDetailSheet: View {
+    @EnvironmentObject private var mesh: MeshService
+    @Environment(\.dismiss) private var dismiss
+    let citation: String
+
+    var body: some View {
+        let title = AnswerStyle.title(in: citation)
+        let key = NameMatcher.normalize(title)
+        let rule = mesh.org.activeRules.first { NameMatcher.normalize($0.title) == key }
+        let note = mesh.org.notes.first { NameMatcher.normalize($0.title) == key }
+        NavigationStack {
+            Form {
+                if let rule {
+                    Section {
+                        Text(rule.body).textSelection(.enabled)
+                    } header: {
+                        Text(rule.citation)
+                    } footer: {
+                        Text(rule.locked ? "Locked by an admin." : "Saved by \(mesh.label(for: rule.updatedBy)).")
+                    }
+                } else if let note {
+                    Section(note.citation) {
+                        Text(note.summary).textSelection(.enabled)
+                        ForEach(note.decisions, id: \.self) { Text("Decision: \($0)") }
+                    }
+                } else {
+                    Section(citation) {
+                        Text("This device does not have a copy of that rule yet. It arrives when the AI Mac is in range.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 380, minHeight: 260)
+        #endif
     }
 }
 
@@ -385,19 +635,7 @@ struct KindBadge: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(color.opacity(0.25), in: Capsule())
-    }
-
-    private var color: Color {
-        switch kind {
-        case .chat: return .blue
-        case .ask: return .orange
-        case .answer: return .purple
-        case .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus: return .gray
-        case .media: return .blue
-        case .rule: return .teal
-        case .task: return .green
-        }
+            .background(Color.secondary.opacity(0.2), in: Capsule())
     }
 }
 
@@ -413,7 +651,7 @@ struct ChatEmptyState: View {
             Text("No messages yet")
                 .font(.headline)
             Text(mesh.connectedCount == 0
-                 ? "Say hi now: it sends when a teammate is in range. Ask a teammate to open Pasa nearby with Wi-Fi on."
+                 ? "Say hi now. It sends when a teammate is in range. Ask a teammate to open Pasa nearby with Wi-Fi on."
                  : "Say hi to the team, or start a message with @pasa to ask the AI.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

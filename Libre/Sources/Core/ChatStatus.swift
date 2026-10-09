@@ -90,6 +90,33 @@ public enum StatusWords {
         }
     }
 
+    /// Chat header subtitle: one short line ("Kyle's Mac nearby", "No one nearby").
+    /// - Parameters:
+    ///   - aiMac: name of the AI Mac serving this room, when one is heard.
+    ///   - firstPeer: name of a linked device, for "Ana nearby".
+    public static func subtitle(linked: Int, nearby: Int, isAIPeer: Bool, ai: AIAvailability,
+                                aiMac: String?, firstPeer: String?) -> String {
+        func others(_ lead: String, _ more: Int) -> String {
+            more <= 0 ? "\(lead) nearby" : "\(lead) and \(more) more nearby"
+        }
+        if !isAIPeer, let mac = aiMac, !mac.isEmpty {
+            switch ai {
+            case .awake: return linked > 0 ? others(mac, linked - 1) : "\(mac) nearby"
+            case .asleep: return "\(mac) is asleep"
+            case .notServing: return "\(mac) is not in this room"
+            case .offline, .unknown: break
+            }
+        }
+        if linked == 0 { return nearby > 0 ? "Connecting..." : "No one nearby" }
+        if let first = firstPeer, !first.isEmpty { return others(first, linked - 1) }
+        return linked == 1 ? "1 device nearby" : "\(linked) devices nearby"
+    }
+
+    /// Green dot next to the room name: Pasa can answer right now.
+    public static func aiReady(isAIPeer: Bool, ai: AIAvailability) -> Bool {
+        isAIPeer || ai == .awake
+    }
+
     /// The one offline banner, or nil when it is not needed.
     public static func offlineBanner(linked: Int, queued: Int) -> String? {
         guard linked == 0, queued > 0 else { return nil }
