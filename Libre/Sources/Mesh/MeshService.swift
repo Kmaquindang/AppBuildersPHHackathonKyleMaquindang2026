@@ -135,6 +135,12 @@ final class MeshService: ObservableObject {
     @Published private(set) var adminDevices: [String]
     @Published private(set) var roster: [String: String]
     @Published private(set) var assistantLog: [AssistantLogEntry] = []
+    /// Phones: Knowledge titles of the active room from the Mac (read-only, filtered by role).
+    @Published private(set) var libraryListings: [LibraryListing] = []
+    #if os(macOS)
+    /// AI Mac: per-room Knowledge (documents, passages, vectors) in Application Support.
+    let knowledge = KnowledgeService()
+    #endif
     @Published private(set) var ollamaStatus = "Not checked yet"
     @Published private(set) var modelWarm = false
     /// Digest (sha256) of the model Ollama serves, for pinning. Empty until checked.
@@ -678,6 +684,7 @@ final class MeshService: ObservableObject {
     /// Saves the current room, applies `change`, then loads the (new) active room's chat and
     /// memory. Outbox packets are already sealed for the room they were written in.
     private func switchRoom(_ change: () -> Void) {
+        libraryListings = []
         answeredHint = nil
         saveNow()
         _ = memory.save()
@@ -1566,9 +1573,24 @@ final class MeshService: ObservableObject {
 
     private func sendManifest(to device: String, room roomID: String? = nil) {
         let id = roomID ?? activeRoom.id
-        guard let room = rooms.room(withID: id), let mem = memoryFor(id),
-              let body = SyncPayload(manifest: mem.manifest(clearedAt: clearedAtFor(id))).encoded() else { return }
+        guard let room = rooms.room(withID: id), let mem = memoryFor(id) else { return }
+        var manifest = mem.manifest(clearedAt: clearedAtFor(id))
+        // Knowledge titles only, filtered by the phone's role (Admins-only titles go to admins).
+        manifest.library = knowledge.index(for: id).listings(isAdmin: mem.isAdmin(device))
+        guard let body = SyncPayload(manifest: manifest).encoded() else { return }
         transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), room: room, excluding: [])
+    }
+
+    /// Knowledge changed on this Mac: phones get the new title list right away.
+    func knowledgeChanged(room roomID: String) {
+        for (name, state) in peerStates where state == .connected && !blocked.contains(name) {
+            sendManifest(to: name, room: roomID)
+        }
+    }
+
+    /// This Mac may change the room's Knowledge only as a room admin.
+    func canEditKnowledge(room roomID: String) -> Bool {
+        memoryFor(roomID)?.isAdmin(displayName) ?? false
     }
     #endif
 
@@ -2182,6 +2204,7 @@ final class MeshService: ObservableObject {
             if let manifest = payload.manifest, !isAIPeer {
                 // The Mac is the source of truth: drop cached rules and tasks it no longer has.
                 CacheSync.applyManifest(manifest, to: memory)
+                if let library = manifest.library { libraryListings = library }
                 adoptClear(manifest.clearedAt)
                 refreshOrg()
             }
@@ -2384,6 +2407,8 @@ final class MeshService: ObservableObject {
         switch aiEngine {
         case .assistant:
             assistant.serve(room: roomID, memory: mem, clearedAt: clearedAtFor(roomID))
+            assistant.library = knowledge.index(for: roomID)
+            assistant.embedder = knowledge.answerEmbedder
             assistant.roomLabel = room.displayName
             assistant.digestSchedule = digestSchedule
             let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since, askID: ask.askKey)
@@ -2402,12 +2427,13 @@ final class MeshService: ObservableObject {
                 saveLedger()
                 return
             }
-            let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
+            var reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
                                 latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond,
                                 checked: outcome.intent == .answer ? outcome.checked : nil,
                                 rulesUsed: outcome.rulesUsed.isEmpty ? nil : outcome.rulesUsed,
                                 unverifiedRules: outcome.unverifiedRules.isEmpty ? nil : outcome.unverifiedRules,
                                 noRule: outcome.noRule)
+            reply.docRefs = outcome.docRefs.isEmpty ? nil : outcome.docRefs
             let answerID = sendAnswer(reply, to: ask, room: roomID, intent: outcome.intent.rawValue, error: outcome.error,
                                       promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
             askQueue.finish(job.askID, answerID: answerID)
@@ -2456,6 +2482,7 @@ final class MeshService: ObservableObject {
         copy.rulesUsed = stored.message.rulesUsed
         copy.unverifiedRules = stored.message.unverifiedRules
         copy.noRule = stored.message.noRule
+        copy.docRefs = stored.message.docRefs
         copy.proof = stored.message.proof
         copy.card = stored.message.card
         copy.personal = stored.message.personal
@@ -2481,6 +2508,7 @@ final class MeshService: ObservableObject {
         message.rulesUsed = reply.rulesUsed
         message.unverifiedRules = reply.unverifiedRules
         message.noRule = reply.noRule
+        message.docRefs = reply.docRefs
         message.proof = proof(model: reply.model, tps: reply.tokensPerSecond, ms: reply.latencyMs)
         logProof(message.proof!, room: roomID, kind: intent)
 

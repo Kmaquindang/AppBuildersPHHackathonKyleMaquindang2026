@@ -48,6 +48,8 @@ public struct AssistantOutcome: Sendable {
     public var unverifiedRules: [String] = []
     /// Answers only: no saved rule or note backs this answer. nil for other intents.
     public var noRule: Bool? = nil
+    /// Answers only: Knowledge passages the reply used (validated [Doc N] tags).
+    public var docRefs: [DocRef] = []
     /// True when the intent model call was skipped (plain question or fast path).
     public var skippedClassify = false
 }
@@ -84,6 +86,12 @@ public final class ExecutiveAssistant {
     public var digestSchedule = DigestSchedule.standard
     /// num_ctx Pasa asks Ollama for; compaction starts above 75% of it (tests use a small one).
     public var contextTokens = PromptBudget.contextTokens
+    /// Knowledge (room library) for the room being served; nil or empty means no documents.
+    public var library: LibraryIndex? = nil
+    /// Embedding model for hybrid search; nil means keyword-only.
+    public var embedder: (any Embedder)? = nil
+    /// Last answer's Knowledge search: hits shown, whether vectors were used (Proof panel, harness).
+    public private(set) var lastLibrarySearch: (hits: Int, hybrid: Bool) = (0, false)
     /// Per room: context fill of the last answer, last compaction, summary size (Mac Proof panel).
     public private(set) var contextStats: [String: ContextStats] = [:]
 
@@ -251,6 +259,7 @@ public final class ExecutiveAssistant {
         var rulesUsed: [String] = []
         var unverifiedRules: [String] = []
         var noRule: Bool? = nil
+        var docRefs: [DocRef] = []
 
         switch plan.kind {
         case .dailySummary:
@@ -444,6 +453,24 @@ public final class ExecutiveAssistant {
             let selection = KnowledgeRetriever.select(question: ConversationMemory.retrievalQuery(question, previous: previousTurn),
                                                       rules: memory.rules, notes: memory.notes)
             checked = selection.checkedTitles
+            // Knowledge: role filter first (Admins-only documents never rank for members), then
+            // BM25 plus embeddings when the model is there, keyword-only otherwise.
+            var hits: [LibraryHit] = []
+            var libraryNoMatch = false
+            let isAdmin = memory.isAdmin(asker)
+            if let library, !library.visibleDocuments(isAdmin: isAdmin).isEmpty {
+                let query = ConversationMemory.retrievalQuery(question, previous: previousTurn)
+                var vector: [Float]? = nil
+                if let embedder, library.chunks.contains(where: { $0.embedding != nil }) {
+                    vector = try? await embedder.embed([LibrarySearch.queryPrefix + query]).first
+                }
+                hits = LibrarySearch.retrieve(query, in: library, isAdmin: isAdmin, queryVector: vector)
+                libraryNoMatch = hits.isEmpty
+                lastLibrarySearch = (hits.count, vector != nil)
+                checked += hits.map { "Doc: " + $0.ref.chipLabel }
+            } else {
+                lastLibrarySearch = (0, false)
+            }
             let open = memory.openTasks
             // Lean prompt: the task list only goes in when the question is about tasks or people.
             let withTasks = QuestionRouter.needsTasks(question, taskTitles: open.map { $0.title })
@@ -451,10 +478,11 @@ public final class ExecutiveAssistant {
             // num_ctx, compact the oldest turns first; if still too big, trim the thread.
             func build(_ context: ConversationContext) -> [ChatTurn] {
                 [
-                    .system(AssistantPrompts.answerSystem),
+                    .system(AssistantPrompts.answerSystem(withDocuments: !hits.isEmpty)),
                     .user(AssistantPrompts.answerUser(question: question, asker: asker, rules: selection.rules, notes: selection.notes,
-                                                      openTasks: open, noRelevantKnowledge: selection.relevantCount == 0,
-                                                      includeTasks: withTasks, conversation: context))
+                                                      openTasks: open, noRelevantKnowledge: selection.relevantCount == 0 && hits.isEmpty,
+                                                      includeTasks: withTasks, conversation: context,
+                                                      documents: hits, libraryNoMatch: libraryNoMatch))
                 ]
             }
             var context = conversation(for: question, asker: asker)
@@ -487,12 +515,16 @@ public final class ExecutiveAssistant {
                 tracker.add(result, prompt: turns)
                 // Never pass on a citation that is not in memory: fix versions, flag the rest,
                 // then move citations out of the text into chips.
-                let styled = AnswerStyle.restrict(AnswerStyle.style(result.text, rules: memory.rules, notes: memory.notes),
+                // [Doc N] tags become chips only for passages that were shown.
+                let cited = LibraryCitations.extract(result.text, shown: hits)
+                docRefs = cited.refs
+                let styled = AnswerStyle.restrict(AnswerStyle.style(cited.text, rules: memory.rules, notes: memory.notes),
                                                   shown: selection.checkedTitles)
                 reply = styled.text
+                if !docRefs.isEmpty, reply == AnswerStyle.noRuleFallback, cited.text.isEmpty { reply = AnswerStyle.emptyFallback }
                 rulesUsed = styled.rulesUsed
                 unverifiedRules = styled.unverifiedRules
-                noRule = styled.noRule
+                noRule = styled.noRule && docRefs.isEmpty
             } catch {
                 return failure(error, intent: .answer, started: started, tracker: tracker)
             }
@@ -505,6 +537,7 @@ public final class ExecutiveAssistant {
         outcome.rulesUsed = rulesUsed
         outcome.unverifiedRules = unverifiedRules
         outcome.noRule = noRule
+        outcome.docRefs = docRefs
         outcome.skippedClassify = skippedClassify
         return outcome
     }

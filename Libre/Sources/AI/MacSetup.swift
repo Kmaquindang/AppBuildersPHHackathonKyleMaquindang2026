@@ -51,6 +51,8 @@ public enum ModelCatalog {
         "qwen3-vl:2b-instruct": 1_900_000_000,
         "qwen3-vl:4b-instruct": 3_300_000_000,
         "qwen3-vl:8b-instruct": 6_100_000_000,
+        // Knowledge embeddings (nomic-embed-text:latest, digest 0a109f422b47, Apache 2.0).
+        "nomic-embed-text": 274_000_000,
     ]
     /// Ollama for macOS (Ollama-darwin.zip, about 206 MB).
     public static let ollamaAppBytes: Int64 = 210_000_000
@@ -87,6 +89,8 @@ public struct ModelPlan: Equatable, Sendable {
     public var tier: ModelTier
     public var chat: String
     public var vision: String?
+    /// Embedding model for Knowledge search (small, every tier); nil when turned off.
+    public var embed: String? = nil
     /// Models in the plan (installed ones download nothing).
     public var downloads: [ModelDownload]
     /// Ollama itself must be downloaded first.
@@ -134,7 +138,8 @@ public enum ModelPlanner {
     ///   - installed: models Ollama already has (they download nothing).
     ///   - ollamaInstalled: false adds the Ollama app download.
     public static func plan(hardware hw: HardwareProfile, wantVision: Bool? = nil, chatOverride: String? = nil,
-                            visionOverride: String? = nil, installed: [String] = [], ollamaInstalled: Bool = true) -> ModelPlan {
+                            visionOverride: String? = nil, installed: [String] = [], ollamaInstalled: Bool = true,
+                            withKnowledge: Bool = true) -> ModelPlan {
         let t = tier(for: hw)
         let rec = recommended(t, memoryBytes: hw.memoryBytes)
         let chat = clean(chatOverride) ?? rec.chat
@@ -142,7 +147,9 @@ public enum ModelPlanner {
         let vision: String? = visionOn ? (clean(visionOverride) ?? rec.vision ?? optionalVision(t)) : nil
 
         var downloads: [ModelDownload] = []
-        for model in [chat] + (vision.map { [$0] } ?? []) {
+        // Knowledge search by meaning: nomic-embed-text is 274 MB and runs on every tier.
+        let embed: String? = withKnowledge ? EmbedModel.name : nil
+        for model in [chat] + (vision.map { [$0] } ?? []) + (embed.map { [$0] } ?? []) {
             let have = installed.contains(model) || installed.contains(model + ":latest")
             downloads.append(ModelDownload(model: model, bytes: ModelCatalog.size(model) ?? 0, installed: have))
         }
@@ -168,9 +175,11 @@ public enum ModelPlanner {
         if total > 0, let free = hw.freeDiskBytes, free < required {
             blocked = "Not enough disk: \(ModelCatalog.label(total)) to download plus a 2 GB margin needs \(ModelCatalog.label(required)), and only \(ModelCatalog.label(free)) is free. Free up space or pick smaller models."
         }
-        return ModelPlan(tier: t, chat: chat, vision: vision, downloads: downloads, needsOllama: !ollamaInstalled,
-                         totalBytes: total, requiredFreeBytes: required, reason: reason,
-                         warning: warnings.isEmpty ? nil : warnings.joined(separator: " "), blocked: blocked)
+        var plan = ModelPlan(tier: t, chat: chat, vision: vision, downloads: downloads, needsOllama: !ollamaInstalled,
+                             totalBytes: total, requiredFreeBytes: required, reason: reason,
+                             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "), blocked: blocked)
+        plan.embed = embed
+        return plan
     }
 
     static func clean(_ s: String?) -> String? {
@@ -277,6 +286,9 @@ public enum SetupChecklist {
             SetupItem(id: "vision", title: "Vision model (optional)", ok: visionOK, optional: true,
                       detail: visionOK ? pick : (wantVision ? "\(pick) is not installed" : "Off. Photos are shared but not read."),
                       fix: visionOK || !wantVision ? nil : "ollama pull \(pick)"),
+            SetupItem(id: "embed", title: "Knowledge search model (optional)", ok: embedOK(installed), optional: true,
+                      detail: embedOK(installed) ? "\(EmbedModel.name): documents are searched by keywords and meaning" : "Not installed: Knowledge uses keyword search only",
+                      fix: embedOK(installed) ? nil : EmbedModel.pullCommand),
             SetupItem(id: "warm", title: "Model warmed up", ok: warmed, optional: false,
                       detail: warmed ? "Loaded and answering" : "First answer loads the model (about 10 to 30 s)", fix: warmed ? nil : "ollama run \(chatModel) \"Reply OK\""),
             SetupItem(id: "admins", title: "Admin devices set", ok: adminCount > 0, optional: true,
@@ -284,6 +296,10 @@ public enum SetupChecklist {
             SetupItem(id: "internet", title: "Internet state", ok: true, optional: true,
                       detail: internet == .offline ? "Internet: none. Pasa runs fully offline." : (internet == .connected ? "Internet: connected (not used by Pasa answers)" : internet.label), fix: nil),
         ]
+    }
+
+    static func embedOK(_ installed: [String]) -> Bool {
+        installed.contains { $0 == EmbedModel.name || $0.hasPrefix(EmbedModel.name + ":") }
     }
 
     /// Ready means every required item is green.

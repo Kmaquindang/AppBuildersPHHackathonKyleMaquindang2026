@@ -34,6 +34,10 @@ struct ContentView: View {
             #if os(macOS)
             AssistantDashboardView()
                 .tabItem { Label("Assistant", systemImage: "cpu") }
+            if mesh.isAIPeer {
+                KnowledgeView(knowledge: mesh.knowledge)
+                    .tabItem { Label("Knowledge", systemImage: "books.vertical") }
+            }
             #endif
         }
     }
