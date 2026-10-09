@@ -1,8 +1,10 @@
-# Libre setup (milestones 1 and 2)
+# Pasa setup (milestones 1 and 2)
 
-Libre is a SwiftUI app for iPhone and Mac. Devices find each other with no internet, pass messages through our own multi-hop relay layer, and show the hop path and timing on every message (milestone 1). The Mac is the AI peer: a team executive assistant running a local model through Ollama (milestone 2).
+Pasa (working name Libre, renamed Oct 9, 2026 at 5:18 PM PHT because each phone passes the message on) is a SwiftUI app for iPhone and Mac. Devices find each other with no internet, pass messages through our own multi-hop relay layer, and show the hop path and timing on every message (milestone 1). The Mac is the AI peer: a team executive assistant running a local model through Ollama (milestone 2).
 
 You need: a Mac with Xcode 15 or newer, a free Apple ID, and (optionally) one or two iPhones on iOS 17 or newer with a cable.
+
+Names in the project: Xcode targets, schemes, the `Libre/` folder, bundle ids (`com.kmaquindang.libre`, `com.kmaquindang.libre.mac`) and the Bonjour service `libre-mesh` keep the working name so signing and existing installs keep working. The app shows as **Pasa** on the iPhone home screen and in the Mac menu bar.
 
 ## Option A: open the committed project (fastest)
 
@@ -24,7 +26,7 @@ You need: a Mac with Xcode 15 or newer, a free Apple ID, and (optionally) one or
 4. Choose the **Libre-macOS** scheme with destination **My Mac** and press Run. Allow the Local Network prompt if it appears.
 5. Plug in an iPhone, choose the **Libre-iOS** scheme and pick the iPhone as the destination, press Run.
 6. First run on an iPhone: the app will not open until you trust yourself as a developer. On the iPhone go to **Settings > General > VPN & Device Management**, tap your Apple ID under Developer App, and tap **Trust**. Also turn on **Settings > Privacy & Security > Developer Mode** if iOS asks, then restart the phone. Run again from Xcode.
-7. When the app asks to find devices on your local network, tap **Allow**. If you tapped Don't Allow, fix it in **Settings > Privacy & Security > Local Network > Libre**.
+7. When the app asks to find devices on your local network, tap **Allow**. If you tapped Don't Allow, fix it in **Settings > Privacy & Security > Local Network > Pasa**.
 
 ## Option C: create the project by hand in Xcode
 
@@ -39,7 +41,7 @@ Use this if XcodeGen is not available.
    - **Default Actor Isolation** (Xcode 26 and newer): **nonisolated**. New Xcode projects default to MainActor, which this code does not expect.
    - **Strict Concurrency Checking**: Minimal.
 6. **Info** tab, under Custom iOS Target Properties (click + to add a row):
-   - `Privacy - Local Network Usage Description` (raw key `NSLocalNetworkUsageDescription`), value: `Libre connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.`
+   - `Privacy - Local Network Usage Description` (raw key `NSLocalNetworkUsageDescription`), value: `Pasa connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.`
    - `Bonjour services` (raw key `NSBonjourServices`), type Array, with two String items: `_libre-mesh._tcp` and `_libre-mesh._udp`.
 7. **Signing & Capabilities** tab: pick your Team (Personal Team is fine). Set a unique bundle id such as `com.kmaquindang.libre`.
 8. Still in Signing & Capabilities, find **App Sandbox** (shown for the macOS destination). Tick **Incoming Connections (Server)** and **Outgoing Connections (Client)** under Network. Without these the Mac cannot join the mesh.
@@ -47,12 +49,12 @@ Use this if XcodeGen is not available.
 
 ## Run the milestone 1 demo
 
-1. Open Libre on all three devices. Open **Settings** (gear icon) on each one and give it a unique name: `MacBook Air`, `iPhone 14 Pro Max`, `iPhone 12`. Tap **Save name**.
+1. Open Pasa on all three devices. Open **Settings** (gear icon) on each one and give it a unique name: `MacBook Air`, `iPhone 14 Pro Max`, `iPhone 12`. Tap **Save name**.
 2. Wait until the peer chips at the top show **linked** (green). Keep the app open in the foreground on the iPhones; iOS pauses links when the app is in the background.
 3. To prove there is no internet: on each iPhone turn on Airplane Mode, then turn **Wi-Fi back on** (do not join any network). Bluetooth can stay on. On the Mac, Wi-Fi must be on but does not need to be joined to a network.
 4. Send a chat from any device. Every other device shows it with the path and time, for example `iPhone 12 -> MacBook Air, 1 hop, 35 ms`.
 5. Forced relay: on **iPhone 12** open Settings and turn on **Block direct link to MacBook Air**. Now iPhone 12 and the Mac can only talk through iPhone 14 Pro Max.
-6. On iPhone 12 switch the composer to **Ask AI** (or type `@libre` before the question) and send. The Mac (AI peer is on by default on the Mac) replies `AI peer received: ...`. On iPhone 12 the answer row shows:
+6. On iPhone 12 switch the composer to **Ask AI** (or type `@pasa` before the question; `@libre` still works) and send. The Mac (AI peer is on by default on the Mac) replies `AI peer received: ...`. On iPhone 12 the answer row shows:
    - `MacBook Air -> iPhone 14 Pro Max -> iPhone 12, 2 hops, ... ms`
    - `Ask path: iPhone 12 -> iPhone 14 Pro Max -> MacBook Air, 2 hops`
    - `Round trip ... ms (measured on this device)`
@@ -66,10 +68,10 @@ Use this if XcodeGen is not available.
 3. Check it works: `ollama run qwen3:8b "say hi"` then type `/bye`.
 
 ### In the app
-1. Run Libre on the Mac. Open Settings > AI peer: Engine = Executive assistant, model `qwen3:8b`, fallback `qwen3:4b`. Admin devices default to `iPhone 14 Pro Max` (this Mac is always an admin).
+1. Run Pasa on the Mac. Open Settings > AI peer: Engine = Executive assistant, model `qwen3:8b`, fallback `qwen3:4b`. Admin devices default to `iPhone 14 Pro Max` (this Mac is always an admin).
 2. In Team roster add one line per person, for example `Ana = iPhone 12` and `Kyle = iPhone 14 Pro Max`. Tap **Save AI settings**. The status line should say `Ollama running. Using qwen3:8b.`
 3. Open the **Assistant** tab on the Mac to watch every ask, the reply, the model, the latency in ms and the tokens per second.
-4. From iPhone 12 (Ask AI mode, or type `@libre` first):
+4. From iPhone 12 (Ask AI mode, or type `@pasa` first):
    - `save rule: No site visits after 5 PM` gives `Saved [Rule: No site visits after 5 PM v1]`, and the rule appears in every device's Rules tab.
    - `update rule No site visits after 5 PM: No site visits after 6 PM` from iPhone 12 is refused (not an admin). The same message from iPhone 14 Pro Max creates v2 and keeps v1 in history.
    - `remind Ana to order cement Friday` creates the task, and it pops up on iPhone 12 (Ana's device) as a green Task row and in its Tasks tab.
@@ -97,7 +99,7 @@ The relay, team memory and assistant logic are pure Swift with no Apple framewor
 ./scripts/test-relay.sh
 ```
 
-It compiles `Libre/Sources/Core`, `Libre/Sources/AI` and the test runner with `swiftc` and prints `Libre core tests: N passed, 0 failed`.
+It compiles `Libre/Sources/Core`, `Libre/Sources/AI` and the test runner with `swiftc` and prints `Pasa core tests: N passed, 0 failed`.
 
 ## Troubleshooting
 
