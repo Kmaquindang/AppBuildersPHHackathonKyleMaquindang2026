@@ -547,6 +547,7 @@ final class MeshService: ObservableObject {
     func activateRoom(_ id: String) {
         guard id != activeRoom.id, rooms.room(withID: id) != nil else { return }
         switchRoom { rooms.activate(id) }
+        if !activeRoom.isDefault, !isRoomAdmin { requestManifest(id) }
     }
 
     /// Leaves a room (not the last one). Its saved chat and memory stay on disk.
@@ -790,6 +791,19 @@ final class MeshService: ObservableObject {
         lastManifestSent[roomID] = now
         guard let body = RoomControl(type: .manifest, blob: blob).encoded() else { return }
         transmit(engine.makeOutgoing(kind: .roomControl, body: body, destination: nil), room: room, excluding: [])
+    }
+
+    /// A device just linked: admins and the AI Mac hand it the newest manifest of each room
+    /// they hold (direct link only, ttl 1), so a member that was away learns about kicks,
+    /// closes and cap changes. A device that is not in the room cannot open it.
+    private func publishManifests(to peer: String) {
+        let others = Set(peerStates.keys).subtracting([peer])
+        for room in joinedRooms where !room.isDefault {
+            guard let signed = room.gov?.signed, isAIPeer || RoomGovernor.isAdmin(room, identity: identity),
+                  let body = RoomControl(type: .manifest, blob: signed).encoded() else { continue }
+            transmit(engine.makeOutgoing(kind: .roomControl, body: body, destination: .peer(peer), ttl: 1),
+                     room: room, excluding: others, queueIfUnsent: false)
+        }
     }
 
     private func requestManifest(_ roomID: String, now: Date = Date()) {
@@ -1672,6 +1686,7 @@ final class MeshService: ObservableObject {
                 flushOutbox()
                 requestBackfill()
                 sendDueNacks(force: true)
+                publishManifests(to: name)
                 #if os(macOS)
                 syncMemory(to: name)
                 #endif
