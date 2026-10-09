@@ -43,6 +43,7 @@ runJoinCodeTests()
 await runLibraryTests()
 runTownSquareTests()
 runNoAIHostTests()
+await runWebGatewayTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

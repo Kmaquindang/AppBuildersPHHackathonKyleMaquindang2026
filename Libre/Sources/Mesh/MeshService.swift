@@ -137,9 +137,20 @@ final class MeshService: ObservableObject {
     @Published private(set) var assistantLog: [AssistantLogEntry] = []
     /// Phones: Knowledge titles of the active room from the Mac (read-only, filtered by role).
     @Published private(set) var libraryListings: [LibraryListing] = []
+    /// Set by a room-only pasa:// link: open "Join with QR or room code" with this name filled in.
+    @Published var joinPrefill: JoinPrefill?
     #if os(macOS)
     /// AI Mac: per-room Knowledge (documents, passages, vectors) in Application Support.
     let knowledge = KnowledgeService()
+    /// Browser gateway (Android and other phones): off by default, plain HTTP on the local network.
+    @Published private(set) var gatewayOn = false
+    @Published private(set) var gatewayPort: UInt16 = 0
+    @Published private(set) var gatewayAddress: String?
+    @Published private(set) var gatewayProblem: String?
+    @Published private(set) var gatewayMembers = 0
+    private var gatewayServer: WebGatewayServer?
+    private var gatewaySeq: [UUID: Int] = [:]
+    private var gatewayNextSeq = 0
     #endif
     @Published private(set) var ollamaStatus = "Not checked yet"
     @Published private(set) var modelWarm = false
@@ -288,6 +299,7 @@ final class MeshService: ObservableObject {
     private enum Keys {
         // Keys keep the working name "libre." so settings saved before the rename to Pasa survive.
         static let name = "libre.displayName"
+        static let gateway = "pasa.browserGateway"
         static let blocked = "libre.blocked"
         static let aiPeer = "libre.isAIPeer"
         static let engine = "libre.aiEngine"
@@ -767,6 +779,7 @@ final class MeshService: ObservableObject {
         startOllamaWatch()
         checkOllama()
         observeSleep()
+        if defaults.bool(forKey: Keys.gateway) { setGateway(true) }
         if connectivity == nil {
             connectivity = ConnectivityMonitor { [weak self] state in
                 DispatchQueue.main.async {
@@ -1146,6 +1159,18 @@ final class MeshService: ObservableObject {
     func handleJoinURL(_ url: URL) {
         switch JoinLink.parse(url.absoluteString) {
         case .failure:
+            // "Open in Pasa app" from the browser page: room only, the code is typed here.
+            if let room = JoinLink.roomOnly(url.absoluteString) {
+                if Room.isReservedLabel(room) {
+                    if let open = rooms.rooms.first(where: { $0.isDefault }) { activateRoom(open.id) }
+                    lastProblem = "You are in Town Square. No code needed."
+                } else if let joined = rooms.rooms.first(where: { RoomPasscode.normalizedName($0.label) == RoomPasscode.normalizedName(room) && $0.canSend }) {
+                    activateRoom(joined.id)
+                } else {
+                    joinPrefill = JoinPrefill(room: room)
+                }
+                return
+            }
             lastProblem = "That link is not a Pasa room link."
         case .success(let link):
             if link.isExpired() { lastProblem = "That room code expired. Ask the admin for a new one."; return }
@@ -2477,7 +2502,7 @@ final class MeshService: ObservableObject {
 
     /// Sends the stored answer again (new packet id, same replyTo) for an ask answered before.
     private func redeliverAnswer(for ask: MeshMessage, answerID: UUID?, room roomID: String) {
-        guard ask.origin != displayName, let room = rooms.room(withID: roomID) else { return }
+        guard ask.origin != displayName, !isWebMember(ask.origin), let room = rooms.room(withID: roomID) else { return }
         let list = entriesFor(roomID)
         guard let stored = list.last(where: { $0.id == answerID && $0.message.kind == .answer })
                 ?? list.last(where: { $0.message.kind == .answer && $0.message.replyTo == ask.askKey }) else { return }
@@ -2529,6 +2554,9 @@ final class MeshService: ObservableObject {
                 entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
                 refreshWaitingAsks()
             }
+        } else if isWebMember(ask.origin) {
+            // Browser member: the answer stays on this Mac; the page reads it from here.
+            entry.sentTo = ["browser (via this Mac)"]
         } else if let room = rooms.room(withID: roomID) {
             entry.sentTo = transmit(message, room: room, excluding: [])
         }
@@ -2901,3 +2929,156 @@ final class MeshService: ObservableObject {
         defaults.set(false, forKey: Keys.onboarded)
     }
 }
+
+#if os(macOS)
+// MARK: Browser gateway bridge (Android and other phones)
+// Web members join through this Mac: their lines enter the room as relayed members
+// ("Ana (via Mac)", origin web-xxxxxxxx), sealed with the room key like any message from this Mac.
+// Their @pasa asks go into this Mac's ask queue; answers stay on this Mac for the page to read.
+
+extension MeshService: GatewayBackend {
+    func isWebMember(_ device: String) -> Bool {
+        device.hasPrefix("web-") && (gatewayServer?.router.sessions.isWebDevice(device) ?? false)
+    }
+
+    func setGateway(_ on: Bool) {
+        NSLog("Pasa browser gateway: %@", on ? "on" : "off")
+        defaults.set(on, forKey: Keys.gateway)
+        gatewayOn = on
+        gatewayProblem = nil
+        if on {
+            let server = gatewayServer ?? WebGatewayServer(backend: self)
+            server.onChange = { [weak self] port, problem in
+                guard let self else { return }
+                self.gatewayPort = port ?? 0
+                self.gatewayProblem = problem
+                self.gatewayAddress = WebGatewayServer.localAddress()
+            }
+            gatewayServer = server
+            gatewayAddress = WebGatewayServer.localAddress()
+            server.start()
+        } else {
+            gatewayServer?.stop()
+            gatewayPort = 0
+            gatewayMembers = 0
+        }
+    }
+
+    /// Refreshes the Mac's local address (Wi-Fi changes) for the join screen.
+    func refreshGatewayAddress() { gatewayAddress = WebGatewayServer.localAddress() }
+
+    /// The browser QR for a room, or nil when the gateway is off or has no local address yet.
+    func gatewayJoinURL(room: Room) -> String? {
+        guard gatewayOn, gatewayPort != 0, let host = gatewayAddress else { return nil }
+        return GatewayNet.joinURL(host: host, port: gatewayPort, room: room.usesCode ? room.label : room.displayName)
+    }
+
+    /// Browsers can join Town Square and code rooms; passcode and invite rooms stay app-only.
+    func gatewayCanJoin(_ room: Room) -> Bool { room.isDefault || room.usesCode }
+
+    func gatewayRoom(named name: String) -> GatewayRoomInfo? {
+        let want = RoomPasscode.normalizedName(name)
+        guard !want.isEmpty else { return nil }
+        let match = rooms.rooms.first { room in
+            room.canSend && (RoomPasscode.normalizedName(room.displayName) == want || (!room.isDefault && RoomPasscode.normalizedName(room.label) == want))
+        }
+        return match.map(gatewayInfo)
+    }
+
+    func gatewayRoom(id: String) -> GatewayRoomInfo? {
+        guard let room = rooms.room(withID: id), room.canSend else { return nil }
+        return gatewayInfo(room)
+    }
+
+    private func gatewayInfo(_ room: Room) -> GatewayRoomInfo {
+        let m = room.gov?.manifest
+        return GatewayRoomInfo(id: room.id, name: room.usesCode ? room.label : room.displayName, isOpen: room.isDefault,
+                               codeEpoch: m?.codeEpoch ?? 0,
+                               codeCheck: room.usesCode ? m?.codeCheck : nil,
+                               adminKey: room.usesCode ? m?.adminKey : nil,
+                               expiresAt: room.usesCode ? m?.codeExpiresAt : nil)
+    }
+
+    func gatewayJoined(_ session: GatewaySession) {
+        gatewayMembers = gatewayServer?.router.sessions.all.count ?? 0
+    }
+
+    func gatewayPost(_ raw: String, session: GatewaySession) -> Bool {
+        guard let room = rooms.room(withID: session.roomID), room.canSend else { return false }
+        var text = raw
+        var kind: MessageKind = .chat
+        if let question = AssistantMention.strip(text) {
+            guard !question.isEmpty else { return false }
+            kind = .ask
+            text = question
+        }
+        let destination: MeshDestination? = kind == .ask ? .role(MeshDestination.aiRole) : nil
+        var message = engine.makeOutgoing(kind: kind, body: text, destination: destination)
+        message.origin = session.device
+        message.senderName = session.displayName
+        var entry = ChatEntry(id: message.id, message: message, direction: .received, receivedAt: Date())
+        if kind == .chat {
+            if let mem = memoryFor(room.id) {
+                mem.recordChat(from: session.displayName, text: text, at: message.createdAt, device: session.device)
+            }
+            entry.sentTo = transmit(message, room: room, excluding: [])
+            appendEntry(entry, room: room.id)
+        } else {
+            guard isAIPeer else { return false }
+            entry.sentTo = ["this Mac (AI peer)"]
+            appendEntry(entry, room: room.id)
+            enqueueAsk(message, roomID: room.id)
+        }
+        return true
+    }
+
+    func gatewayState(session: GatewaySession, since: Int) -> GatewayState {
+        gatewayMembers = gatewayServer?.router.sessions.all.count ?? 0
+        let list = entriesFor(session.roomID).suffix(200)
+        var out: [GatewayMessage] = []
+        for e in list {
+            let seq: Int
+            if let known = gatewaySeq[e.id] { seq = known } else {
+                gatewayNextSeq += 1
+                gatewaySeq[e.id] = gatewayNextSeq
+                seq = gatewayNextSeq
+            }
+            guard seq > since, let m = gatewayMessage(e, seq: seq, session: session) else { continue }
+            out.append(m)
+        }
+        if gatewaySeq.count > 5000 {
+            let keep = Set(list.map(\.id))
+            gatewaySeq = gatewaySeq.filter { keep.contains($0.key) }
+        }
+        var tasks: [GatewayTask] = []
+        if let mem = memoryFor(session.roomID) {
+            let board = TaskBoard(mem.tasks)
+            for t in board.overdue + board.open + Array(board.done.prefix(10)) {
+                tasks.append(GatewayTask(title: t.title, owner: t.assignee ?? "Anyone", due: t.due, status: t.displayStatus().label))
+            }
+        }
+        let room = rooms.room(withID: session.roomID)
+        let ai = isAIPeer ? (modelWarm ? "Pasa AI is ready on this Mac." : "Pasa AI is on this Mac (first answer may be slow).")
+                          : "This Mac is not running Pasa AI, so @pasa questions will not be answered."
+        return GatewayState(room: room?.displayName ?? "Room", seq: gatewayNextSeq, messages: out, tasks: tasks, ai: ai)
+    }
+
+    private func gatewayMessage(_ e: ChatEntry, seq: Int, session: GatewaySession) -> GatewayMessage? {
+        let m = e.message
+        let mine = m.origin == session.device
+        switch m.kind {
+        case .chat:
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: m.body, mine: mine, pasa: false, kind: "chat", at: m.createdAt)
+        case .ask where mine:
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "@pasa " + m.body, mine: true, pasa: false, kind: "ask", at: m.createdAt)
+        case .answer where m.destination == .peer(session.device):
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: "Pasa AI", text: m.body, mine: false, pasa: true, kind: "answer", at: m.createdAt,
+                                  rules: m.rulesUsed, docs: m.docRefs)
+        case .media:
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "Shared a photo or voice note. Open the Pasa app to see it.", mine: false, pasa: false, kind: "media", at: m.createdAt)
+        default:
+            return nil
+        }
+    }
+}
+#endif

@@ -82,8 +82,9 @@ The two misses, as recorded: #8 ("Is smoking allowed near the cement and paint s
 | iPhones only (no Mac) | Chat, multi-hop relay, photos and voice notes, rooms, room codes, rules and tasks already synced from a Mac (read-only) | AI answers, voice transcription, Knowledge. A question shows "No AI computer nearby. Your question is saved and will be answered when the Mac is back." and is resent when an AI Mac serving the room is heard again (for up to a day) |
 | Mac plus iPhones | Everything: AI answers, rules and tasks, voice transcription, photo checks, Knowledge, room admin | Nothing extra needed. The Mac must be awake and in the room |
 | Windows or Linux laptop | Not yet. Ollama runs on Windows and Linux, but the host app is Mac only (SwiftUI and Apple's peer-to-peer Wi-Fi) | Cannot act as the AI host. Roadmap |
-| Android phones only | Not supported. The mesh uses Apple's peer-to-peer Wi-Fi (MultipeerConnectivity), which Android does not speak | Everything |
-| Mixed iPhone and Android | iPhones and the Mac work as above | Android phones are left out of the mesh |
+| Android phones only (no Mac) | Not supported. The mesh uses Apple's peer-to-peer Wi-Fi (MultipeerConnectivity), which Android does not speak | Everything |
+| Android phones with a Mac (browser joins on) | Chat, `@pasa` questions with rule and document chips, the room's tasks (read only), in the phone's browser over the same Wi-Fi as the Mac. See Android and other phones | Photos, voice notes, multi-hop relay, marking tasks done, admin. Plain HTTP, not encrypted. Not tested on a real Android phone yet |
+| Mixed iPhone and Android | iPhones and the Mac work as above. With browser joins on, Android phones on the Mac's Wi-Fi join through the Mac | Without the Mac, Android phones are left out |
 
 The "No AI computer nearby" line comes from the AI Mac's signed status heartbeat (sent every 10 s). A Mac that is connected but busy with a long answer keeps sending it, so the phone shows typing dots, not the line; the line appears only after 35 s with no heartbeat, or when no AI Mac was ever heard. It promises an answer only while the question is still in the phone's resend list (one day, 8 tries); after that it says "Ask again when the Mac is nearby." A voice note sent with no AI Mac nearby still reaches the room, with a notice that transcripts and spoken questions need the Mac.
 
@@ -237,6 +238,7 @@ Honest status for this prototype:
 - **Town Square is open.** Town Square is the open room every device starts in ("Open to everyone nearby. No code needed."). Its key is public (it is derived from a fixed string in the code) so every updated device lands in the same room without setup. Treat Town Square as readable by anyone running Pasa nearby. It was called the Default room before Oct 9, 2026; only the shown name changed (its internal label `DEFAULT`, key and room tag are the same), so older builds, saved chat and rules still meet in it (phones on older builds still show it as "Default (open)"). The names Town Square and Default are reserved for new rooms.
 - **Relays see routing metadata.** The clear header carries the version, message id, room tag, origin device id, destination, hop budget and path, so a relay can see which devices talk and how often, but not what they say.
 - **Room admin keys are real, devices still are not.** Each device has a Curve25519 key pair. Room state (members, cap, closed, Listed, co-admins, key epoch) is a manifest signed by the room admin's key, and every device checks that signature. The first admin key a device sees is trusted (from the QR code, or from the first signed manifest it hears): if an attacker is there first, the device trusts the wrong key. Links still do not verify devices (`securityIdentity: nil`), and rules, tasks and team memory updates are still accepted from any room member, so the older device-id admin check for rules is a safeguard for honest teams, not real security.
+- **Browser joins are plain HTTP (off by default).** When the Mac admin turns on browser joins, the Mac listens on port 8787 on the local network. Browser members' messages are not encrypted on the Wi-Fi; see Android and other phones for the checks and limits.
 - **The AI Mac can read its room.** It holds the key of every room it has joined and stores that room's memory in plain JSON.
 - **Data stays local.** Nothing goes to the internet. Passcodes are never stored. Room keys (`rooms.json`), team memory, timelines and cached photos and voice notes are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected only by the device's own storage encryption. Device keys (`identity.json`) are not in the Keychain yet either.
 
@@ -250,7 +252,7 @@ Honest status for this prototype:
 - Range is whatever peer-to-peer Wi-Fi reaches between two devices (roughly a room to a building floor); the mesh extends it hop by hop. We will publish measured numbers only.
 - One-way latency compares two device clocks, so it can be off by the clock difference. The app hides one-way times that are negative or implausible. The round trip for an `@pasa` ask is measured on one device and is exact.
 - Room content is sealed, but the key is shared by the whole room, devices are not authenticated, and relays see routing metadata (see Security). This is a prototype, not a secure messenger.
-- Passcode rooms are joined by typing the name and passcode or pasting the join string. Code rooms (see Room codes and QR join) are joined by scanning the QR code with the iPhone camera or typing the name and code; both need Pasa installed, and there is no offline web page for people without the app. A typo in the name or passcode lands in a different, empty room; when the name matches a nearby Listed room, Pasa says the passcode is wrong instead. Leaving a room does not revoke the key (an admin must kick), and there is no way to change a room's passcode (make a new room).
+- Passcode rooms are joined by typing the name and passcode or pasting the join string. Code rooms (see Room codes and QR join) are joined by scanning the QR code with the iPhone camera or typing the name and code; both need Pasa installed. People without the app can join Town Square or a code room in a phone browser only when the Mac turns on browser joins (see Android and other phones). A typo in the name or passcode lands in a different, empty room; when the name matches a nearby Listed room, Pasa says the passcode is wrong instead. Leaving a room does not revoke the key (an admin must kick), and there is no way to change a room's passcode (make a new room).
 - Joining a new room needs an admin device of that room linked to the mesh, because only an admin can hand out the room key. Create class rooms on the AI Mac so the admin is always there.
 - Photos and voice notes: one file at most 640 KB (photos are shrunk to about 200 KB, voice notes stop at 30 s). Every chunk is broadcast to the whole mesh, so a photo costs every relay about 360 KB of traffic. Chunks are not kept in the outbox; a device that missed them gets them again only from a teammate who has the file and is linked. Unfinished transfers are kept in memory only and give up after 6 retries or 30 minutes. Transfer speeds have not been measured yet.
 - Voice note transcripts need the AI Mac (phones do not transcribe). The transcription path has not been run end to end yet: the QA harness could not get Speech Recognition permission from the command line (BLOCKED), so it waits for a real voice note from a phone and an on-device speech model for the chosen language. Filipino (`fil-PH`) may not have one; Pasa then uses English (US) and says so. Transcript quality for Tagalog and Taglish has not been measured.
@@ -293,6 +295,33 @@ The Mac's onboarding ends with **Create your room**: type a name (for example `G
 - **Expiry:** off, 1 hour or 1 day. It is in the link and in the signed manifest, and the admin refuses joins after it (the phone also refuses an expired link before asking).
 - **Approve new members:** when on, valid join requests wait in a list on the admin's join screen with Approve and Deny. The list lives in memory only (it clears when the app restarts; the phone can ask again).
 - **Security limits:** the room identity comes from the name only, so anyone who knows the room name can read the room's control messages (member device names and public keys in the manifest), but not chat, tasks, rules or answers, which use the random content key. The code is stored on the creator's device so it can show the join screen (passcode rooms never store the passcode). An 8-character code is about 40 bits; someone who records a join request could try to guess it offline, slowed by PBKDF2. Phones on builds older than this one cannot join code rooms.
+
+## Android and other phones
+Android phones cannot join the iPhone mesh, so the AI Mac can serve a small chat page on the local network instead. It is off by default.
+
+Setup (no internet needed):
+1. Put the Mac and the phones on the same Wi-Fi. With no Wi-Fi router, turn on one Android phone's hotspot and join the Mac to it.
+2. On the Mac, open Settings, Room, Show join screen, and turn on "Let Android and other phones join in a browser".
+3. The join screen now shows one QR code. It opens `http://<Mac's local address>:8787/join?room=<room name>`. The room code is never in this QR or link.
+4. On the phone, scan the QR with the camera, type the room code (Town Square needs none) and your name, then chat.
+5. iPhones with Pasa can tap "Open in Pasa app" on that page. The app opens with the room name filled in, and you type the code there.
+
+What a browser member gets: chat with the room (shown as "Ana (via Mac)"), `@pasa` questions answered by the Mac with rule chips and document chips (tap for a short excerpt, at most 600 characters), and the room's tasks, read only. Answers to a browser member's questions go only to that browser, like answers to an iPhone.
+
+How it is protected:
+- Off until the Mac admin turns it on; the setting can be turned off at any time.
+- Local network only: the Mac refuses connections from addresses outside private, link-local and loopback ranges.
+- A code room needs its current code. The Mac checks it with the same key derivation the app uses (PBKDF2 code key, checked against the signed room record) and refuses expired codes. "New code" signs every browser member of that room out.
+- After the check the browser gets a random session token, kept in the tab and sent in a header, never in the URL. Sessions end after 12 hours idle, when the member taps Leave, or when the gateway is turned off.
+- Join tries are limited (5 a minute per address, 30 a minute in total) and so are messages (20 a minute per member). Requests are capped at 16 KB.
+- The page is one bundled file: no scripts, fonts or images from the internet, and user text is never inserted as HTML.
+
+Honest limits:
+- Plain HTTP. Anyone on the same Wi-Fi who captures traffic can read what browser members send and receive. The Pasa app on iPhone stays end-to-end sealed with the room key.
+- The Mac must be present and on the same Wi-Fi. There is no relay between browsers, and no browser-only mode.
+- Not tested on a real Android phone yet. Tested on Oct 9, 2026 at about 11:00 PM PHT with `curl` and headless Chrome at phone size against the Mac app: page served with nothing loaded from elsewhere, Town Square join, an `@pasa` question answered in about 6 seconds, wrong-method, oversize and token-less requests refused, sixth join try in a minute refused with Retry-After.
+- Browser members cannot send photos or voice notes, mark tasks done, or use admin controls. Passcode rooms and invite-string rooms stay app only.
+- The page polls the Mac every 1.5 seconds; this is fine for a classroom, not for hundreds of phones.
 
 ## Knowledge
 A general local knowledge base for any room: a teacher's lessons, a crew's safety manual, a clinic's protocols, a barangay's ordinances. A room admin adds files on the AI Mac and anyone in the room can ask `@pasa` about them. Code: `Libre/Sources/AI/Library.swift`, `Libre/Sources/AI/LibraryText.swift`, `Libre/Sources/Core/LibraryModels.swift`, `Libre/Sources/Mesh/KnowledgeService.swift`, `Libre/Sources/Views/KnowledgeView.swift`, tests: `Tests/CoreTests/LibraryTests.swift`, real run: `scripts/qa-harness.sh n`.

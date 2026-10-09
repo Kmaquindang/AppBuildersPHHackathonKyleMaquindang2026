@@ -107,6 +107,15 @@ struct RoomSettingsSection: View {
     @State private var showJoin = false
     @State private var confirmLeave = false
     @State private var showShare = false
+
+    /// Code rooms this device created; on the Mac also Town Square and any code room (browser joins).
+    private var showJoinScreenButton: Bool {
+        #if os(macOS)
+        return mesh.activeJoinLink != nil || mesh.gatewayCanJoin(mesh.activeRoom)
+        #else
+        return mesh.activeJoinLink != nil
+        #endif
+    }
     @State private var showCodeCreate = false
     @State private var showCodeJoin = false
 
@@ -118,7 +127,7 @@ struct RoomSettingsSection: View {
                     if let subtitle = mesh.activeRoom.subtitle { RoomSubtitle(text: subtitle).multilineTextAlignment(.trailing) }
                 }
             }
-            if mesh.activeJoinLink != nil {
+            if showJoinScreenButton {
                 Button { showShare = true } label: { Label("Show join screen (QR and code)", systemImage: "qrcode") }
             }
             Button { showCodeCreate = true } label: { Label("Create a room with a code", systemImage: "plus.rectangle.on.rectangle") }

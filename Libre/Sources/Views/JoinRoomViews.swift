@@ -81,9 +81,12 @@ struct RoomShareView: View {
     #endif
 
     var body: some View {
-        if let link = mesh.activeJoinLink {
-            VStack(alignment: .leading, spacing: 12) {
-                JoinCard(link: link, hidden: hidden, qrSize: 220)
+        VStack(alignment: .leading, spacing: 12) {
+            #if os(macOS)
+            if mesh.gatewayCanJoin(mesh.activeRoom) { BrowserGatewayControls() }
+            #endif
+            if let link = mesh.activeJoinLink {
+                JoinCard(link: link, hidden: hidden, qrSize: 220, browserURL: browserURL)
                 HStack {
                     Button(hidden ? "Show code" : "Hide code") { hidden.toggle() }
                     Button("New code...") { confirmNew = true }
@@ -106,23 +109,37 @@ struct RoomShareView: View {
                     get: { mesh.activeRoom.gov?.manifest?.approval == true },
                     set: { mesh.setJoinApproval($0) }))
                 PendingJoinsList()
-                Text("Every phone needs Pasa installed. There is no web page to join offline.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } else if let url = browserURL {
+                BrowserJoinCard(room: mesh.activeRoom.displayName, url: url, open: mesh.activeRoom.isDefault, qrSize: 220)
+            } else {
+                Text(mesh.activeRoom.usesCode
+                     ? "Only the device that created \(mesh.activeRoom.displayName) can show its code."
+                     : "This room has no join code. Create a room with a code to show a join screen.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
-            .confirmationDialog("Make a new code? Everyone who is not an admin must enter the new code to stay in the room.", isPresented: $confirmNew) {
-                ForEach(CodeExpiry.allCases, id: \.self) { choice in
-                    Button("New code (expires: \(choice.label))") { Task { await mesh.newRoomCode(expiry: choice) } }
-                }
-            }
-            #if os(iOS)
-            .fullScreenCover(isPresented: $projector) { ProjectorView().environmentObject(mesh) }
-            #endif
-        } else {
-            Text(mesh.activeRoom.usesCode
-                 ? "Only the device that created \(mesh.activeRoom.displayName) can show its code."
-                 : "This room has no join code. Create a room with a code to show a join screen.")
-                .font(.callout).foregroundStyle(.secondary)
+            Text(browserURL == nil
+                 ? "This QR opens the Pasa app. Every phone needs Pasa installed. Android phones can join in a browser if you turn on browser joins."
+                 : "This QR opens a page in any phone browser. iPhones with Pasa can tap Open in Pasa app on that page.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .confirmationDialog("Make a new code? Everyone who is not an admin must enter the new code to stay in the room.", isPresented: $confirmNew) {
+            ForEach(CodeExpiry.allCases, id: \.self) { choice in
+                Button("New code (expires: \(choice.label))") { Task { await mesh.newRoomCode(expiry: choice) } }
+            }
+        }
+        #if os(iOS)
+        .fullScreenCover(isPresented: $projector) { ProjectorView().environmentObject(mesh) }
+        #endif
+    }
+
+    /// The browser QR (http on the local network) when browser joins are on. Never has the code.
+    private var browserURL: String? {
+        #if os(macOS)
+        return mesh.gatewayCanJoin(mesh.activeRoom) ? mesh.gatewayJoinURL(room: mesh.activeRoom) : nil
+        #else
+        return nil
+        #endif
     }
 
     /// Off when no expiry; otherwise the nearest choice (the exact time is on the card).
@@ -132,12 +149,81 @@ struct RoomShareView: View {
     }
 }
 
+#if os(macOS)
+/// Mac only: turn the browser gateway on or off, with the honest small print.
+struct BrowserGatewayControls: View {
+    @EnvironmentObject private var mesh: MeshService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Let Android and other phones join in a browser", isOn: Binding(
+                get: { mesh.gatewayOn }, set: { mesh.setGateway($0) }))
+                .font(.headline)
+            if mesh.gatewayOn {
+                if let problem = mesh.gatewayProblem {
+                    Text(problem).font(.callout).foregroundStyle(.red)
+                } else if mesh.gatewayAddress == nil {
+                    Text("This Mac is not on a Wi-Fi network. Join the same Wi-Fi or phone hotspot as the phones.")
+                        .font(.callout).foregroundStyle(.orange)
+                } else if mesh.gatewayPort == 0 {
+                    Text("Starting...").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Text("Browser members now: \(mesh.gatewayMembers)").font(.callout)
+                }
+                Text("Phones must be on the same Wi-Fi as this Mac. The browser page is plain HTTP: people on the same Wi-Fi could read browser members' messages. The Pasa app stays encrypted.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Off. Only phones with the Pasa app can join.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear { mesh.refreshGatewayAddress() }
+    }
+}
+#endif
+
+/// Browser QR for a room without a printable code here (Town Square, or a code room this Mac
+/// did not create: the browser user types the code shown on the creator's screen).
+struct BrowserJoinCard: View {
+    let room: String
+    let url: String
+    var open: Bool
+    var qrSize: CGFloat = 220
+    var big = false
+
+    var body: some View {
+        VStack(spacing: big ? 28 : 10) {
+            if let image = RoomQRCode.render(url) {
+                Image(decorative: image, scale: 1)
+                    .interpolation(.none).resizable().scaledToFit()
+                    .frame(width: qrSize, height: qrSize)
+                    .padding(big ? 24 : 8)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityLabel("QR code to open the join page for \(room)")
+            }
+            Text("Room").font(big ? .title2 : .caption).foregroundStyle(.secondary)
+            Text(room)
+                .font(.system(size: big ? 96 : 34, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.4).lineLimit(1)
+            Text(open ? "No code needed." : "Type the room code on the page.")
+                .font(big ? .title2 : .headline)
+            Text(url).font(big ? .title3 : .caption).textSelection(.enabled).foregroundStyle(.secondary)
+            Text("Scan with the phone camera. Same Wi-Fi as this Mac.")
+                .font(big ? .title3 : .caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// QR code plus the name and code in big type.
 struct JoinCard: View {
     let link: JoinLink
     var hidden = false
     var qrSize: CGFloat = 220
     var big: Bool = false
+    /// When browser joins are on: the QR opens the Mac's local page (room only, never the code).
+    var browserURL: String? = nil
 
     var body: some View {
         VStack(spacing: big ? 28 : 10) {
@@ -146,13 +232,17 @@ struct JoinCard: View {
                     .frame(width: qrSize, height: qrSize)
                     .overlay(Label("Code hidden", systemImage: "eye.slash").foregroundStyle(.secondary))
                     .accessibilityLabel("QR code hidden")
-            } else if let image = RoomQRCode.render(link.url) {
+            } else if let image = RoomQRCode.render(browserURL ?? link.url) {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none).resizable().scaledToFit()
                     .frame(width: qrSize, height: qrSize)
                     .padding(big ? 24 : 8)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityLabel("QR code to join \(link.room)")
+                    .accessibilityLabel(browserURL == nil ? "QR code to join \(link.room) in the Pasa app" : "QR code to open the join page for \(link.room)")
+                if let browserURL {
+                    Text(browserURL).font(big ? .title3 : .caption).textSelection(.enabled).foregroundStyle(.secondary)
+                    Text("Scan with the phone camera. Same Wi-Fi as this Mac.").font(big ? .title3 : .caption).foregroundStyle(.secondary)
+                }
             }
             VStack(spacing: 4) {
                 Text("Room").font(big ? .title2 : .caption).foregroundStyle(.secondary)
@@ -207,18 +297,31 @@ struct ProjectorView: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.dismiss) private var dismiss
 
+    private var browserURL: String? {
+        #if os(macOS)
+        return mesh.gatewayCanJoin(mesh.activeRoom) ? mesh.gatewayJoinURL(room: mesh.activeRoom) : nil
+        #else
+        return nil
+        #endif
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color(white: 0.06).ignoresSafeArea()
             if let link = mesh.activeJoinLink {
                 VStack(spacing: 24) {
                     Text("Join with Pasa").font(.largeTitle.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
-                    JoinCard(link: link, qrSize: 420, big: true)
+                    JoinCard(link: link, qrSize: 420, big: true, browserURL: browserURL)
                         .foregroundStyle(.white)
-                    Text("Open Pasa, tap Scan QR, or type the room name and code.")
+                    Text(browserURL == nil ? "Open Pasa, tap Scan QR, or type the room name and code."
+                                           : "Scan with your phone camera, then type the code. Same Wi-Fi as this Mac.")
                         .font(.title2).foregroundStyle(.white.opacity(0.7))
                 }
                 .padding(40)
+            } else if let url = browserURL {
+                BrowserJoinCard(room: mesh.activeRoom.displayName, url: url, open: mesh.activeRoom.isDefault, qrSize: 420, big: true)
+                    .foregroundStyle(.white)
+                    .padding(40)
             } else {
                 Text("No join code for this room.").font(.title).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -242,10 +345,22 @@ struct ProjectorView: View {
 }
 
 /// Phone (and Mac) join: scan the QR code, or type the room name and code.
+/// Room name handed over by a room-only link (browser page "Open in Pasa app").
+struct JoinPrefill: Identifiable, Equatable {
+    let id = UUID()
+    let room: String
+}
+
 struct CodeJoinView: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
+    @State private var name: String
+    private let prefilled: Bool
+
+    init(room: String = "") {
+        _name = State(initialValue: room)
+        prefilled = !room.isEmpty
+    }
     @State private var code = ""
     @State private var message: String?
     @State private var scanning = false
@@ -277,9 +392,9 @@ struct CodeJoinView: View {
                     } label: { BusyLabel(title: "Join room", busy: mesh.roomBusy) }
                     .disabled(mesh.roomBusy || Room.cleanLabel(name).isEmpty || !JoinCode.isValid(code))
                 } header: {
-                    Text("Or type it")
+                    Text(prefilled ? "Type the code for \(name)" : "Or type it")
                 } footer: {
-                    Text("Codes use only letters and numbers that cannot be mixed up (no 0, O, 1 or I). Pasa must be installed on this phone; there is no web page to join offline.")
+                    Text("Codes use only letters and numbers that cannot be mixed up (no 0, O, 1 or I). The code is on the room admin's screen.")
                 }
                 if let message {
                     Section { Text(message).font(.callout) }
@@ -297,7 +412,13 @@ struct CodeJoinView: View {
                         code = link.code
                         Task { await join(name: link.room, code: link.code, expiresAt: link.expiresAt) }
                     case .failure:
-                        message = "That QR code is not a Pasa room link."
+                        // The Mac's browser QR (http://.../join?room=X): fill in the room, type the code.
+                        if let room = GatewayNet.roomFromJoinURL(text) ?? JoinLink.roomOnly(text) {
+                            name = room
+                            message = "Room \(room) filled in. Type the code shown on the screen."
+                        } else {
+                            message = "That QR code is not a Pasa room link."
+                        }
                     }
                 }
             }

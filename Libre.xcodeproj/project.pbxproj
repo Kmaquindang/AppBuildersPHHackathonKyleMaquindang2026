@@ -60,10 +60,14 @@
 		5A315A6B276143E804C4995A /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
 		F2F9901F857E5BDC755381E6 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E419827533441B981A0750D8 /* LibraryModels.swift */; };
 		0385A3E9A78D054A751691EA /* JoinCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A22D25E71B22952CC6D5883 /* JoinCode.swift */; };
+		949D217CB3A79A330C5B0307 /* WebGatewayPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A8AA71FE800E377CF280E5 /* WebGatewayPage.swift */; };
+		13D817B8115E856CF0C56E22 /* WebGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981D14B2EAE96D1721A92CE4 /* WebGateway.swift */; };
 		1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
 		7BC8C733359CC8858ABF1240 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E419827533441B981A0750D8 /* LibraryModels.swift */; };
 		6CFC7E13E2EE15AF299CCBDA /* JoinCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A22D25E71B22952CC6D5883 /* JoinCode.swift */; };
+		977DEB723BA13399997D6F1B /* WebGatewayPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A8AA71FE800E377CF280E5 /* WebGatewayPage.swift */; };
+		5C8EB16DE27147FF14595756 /* WebGateway.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981D14B2EAE96D1721A92CE4 /* WebGateway.swift */; };
 		D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5C64ED549D285F92BB0D7FE2 /* AssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */; };
 		047ED0EDA2C31942002386BF /* MacSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73498396C3CAB6F3F557DCA9 /* MacSetupView.swift */; };
@@ -92,6 +96,7 @@
 		136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */; };
 		964249A70E25CF0FFC45A78C /* MeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3C46472A4C8518C4C814A3 /* MeshService.swift */; };
 		0CB5EBF916A2DEEFDF7A0AB6 /* KnowledgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD69A699F42264931D8F2F09 /* KnowledgeService.swift */; };
+		90381BD084E486AD661986A2 /* WebGatewayServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC21F74841AD398B070EE99 /* WebGatewayServer.swift */; };
 		0A16656FEC634DC667EC083D /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */; };
 		C3380AEF1DC29B412B8EC514 /* MacSetupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDF8863C8E814935B113B91 /* MacSetupService.swift */; };
 		8D1024B102A8199B7ED77F54 /* VisionImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1669F4A3B97C826F6591D1AF /* VisionImage.swift */; };
@@ -114,6 +119,7 @@
 		C1F5594115CCD59706B4BDA6 /* NameMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */; };
 		CA4EC827054E09E1D9E9E8D4 /* MeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3C46472A4C8518C4C814A3 /* MeshService.swift */; };
 		F4EAD9DF2CF6A13E2F318D78 /* KnowledgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD69A699F42264931D8F2F09 /* KnowledgeService.swift */; };
+		60EE9FABD352DC2BD31C267E /* WebGatewayServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC21F74841AD398B070EE99 /* WebGatewayServer.swift */; };
 		93ACD6103DD5DE20C401B6D4 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */; };
 		694FEFD04B95B5376924A683 /* MacSetupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDF8863C8E814935B113B91 /* MacSetupService.swift */; };
 		FD7696D0E879EF4AF76AD484 /* VisionImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1669F4A3B97C826F6591D1AF /* VisionImage.swift */; };
@@ -164,6 +170,7 @@
 		30AE14CEF94F6031C7ECF593 /* Libre-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Libre-macOS.entitlements"; sourceTree = "<group>"; };
 		3E3C46472A4C8518C4C814A3 /* MeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshService.swift; sourceTree = "<group>"; };
 		BD69A699F42264931D8F2F09 /* KnowledgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeService.swift; sourceTree = "<group>"; };
+		1AC21F74841AD398B070EE99 /* WebGatewayServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebGatewayServer.swift; sourceTree = "<group>"; };
 		EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		9EDF8863C8E814935B113B91 /* MacSetupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSetupService.swift; sourceTree = "<group>"; };
 		1669F4A3B97C826F6591D1AF /* VisionImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionImage.swift; sourceTree = "<group>"; };
@@ -209,6 +216,8 @@
 		D58E2D580356DC437F05A0CD /* OrgModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgModels.swift; sourceTree = "<group>"; };
 		E419827533441B981A0750D8 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
 		1A22D25E71B22952CC6D5883 /* JoinCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinCode.swift; sourceTree = "<group>"; };
+		58A8AA71FE800E377CF280E5 /* WebGatewayPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebGatewayPage.swift; sourceTree = "<group>"; };
+		981D14B2EAE96D1721A92CE4 /* WebGateway.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebGateway.swift; sourceTree = "<group>"; };
 		5D0610BC65FEE5454D52E807 /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
 		D6FEB7041148C8E7236CCACB /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		E71424B599E943648E0F4282 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -243,6 +252,7 @@
 			children = (
 				3E3C46472A4C8518C4C814A3 /* MeshService.swift */,
 				BD69A699F42264931D8F2F09 /* KnowledgeService.swift */,
+				1AC21F74841AD398B070EE99 /* WebGatewayServer.swift */,
 				EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */,
 				9EDF8863C8E814935B113B91 /* MacSetupService.swift */,
 				1669F4A3B97C826F6591D1AF /* VisionImage.swift */,
@@ -315,6 +325,8 @@
 				D58E2D580356DC437F05A0CD /* OrgModels.swift */,
 				E419827533441B981A0750D8 /* LibraryModels.swift */,
 				1A22D25E71B22952CC6D5883 /* JoinCode.swift */,
+				58A8AA71FE800E377CF280E5 /* WebGatewayPage.swift */,
+				981D14B2EAE96D1721A92CE4 /* WebGateway.swift */,
 				5D0610BC65FEE5454D52E807 /* TaskDetails.swift */,
 				68EB20852E75BC8350878E33 /* People.swift */,
 				F379B52A6BD676489720A926 /* MeshPolicy.swift */,
@@ -495,6 +507,7 @@
 				C09DB26CD2F6ABD903F6ABDC /* MeshPayload.swift in Sources */,
 				964249A70E25CF0FFC45A78C /* MeshService.swift in Sources */,
 				0CB5EBF916A2DEEFDF7A0AB6 /* KnowledgeService.swift in Sources */,
+				90381BD084E486AD661986A2 /* WebGatewayServer.swift in Sources */,
 				0A16656FEC634DC667EC083D /* VoiceTranscriber.swift in Sources */,
 				C3380AEF1DC29B412B8EC514 /* MacSetupService.swift in Sources */,
 				8D1024B102A8199B7ED77F54 /* VisionImage.swift in Sources */,
@@ -506,6 +519,8 @@
 				5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */,
 				7BC8C733359CC8858ABF1240 /* LibraryModels.swift in Sources */,
 				6CFC7E13E2EE15AF299CCBDA /* JoinCode.swift in Sources */,
+				977DEB723BA13399997D6F1B /* WebGatewayPage.swift in Sources */,
+				5C8EB16DE27147FF14595756 /* WebGateway.swift in Sources */,
 				D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */,
 				630F9BF63AE308FFE4AB9D7B /* PeerStripView.swift in Sources */,
 				D4DCCE15241436706548CB37 /* People.swift in Sources */,
@@ -568,6 +583,7 @@
 				095F6D943987B5B3E62BE86E /* MeshPayload.swift in Sources */,
 				CA4EC827054E09E1D9E9E8D4 /* MeshService.swift in Sources */,
 				F4EAD9DF2CF6A13E2F318D78 /* KnowledgeService.swift in Sources */,
+				60EE9FABD352DC2BD31C267E /* WebGatewayServer.swift in Sources */,
 				93ACD6103DD5DE20C401B6D4 /* VoiceTranscriber.swift in Sources */,
 				694FEFD04B95B5376924A683 /* MacSetupService.swift in Sources */,
 				FD7696D0E879EF4AF76AD484 /* VisionImage.swift in Sources */,
@@ -579,6 +595,8 @@
 				5A315A6B276143E804C4995A /* OrgModels.swift in Sources */,
 				F2F9901F857E5BDC755381E6 /* LibraryModels.swift in Sources */,
 				0385A3E9A78D054A751691EA /* JoinCode.swift in Sources */,
+				949D217CB3A79A330C5B0307 /* WebGatewayPage.swift in Sources */,
+				13D817B8115E856CF0C56E22 /* WebGateway.swift in Sources */,
 				1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */,
 				9886BB428215ABD8165DE5A9 /* PeerStripView.swift in Sources */,
 				44A24D1A140D5B4576D00374 /* People.swift in Sources */,
