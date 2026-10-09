@@ -47,12 +47,20 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 - **Team memory rules:** anyone can add a rule or skill. Only admin devices (default `iPhone 14 Pro Max` plus the Mac itself, configurable) can edit, lock or unlock an existing rule. Every edit becomes a new version and the old one stays in history. When copies meet, the newest version wins.
 - **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it. When a phone links, the Mac sends it the current rules and its open tasks.
 
+## Hardware tested on
+- MacBook Air M3, 16 GB RAM (AI peer and team memory, runs Ollama). Mac app built and running Oct 9.
+- iPhone 14 Pro Max (admin phone). App installed and running Oct 9.
+- iPhone 12 (relay and ask device). Install pending.
+
+## Screenshots
+Screenshots are coming from real runs on the devices above.
+
 ## Measured performance
 Measured live on the hardware listed below; the Mac dashboard shows latency per request and tokens per second (Ollama `eval_count / eval_duration`). Numbers will be filled in from real runs only.
 
 | Measurement | MacBook Air M3 16 GB, qwen3:8b | MacBook Air M3 16 GB, qwen3:4b |
 |---|---|---|
-| Generation speed (tokens/s) | to be measured | to be measured |
+| Generation speed (tokens/s) | 15.6 (one warm run, direct Ollama API call, Oct 9; in-app numbers to follow) | to be measured |
 | Ask to answer, assistant intent with model (ms) | to be measured | to be measured |
 | Ask to answer, fast path without model (ms) | to be measured | to be measured |
 | Round trip iPhone 12 -> iPhone 14 Pro Max -> Mac and back (ms) | to be measured | to be measured |
