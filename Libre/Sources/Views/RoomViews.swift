@@ -396,7 +396,12 @@ struct RoomAdminSection: View {
                 ForEach(m.members) { member in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(member.name + (mesh.isMe(member) ? " (you)" : "") + (mesh.isCoAdmin(member) ? " (co-admin)" : ""))
+                            let role = mesh.roomRole(of: member)
+                            HStack(spacing: 4) {
+                                Text(member.name + (mesh.isMe(member) ? " (you)" : ""))
+                                if role.isAdmin { AdminBadge(role: role, showWord: true) }
+                            }
+                            .accessibilityElement(children: .combine)
                             Text("\(member.device), key \(member.fingerprint)").font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()

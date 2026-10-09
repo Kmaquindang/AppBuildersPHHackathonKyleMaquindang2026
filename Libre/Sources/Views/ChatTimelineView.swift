@@ -43,6 +43,7 @@ struct ChatTimelineView: View {
                     ForEach(entries) { entry in
                         let row = layout[entry.id] ?? ChatRowLayout(timestamp: nil, showName: true, firstInGroup: true, lastInGroup: true, statusWord: nil)
                         MessageRow(entry: entry, layout: row, sender: mesh.senderLabel(for: entry.message), names: names,
+                                   role: entry.message.kind == .answer ? nil : mesh.roomRole(forDevice: entry.message.origin),
                                    status: statuses[entry.id] ?? .received, myDevice: mesh.displayName,
                                    canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
                                    onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") },
@@ -165,6 +166,8 @@ struct MessageRow: View {
     let sender: String
     /// Device id -> chosen display name.
     let names: [String: String]
+    /// Admin badge from the room's signed manifest (nil in rooms without one, like Default).
+    var role: RoomRole? = nil
     var status: BubbleStatus = .received
     /// This device's id (for its own line on a summary card).
     var myDevice: String = ""
@@ -192,7 +195,10 @@ struct MessageRow: View {
                     .accessibilityAddTraits(.isHeader)
             }
             if layout.showName {
-                Text(sender)
+                HStack(spacing: 3) {
+                    Text(sender)
+                    if let role { AdminBadge(role: role) }
+                }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, (isPasa ? BubbleStyle.avatar + 6 : 0) + 12)
@@ -333,6 +339,7 @@ struct MessageRow: View {
     /// VoiceOver: sender, text, rules, time, status.
     private var spokenLabel: String {
         var parts = [isMine ? "You" : (isPasa ? "Pasa" : sender)]
+        if !isPasa, let spoken = role?.spoken { parts.append(spoken) }
         if message.kind == .task { parts.append("Task") }
         if message.kind == .rule { parts.append("Rule") }
         if let card = message.card { parts.append(card == "summary" ? "Daily summary" : "Photo check") }
@@ -357,6 +364,27 @@ func copyToPasteboard(_ text: String) {
 }
 
 // MARK: - Pieces
+
+/// Small crown (room creator) or shield (co-admin) next to a name. Read as "admin" by VoiceOver.
+struct AdminBadge: View {
+    let role: RoomRole
+    var showWord = false
+
+    var body: some View {
+        if let symbol = role.symbol {
+            HStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .foregroundStyle(role == .creator ? Color.orange : Color.accentColor)
+                if showWord {
+                    Text(role == .creator ? "Creator" : "Admin").foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(role.spoken ?? "admin")
+        }
+    }
+}
 
 struct PasaAvatar: View {
     var body: some View {
@@ -566,7 +594,16 @@ struct MessageDetailsSheet: View {
                     }
                 }
                 Section("Delivery") {
-                    row("From \(label(message.origin))", symbol: "person")
+                    let role = message.kind == .answer ? nil : mesh.roomRole(forDevice: message.origin)
+                    Label {
+                        HStack(spacing: 4) {
+                            Text("From \(label(message.origin))")
+                            if let role { AdminBadge(role: role, showWord: true) }
+                        }
+                    } icon: {
+                        Image(systemName: "person").foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
                     row(message.createdAt.formatted(date: .abbreviated, time: .standard), symbol: "clock")
                     if entry.direction == .sent {
                         row(entry.sentTo.isEmpty ? "Queued. Sends when a teammate is in range." : "Handed to \(entry.sentTo.map(label).joined(separator: ", "))",

@@ -23,6 +23,7 @@
 		373691461211877260B9AC9B /* AssistantPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */; };
 		39EF21D8502684A5D5E3FDE9 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */; };
 		75C6DDD6D79ADE9403D8E98C /* Retrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A500F48269B909767508F /* Retrieval.swift */; };
+		582D5D31D489CD7037171502 /* ConversationMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3715F9E9CFED0EFF941AD60F /* ConversationMemory.swift */; };
 		E64F882D58743AE015A3230A /* MacSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1090058612ED5A20A04DF683 /* MacSetup.swift */; };
 		EDB559E6BEDD66E7813959D7 /* Benchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C52BC019AAA79BF8681C928 /* Benchmark.swift */; };
 		82D59309065D65FB0D70258D /* Vision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824716F47AEEE79CEA06DC6 /* Vision.swift */; };
@@ -31,6 +32,7 @@
 		4BDCC8E38B3B2F8CB5EE6EA5 /* AnswerStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8669A129346743B9AEBA225 /* AnswerStyle.swift */; };
 		44188202F91D2C0DE2071A20 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */; };
 		CB7955D0E97E0B424CEA51D3 /* Retrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A500F48269B909767508F /* Retrieval.swift */; };
+		FA63F92978FEAD31077200A0 /* ConversationMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3715F9E9CFED0EFF941AD60F /* ConversationMemory.swift */; };
 		16287D69E579B43CFB7DA26C /* MacSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1090058612ED5A20A04DF683 /* MacSetup.swift */; };
 		A09C8404D97174D7441505E1 /* Benchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C52BC019AAA79BF8681C928 /* Benchmark.swift */; };
 		EB9DEC452C7222E8C54E18D3 /* Vision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824716F47AEEE79CEA06DC6 /* Vision.swift */; };
@@ -128,6 +130,7 @@
 		030DCA88E0E635C2077D1DAA /* Compactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Compactor.swift; sourceTree = "<group>"; };
 		0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMClient.swift; sourceTree = "<group>"; };
 		F07A500F48269B909767508F /* Retrieval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Retrieval.swift; sourceTree = "<group>"; };
+		3715F9E9CFED0EFF941AD60F /* ConversationMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationMemory.swift; sourceTree = "<group>"; };
 		1090058612ED5A20A04DF683 /* MacSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSetup.swift; sourceTree = "<group>"; };
 		7C52BC019AAA79BF8681C928 /* Benchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Benchmark.swift; sourceTree = "<group>"; };
 		3824716F47AEEE79CEA06DC6 /* Vision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vision.swift; sourceTree = "<group>"; };
@@ -321,6 +324,7 @@
 				737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */,
 				0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */,
 				F07A500F48269B909767508F /* Retrieval.swift */,
+				3715F9E9CFED0EFF941AD60F /* ConversationMemory.swift */,
 				1090058612ED5A20A04DF683 /* MacSetup.swift */,
 				7C52BC019AAA79BF8681C928 /* Benchmark.swift */,
 				3824716F47AEEE79CEA06DC6 /* Vision.swift */,
@@ -445,6 +449,7 @@
 				6E551BA2F198CE111E650798 /* ExecutiveAssistant.swift in Sources */,
 				39EF21D8502684A5D5E3FDE9 /* LLMClient.swift in Sources */,
 				75C6DDD6D79ADE9403D8E98C /* Retrieval.swift in Sources */,
+				582D5D31D489CD7037171502 /* ConversationMemory.swift in Sources */,
 				E64F882D58743AE015A3230A /* MacSetup.swift in Sources */,
 				EDB559E6BEDD66E7813959D7 /* Benchmark.swift in Sources */,
 				82D59309065D65FB0D70258D /* Vision.swift in Sources */,
@@ -509,6 +514,7 @@
 				5C7A6DDE45A4253B435D4C19 /* ExecutiveAssistant.swift in Sources */,
 				44188202F91D2C0DE2071A20 /* LLMClient.swift in Sources */,
 				CB7955D0E97E0B424CEA51D3 /* Retrieval.swift in Sources */,
+				FA63F92978FEAD31077200A0 /* ConversationMemory.swift in Sources */,
 				16287D69E579B43CFB7DA26C /* MacSetup.swift in Sources */,
 				A09C8404D97174D7441505E1 /* Benchmark.swift in Sources */,
 				EB9DEC452C7222E8C54E18D3 /* Vision.swift in Sources */,

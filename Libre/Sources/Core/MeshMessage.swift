@@ -111,6 +111,9 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var unverifiedRules: [String]?
     /// For answers: true when no saved rule or note backs the answer.
     public var noRule: Bool?
+    /// For asks sent with staged photos ("@pasa what is this?" as a caption): the photos' media
+    /// ids. The AI Mac waits until the first one has arrived, then answers about it.
+    public var attachments: [UUID]? = nil
 
     public init(
         id: UUID = UUID(),

@@ -206,9 +206,57 @@ public struct OrgSnapshot: Codable, Hashable, Sendable {
     /// When the Mac's team memory was last reset. Phones learn it on the next link and drop
     /// cached rules and tasks the Mac no longer has.
     public var resetAt: Date? = nil
+    /// AI Mac only: every @pasa question and Pasa's answer in this room, oldest first (optional so
+    /// older files still decode). Never trimmed; the newest ones go into prompts verbatim.
+    public var thread: [ThreadTurn]? = nil
+    /// AI Mac only: rolling "room so far" summary of the oldest thread turns.
+    public var roomSummary: RoomSummary? = nil
 
     public init() {}
 
     /// Rules and skills still in force (tombstones of deleted rules left out).
     public var activeRules: [RuleEntry] { rules.filter { !$0.isRetired } }
+}
+
+/// One @pasa exchange: the question, who asked, and Pasa's answer.
+public struct ThreadTurn: Codable, Hashable, Sendable, Identifiable {
+    /// The ask's id (askKey), so a summary can name the range it covers.
+    public var id: UUID
+    public var asker: String
+    public var askerName: String
+    public var question: String
+    public var answer: String
+    public var at: Date
+
+    public init(id: UUID, asker: String, askerName: String, question: String, answer: String, at: Date) {
+        self.id = id
+        self.asker = asker
+        self.askerName = askerName
+        self.question = question
+        self.answer = answer
+        self.at = at
+    }
+}
+
+/// "Room so far": a short model-written summary of the oldest thread turns. It never holds rules,
+/// tasks or decisions (those stay structured and are retrieved fresh for every answer).
+public struct RoomSummary: Codable, Hashable, Sendable {
+    public var text: String
+    public var updatedAt: Date
+    /// First and last thread turn (ask ids) the summary covers, and how many.
+    public var firstTurn: UUID
+    public var lastTurn: UUID
+    public var turnCount: Int
+    public var coveredFrom: Date
+    public var coveredTo: Date
+
+    public init(text: String, updatedAt: Date, firstTurn: UUID, lastTurn: UUID, turnCount: Int, coveredFrom: Date, coveredTo: Date) {
+        self.text = text
+        self.updatedAt = updatedAt
+        self.firstTurn = firstTurn
+        self.lastTurn = lastTurn
+        self.turnCount = turnCount
+        self.coveredFrom = coveredFrom
+        self.coveredTo = coveredTo
+    }
 }

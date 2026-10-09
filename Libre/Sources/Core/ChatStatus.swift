@@ -208,3 +208,86 @@ public enum StatusWords {
             : "No one nearby. \(queued) messages will send when a teammate is in range."
     }
 }
+
+// MARK: - Composer staging (iMessage style: nothing sends until the send arrow)
+
+/// A photo (or voice note) waiting in the composer.
+public struct StagedItem: Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var kind: MediaKind
+    public var data: Data
+    public var mime: String
+    public var width: Int?
+    public var height: Int?
+    public var seconds: Double?
+
+    public init(id: UUID = UUID(), kind: MediaKind, data: Data, mime: String, width: Int? = nil, height: Int? = nil, seconds: Double? = nil) {
+        self.id = id
+        self.kind = kind
+        self.data = data
+        self.mime = mime
+        self.width = width
+        self.height = height
+        self.seconds = seconds
+    }
+}
+
+/// What the composer holds before the send arrow: text and up to 4 photos.
+public struct ComposerDraft: Equatable, Sendable {
+    public static let maxPhotos = 4
+
+    public var text: String
+    public private(set) var photos: [StagedItem]
+
+    public init(text: String = "", photos: [StagedItem] = []) {
+        self.text = text
+        self.photos = []
+        addPhotos(photos)
+    }
+
+    public var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The send arrow shows when there is text or at least one staged photo.
+    public var canSend: Bool { !trimmed.isEmpty || !photos.isEmpty }
+    public var photoSlots: Int { max(0, Self.maxPhotos - photos.count) }
+    public var isEmpty: Bool { trimmed.isEmpty && photos.isEmpty }
+
+    /// Adds photos up to the cap of 4. Returns how many did not fit.
+    @discardableResult
+    public mutating func addPhotos(_ items: [StagedItem]) -> Int {
+        let images = items.filter { $0.kind == .image }
+        let fit = Array(images.prefix(photoSlots))
+        photos.append(contentsOf: fit)
+        return items.count - fit.count
+    }
+
+    public mutating func removePhoto(_ id: UUID) {
+        photos.removeAll { $0.id == id }
+    }
+
+    public mutating func clear() {
+        text = ""
+        photos = []
+    }
+
+    public struct Plan: Equatable, Sendable {
+        public var photos: [StagedItem]
+        /// The caption or message text, nil when empty.
+        public var text: String?
+        /// The text starts with @pasa: with photos it becomes ONE ask about the photos.
+        public var isAsk: Bool
+        public var isEmpty: Bool { photos.isEmpty && text == nil }
+    }
+
+    /// Photos go first (each chunked as before), then the caption. An @pasa caption travels as one
+    /// ask that names the photos, so the AI Mac waits for them and answers about them.
+    public var plan: Plan {
+        let caption = trimmed.isEmpty ? nil : trimmed
+        return Plan(photos: photos, text: caption, isAsk: caption.map { AssistantMention.strip($0) != nil } ?? false)
+    }
+
+    /// VoiceOver label for a staged photo: "Photo 2 of 3, staged. Not sent yet."
+    public func accessibilityLabel(for id: UUID) -> String {
+        guard let index = photos.firstIndex(where: { $0.id == id }) else { return "Photo" }
+        return "Photo \(index + 1) of \(photos.count), staged. Not sent yet."
+    }
+}

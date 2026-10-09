@@ -44,6 +44,7 @@ struct LocalProofPanel: View {
                     }
                 }
                 .font(.caption)
+                conversationLine
                 Text("Link layer: \(mesh.discoveryRestarts) discovery restarts, \(mesh.discoveryRestartsCoalesced) folded or deferred (at most one per 15 s)")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -67,6 +68,31 @@ struct LocalProofPanel: View {
             Label("Proof: answers are made on this Mac", systemImage: "lock.shield")
         }
         .onAppear { mesh.refreshProof() }
+    }
+
+    /// Conversation memory for the room on screen: context fill of the last answer, turns kept
+    /// verbatim, recalled lines, last compaction and summary size.
+    @ViewBuilder
+    private var conversationLine: some View {
+        let stats = mesh.contextStats[mesh.activeRoom.id]
+        let summary = mesh.org.roomSummary
+        let turns = mesh.org.thread?.count ?? 0
+        VStack(alignment: .leading, spacing: 2) {
+            if let stats {
+                let pct = Int((stats.fill * 100).rounded())
+                TintedLabel(text: "Context \(pct)% of \(stats.contextTokens) tokens (compacts above 75%), \(stats.verbatimTurns) turns verbatim, \(stats.recalledLines) older lines recalled",
+                            symbol: "text.line.first.and.arrowtriangle.forward", tint: stats.fill > ConversationMemory.compactFraction ? .orange : .green,
+                            font: .caption.monospaced())
+            } else {
+                Text("Context: no answer in \(mesh.activeRoom.displayName) since this Mac started")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            Text(summary.map { "Room summary: \(PromptBudget.tokens($0.text)) tokens, covers \($0.turnCount) of \(turns) turns, last compaction \($0.updatedAt.formatted(date: .abbreviated, time: .shortened))" }
+                 ?? "Room summary: none yet (\(turns) turns saved, all kept)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
