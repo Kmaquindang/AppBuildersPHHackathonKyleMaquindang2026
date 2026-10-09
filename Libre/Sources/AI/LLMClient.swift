@@ -67,4 +67,24 @@ public protocol LLMClient: Sendable {
     var modelName: String { get }
     /// - Parameter json: ask the model for a single JSON object (Ollama format "json").
     func chat(_ messages: [ChatTurn], json: Bool) async throws -> LLMResult
+    /// Same, with a cap on generated tokens (Ollama num_predict). nil means no cap.
+    func chat(_ messages: [ChatTurn], json: Bool, maxTokens: Int?) async throws -> LLMResult
+}
+
+public extension LLMClient {
+    /// Clients without a token cap (test fakes) ignore it.
+    func chat(_ messages: [ChatTurn], json: Bool, maxTokens: Int?) async throws -> LLMResult {
+        try await chat(messages, json: json)
+    }
+}
+
+/// Generation caps per call (tokens). Short caps keep a chat reply fast and phone-sized; they
+/// are well above what the prompts ask for, so a normal reply is never cut.
+public enum TokenCaps {
+    /// Intent JSON (a rule body can be a few sentences).
+    public static let classify = 200
+    /// Chat answer: at most 2 or 3 short sentences plus citations.
+    public static let answer = 180
+    /// Catch-up: 3 short lines.
+    public static let summarize = 220
 }

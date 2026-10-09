@@ -72,12 +72,12 @@ func runAssistantTests() async {
     do {
         let (a, fake) = makeAssistant([])
         let saved = await a.handle("save rule: No site visits after 5 PM", from: "iPhone 12")
-        check(saved.modelCalls == 0 && saved.ruleUpdates.count == 1 && saved.reply.contains("[Rule: No site visits after 5 PM v1]"), "rule saved without a model call")
+        check(saved.modelCalls == 0 && saved.ruleUpdates.count == 1 && saved.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && !saved.reply.contains("[Rule"), "rule saved without a model call (chip, no tag)")
         check(fake.received.isEmpty, "no model used for save rule")
         let denied = await a.handle("update rule No site visits after 5 PM: after 6 PM is fine", from: "iPhone 12")
         check(denied.ruleUpdates.isEmpty && denied.reply.contains("Only an admin"), "non-admin edit denied")
         let edited = await a.handle("update rule No site visits after 5 PM: No site visits after 6 PM", from: "iPhone 14 Pro Max")
-        check(edited.ruleUpdates.first?.version == 2 && edited.reply.contains("v2"), "admin edit makes v2")
+        check(edited.ruleUpdates.first?.version == 2 && edited.rulesUsed.first?.contains("v2") == true, "admin edit makes v2")
         let locked = await a.handle("lock rule No site visits after 5 PM", from: "MacBook Air")
         check(locked.ruleUpdates.first?.locked == true, "Mac locks rule")
     }
@@ -87,12 +87,11 @@ func runAssistantTests() async {
         let mem = OrgMemory(admins: ["MacBook Air"])
         _ = mem.upsertRule(title: "No site visits after 5 PM", body: "No site visits after 5 PM.", by: "MacBook Air")
         let (a, fake) = makeAssistant([
-            .success(#"{"intent":"answer","question":"can I visit the site at 6 PM?"}"#),
             .success("No. Site visits end at 5 PM [Rule: No site visits after 5 PM v1].")
         ], memory: mem)
         let out = await a.handle("can I visit the site at 6 PM?", from: "iPhone 12")
-        check(out.intent == .answer && out.reply.contains("[Rule: No site visits after 5 PM v1]"), "answer cites rule")
-        check(out.modelCalls == 2 && out.compact == false, "two calls, not compact")
+        check(out.intent == .answer && out.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && out.reply == "No. Site visits end at 5 PM.", "answer cites rule as a chip: \(out.reply)")
+        check(out.modelCalls == 1 && out.compact == false, "plain question: one call, not compact")
         let composePrompt = fake.received.last?.last?.content ?? ""
         check(composePrompt.contains("[Rule: No site visits after 5 PM v1]") && composePrompt.contains("can I visit the site at 6 PM?"), "compose prompt is grounded in rules")
     }
@@ -100,7 +99,7 @@ func runAssistantTests() async {
     // Long answer is compacted; "more" returns the rest with no model call.
     do {
         let long = String(repeating: "Pour concrete early while it is cool and keep it wet for a week. ", count: 12)
-        let (a, fake) = makeAssistant([.success(#"{"intent":"answer"}"#), .success(long)])
+        let (a, fake) = makeAssistant([.success(long)])
         let first = await a.handle("how do I cure concrete in hot weather?", from: "iPhone 12")
         check(first.compact && first.reply.count <= Compactor.firstPacketLimit, "first packet compact")
         let more = await a.handle("more", from: "iPhone 12")
@@ -135,7 +134,7 @@ func runAssistantTests() async {
         check(out.intent == .takeNotes && out.taskUpdates.count == 2, "notes create two tasks")
         check(a.memory.notes.first?.title == "Monday huddle" && a.memory.notes.first?.taskIDs.count == 2, "note saved with task links")
         check(out.taskUpdates.first?.assigneeDevice == "iPhone 12", "note task routed to Ana")
-        check(out.reply.contains("[Note: Monday huddle]") && out.reply.contains("Pour on Tuesday"), "notes reply")
+        check(out.rulesUsed == ["[Note: Monday huddle]"] && out.reply.contains("Pour on Tuesday"), "notes reply")
     }
 
     // Ollama not running: clear message, no crash.

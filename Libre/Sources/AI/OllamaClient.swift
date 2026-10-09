@@ -58,13 +58,17 @@ public struct OllamaClient: LLMClient {
     public var modelName: String { model }
 
     public func chat(_ messages: [ChatTurn], json: Bool) async throws -> LLMResult {
+        try await chat(messages, json: json, maxTokens: nil)
+    }
+
+    public func chat(_ messages: [ChatTurn], json: Bool, maxTokens: Int?) async throws -> LLMResult {
         do {
-            return try await send(messages, json: json, model: model)
+            return try await send(messages, json: json, model: model, maxTokens: maxTokens)
         } catch LLMError.modelMissing(let missing) {
             guard let fallbackModel, !fallbackModel.isEmpty, fallbackModel != model else {
                 throw LLMError.modelMissing(missing)
             }
-            return try await send(messages, json: json, model: fallbackModel)
+            return try await send(messages, json: json, model: fallbackModel, maxTokens: maxTokens)
         }
     }
 
@@ -85,6 +89,12 @@ public struct OllamaClient: LLMClient {
     /// model stays loaded for `keepAlive`. While Pasa runs as the AI peer it re-sends this every
     /// few minutes (see WarmthPolicy), so the model stays loaded as long as the app runs and is
     /// unloaded by Ollama about an hour after Pasa quits. Returns the model that was loaded.
+    ///
+    /// The warm-up asks for the SAME context size as every chat call (num_ctx 8192). Without it
+    /// Ollama loads the model at its default 4096 and the next question reloads it at 8192,
+    /// which cost about 3 to 6 s on the first ask after every warm refresh (measured on Kyle's
+    /// MacBook Air M3, Oct 9 2026: chat after a plain warm-up 3973 ms with 3146 ms of load,
+    /// after a matched warm-up 721 ms with 5 ms of load).
     public static let keepAlive = "60m"
 
     @discardableResult
@@ -99,7 +109,8 @@ public struct OllamaClient: LLMClient {
         request.httpMethod = "POST"
         request.timeoutInterval = max(timeout, 180)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(WarmRequest(model: target, prompt: "", stream: false, keep_alive: OllamaClient.keepAlive))
+        request.httpBody = try JSONEncoder().encode(WarmRequest(model: target, prompt: "", stream: false, keep_alive: OllamaClient.keepAlive,
+                                                                options: .init(num_ctx: PromptBudget.contextTokens)))
         let (data, response) = try await perform(request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 404 { throw LLMError.modelMissing(target) }
@@ -134,14 +145,14 @@ public struct OllamaClient: LLMClient {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func send(_ messages: [ChatTurn], json: Bool, model: String) async throws -> LLMResult {
+    private func send(_ messages: [ChatTurn], json: Bool, model: String, maxTokens: Int? = nil) async throws -> LLMResult {
         let body = ChatRequest(
             model: model,
             messages: OllamaClient.prepare(messages, model: model),
             stream: false,
             think: OllamaClient.usesThinking(model) ? false : nil,
             format: json ? "json" : nil,
-            options: ChatRequest.Options(temperature: temperature, num_ctx: PromptBudget.contextTokens),
+            options: ChatRequest.Options(temperature: temperature, num_ctx: PromptBudget.contextTokens, num_predict: maxTokens),
             keep_alive: OllamaClient.keepAlive
         )
         var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
@@ -194,6 +205,8 @@ public struct OllamaClient: LLMClient {
         struct Options: Encodable {
             var temperature: Double
             var num_ctx: Int
+            /// Generation cap; omitted (no cap) when nil.
+            var num_predict: Int?
         }
         var model: String
         var messages: [ChatTurn]
@@ -205,10 +218,12 @@ public struct OllamaClient: LLMClient {
     }
 
     struct WarmRequest: Encodable {
+        struct Options: Encodable { var num_ctx: Int }
         var model: String
         var prompt: String
         var stream: Bool
         var keep_alive: String
+        var options: Options
     }
 
     struct ChatResponse: Decodable {
