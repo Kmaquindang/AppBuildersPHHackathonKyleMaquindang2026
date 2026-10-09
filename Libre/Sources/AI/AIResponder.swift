@@ -20,6 +20,8 @@ public struct AIReply: Sendable {
     public var rulesUsed: [String]?
     public var unverifiedRules: [String]?
     public var noRule: Bool?
+    /// Knowledge passages the answer used (chips with a capped excerpt).
+    public var docRefs: [DocRef]? = nil
 
     public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil, checked: [String]? = nil,
                 rulesUsed: [String]? = nil, unverifiedRules: [String]? = nil, noRule: Bool? = nil) {

@@ -45,6 +45,9 @@ struct RulesView: View {
                     Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\". Swipe left to delete, lock or unlock (admin devices only; the Mac checks and replies in the chat).")
                     #endif
                 }
+                #if os(iOS)
+                PhoneKnowledgeSection(listings: mesh.libraryListings)
+                #endif
             }
             .navigationTitle("Rules")
         }

@@ -20,6 +20,7 @@ struct ChatTimelineView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var detailsEntry: ChatEntry?
     @State private var openChip: String?
+    @State private var openDoc: DocRef?
 
     private let bottomID = "timeline-bottom"
 
@@ -48,7 +49,8 @@ struct ChatTimelineView: View {
                                    canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
                                    onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") },
                                    onDetails: { detailsEntry = entry },
-                                   onChip: { openChip = $0 })
+                                   onChip: { openChip = $0 },
+                                   onDoc: { openDoc = $0 })
                             .id(entry.id)
                     }
                     switch typing {
@@ -87,6 +89,9 @@ struct ChatTimelineView: View {
         .sheet(item: Binding(get: { openChip.map(ChipID.init) }, set: { openChip = $0?.citation })) { chip in
             RuleDetailSheet(citation: chip.citation)
                 .environmentObject(mesh)
+        }
+        .sheet(item: Binding(get: { openDoc.map(DocChipID.init) }, set: { openDoc = $0?.ref })) { chip in
+            DocExcerptSheet(ref: chip.ref)
         }
     }
 
@@ -176,6 +181,7 @@ struct MessageRow: View {
     var onAccept: (String) -> Void = { _ in }
     var onDetails: () -> Void = {}
     var onChip: (String) -> Void = { _ in }
+    var onDoc: (DocRef) -> Void = { _ in }
     @State private var accepted: Set<String> = []
 
     private var message: MeshMessage { entry.message }
@@ -280,6 +286,9 @@ struct MessageRow: View {
         if isPasa, message.card == nil, !(styled.rulesUsed.isEmpty && styled.unverifiedRules.isEmpty) {
             FlowChips(used: styled.rulesUsed, unverified: styled.unverifiedRules, onTap: onChip)
         }
+        if isPasa, message.card == nil, let refs = message.docRefs, !refs.isEmpty {
+            DocChips(refs: refs, onTap: onDoc)
+        }
     }
 
     /// Summary card: this person's own open tasks. Photo card: suggested tasks an admin can add.
@@ -348,6 +357,7 @@ struct MessageRow: View {
             parts.append("Based on " + styled.rulesUsed.map { AnswerStyle.title(in: $0) }.joined(separator: ", "))
         }
         if isPasa, !styled.unverifiedRules.isEmpty { parts.append("Warning: cites a rule that is not saved") }
+        if isPasa, let refs = message.docRefs, !refs.isEmpty { parts.append("From " + refs.map(\.spoken).joined(separator: ", ")) }
         parts.append(message.createdAt.formatted(date: .omitted, time: .shortened))
         if isMine, status != .received { parts.append(status.accessibilityLabel) }
         return parts.joined(separator: ". ")
@@ -742,5 +752,77 @@ struct ChatEmptyState: View {
         .padding(.horizontal, 24)
         .padding(.top, 40)
         .accessibilityElement(children: .combine)
+    }
+}
+
+
+struct DocChipID: Identifiable {
+    let ref: DocRef
+    var id: String { ref.chipLabel + ref.excerpt.prefix(40) }
+}
+
+/// Knowledge chips under Pasa's answer: "📄 Title, p.N, vN". Tap for the quoted passage (at most
+/// 600 characters; the phone never gets the whole file).
+struct DocChips: View {
+    let refs: [DocRef]
+    let onTap: (DocRef) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { chips }
+            VStack(alignment: .leading, spacing: 6) { chips }
+        }
+    }
+
+    @ViewBuilder
+    private var chips: some View {
+        ForEach(refs, id: \.self) { ref in
+            Button { onTap(ref) } label: {
+                Text("📄 " + ref.chipLabel)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(BubbleStyle.card, in: Capsule())
+                    .overlay(Capsule().stroke(Color.blue.opacity(0.35), lineWidth: 0.5))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, -8)
+            .accessibilityLabel(ref.spoken)
+            .accessibilityHint("Shows the quoted passage")
+        }
+    }
+}
+
+struct DocExcerptSheet: View {
+    let ref: DocRef
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(ref.chipLabel, systemImage: "doc.text")
+                        .font(.headline)
+                    Text(ref.excerpt)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(BubbleStyle.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text("Quoted passage from the team's Knowledge on the AI Mac (at most \(DocRef.maxExcerpt) characters). The full file stays on the Mac.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+            }
+            .navigationTitle("From Knowledge")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 320)
+        #endif
     }
 }

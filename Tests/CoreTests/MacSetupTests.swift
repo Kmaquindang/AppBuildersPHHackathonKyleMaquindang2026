@@ -17,14 +17,14 @@ func runMacSetupTests() {
 
     let small = ModelPlanner.plan(hardware: hw(8))
     check(small.chat == "qwen3:4b-instruct" && small.vision == nil, "small tier: 4B chat, no vision by default")
-    check(small.totalBytes == 2_500_000_000, "small tier downloads only the chat model")
+    check(small.totalBytes == 2_774_000_000, "small tier downloads the chat model plus the 274 MB Knowledge embedding model")
     let smallVision = ModelPlanner.plan(hardware: hw(8), wantVision: true)
     check(smallVision.vision == "qwen3-vl:2b-instruct", "small tier can opt in to the 2B vision model")
 
     let m3 = ModelPlanner.plan(hardware: hw(16))
     check(m3.chat == "qwen3:8b" && m3.vision == "qwen3-vl:4b-instruct", "16 GB: qwen3:8b + qwen3-vl:4b-instruct")
     check(m3.reason == "16 GB RAM, Apple M3, 40.0 GB free: using qwen3:8b + qwen3-vl:4b-instruct", "reasoning line: \(m3.reason)")
-    check(m3.totalBytes == 8_500_000_000 && m3.requiredFreeBytes == 10_500_000_000 && m3.blocked == nil, "16 GB plan total and margin")
+    check(m3.totalBytes == 8_774_000_000 && m3.requiredFreeBytes == 10_774_000_000 && m3.blocked == nil, "16 GB plan total and margin")
     check(ModelPlanner.plan(hardware: hw(12)).vision == "qwen3-vl:2b-instruct", "12 GB gets the 2B vision model")
 
     let big = ModelPlanner.plan(hardware: hw(36, chip: "Apple M3 Pro"))
@@ -36,17 +36,21 @@ func runMacSetupTests() {
 
     // Installed models download nothing; Ollama adds its own download.
     let have = ModelPlanner.plan(hardware: hw(16), installed: ["qwen3:8b"])
-    check(have.totalBytes == 3_300_000_000 && have.downloads.first?.installed == true, "installed chat model is not downloaded again")
-    let none = ModelPlanner.plan(hardware: hw(16), installed: ["qwen3:8b", "qwen3-vl:4b-instruct"])
+    check(have.totalBytes == 3_574_000_000 && have.downloads.first?.installed == true, "installed chat model is not downloaded again")
+    let none = ModelPlanner.plan(hardware: hw(16), installed: ["qwen3:8b", "qwen3-vl:4b-instruct", "nomic-embed-text:latest"])
     check(none.totalBytes == 0 && none.blocked == nil, "nothing to download is never blocked, even on a full disk")
-    check(ModelPlanner.plan(hardware: hw(16, free: 1_000_000_000), installed: ["qwen3:8b", "qwen3-vl:4b-instruct"]).blocked == nil, "full disk with everything installed is fine")
+    check(ModelPlanner.plan(hardware: hw(16, free: 1_000_000_000), installed: ["qwen3:8b", "qwen3-vl:4b-instruct", "nomic-embed-text:latest"]).blocked == nil, "full disk with everything installed is fine")
     let noOllama = ModelPlanner.plan(hardware: hw(16), ollamaInstalled: false)
-    check(noOllama.needsOllama && noOllama.totalBytes == 8_500_000_000 + ModelCatalog.ollamaAppBytes, "missing Ollama adds the app download")
+    check(noOllama.needsOllama && noOllama.totalBytes == 8_774_000_000 + ModelCatalog.ollamaAppBytes, "missing Ollama adds the app download")
 
     // Disk gate: download + 2 GB margin.
     let tight = ModelPlanner.plan(hardware: hw(16, free: 10_000_000_000))
-    check(tight.blocked != nil && (tight.blocked ?? "").contains("10.5 GB"), "10 GB free blocks an 8.5 GB download (needs 10.5 GB)")
-    check(ModelPlanner.plan(hardware: hw(16, free: 10_500_000_000)).blocked == nil, "exactly download + margin is allowed")
+    check(tight.blocked != nil && (tight.blocked ?? "").contains("10.8 GB"), "10 GB free blocks an 8.8 GB download (needs 10.8 GB)")
+    check(ModelPlanner.plan(hardware: hw(16, free: 10_774_000_000)).blocked == nil, "exactly download + margin is allowed")
+    let noKnowledge = ModelPlanner.plan(hardware: hw(16), withKnowledge: false)
+    check(noKnowledge.totalBytes == 8_500_000_000 && noKnowledge.embed == nil, "Knowledge model can be left out of the plan")
+    check(m3.embed == "nomic-embed-text" && m3.downloads.last?.model == "nomic-embed-text" && m3.downloads.last?.bytes == 274_000_000, "plan: every tier includes nomic-embed-text")
+    check(small.embed == "nomic-embed-text" && intel.embed == "nomic-embed-text", "plan: small and Intel tiers too")
     check(ModelPlanner.plan(hardware: hw(16, free: nil)).blocked == nil && ModelPlanner.plan(hardware: hw(16, free: nil)).reason.contains("free disk unknown"), "unknown free space does not block but says so")
 
     // Manual override
@@ -89,4 +93,9 @@ func runMacSetupTests() {
     check(items.first { $0.id == "ollama" }?.fix == "open -a Ollama", "fix for installed but stopped Ollama")
     check(items.first { $0.id == "chat" }?.fix == "ollama pull qwen3:8b", "fix for missing chat model")
     check(items.first { $0.id == "vision" }?.fix == "ollama pull qwen3-vl:4b-instruct", "fix for missing vision model when wanted")
+    let embedItem = items.first { $0.id == "embed" }
+    check(embedItem?.optional == true && embedItem?.fix == "ollama pull nomic-embed-text", "checklist offers ollama pull nomic-embed-text (optional)")
+    let withEmbed = SetupChecklist.items(presence: running, chatModel: "qwen3:8b", installed: ["qwen3:8b", "nomic-embed-text:latest"], visionModel: nil,
+                                         wantVision: false, warmed: true, adminCount: 0, internet: .offline)
+    check(withEmbed.first { $0.id == "embed" }?.ok == true && withEmbed.first { $0.id == "embed" }?.fix == nil, "checklist: embedding model installed is green")
 }

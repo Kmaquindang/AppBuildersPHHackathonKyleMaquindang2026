@@ -299,3 +299,47 @@ public struct OllamaClient: LLMClient {
         physicalMemory < lowMemoryThreshold ? lowMemoryModel : defaultModel
     }
 }
+
+/// Knowledge embeddings through Ollama's POST /api/embed (nomic-embed-text by default, 768
+/// dimensions). Batches keep each request small.
+public struct OllamaEmbedder: Embedder {
+    public var baseURL: URL
+    public var model: String
+    public var batchSize: Int
+
+    public init(baseURL: URL = OllamaClient.defaultBaseURL, model: String = EmbedModel.name, batchSize: Int = 16) {
+        self.baseURL = baseURL
+        self.model = model
+        self.batchSize = batchSize
+    }
+
+    public var modelName: String { model }
+
+    struct EmbedRequest: Encodable { let model: String; let input: [String]; let keep_alive: String }
+    struct EmbedResponse: Decodable { let embeddings: [[Float]]?; let error: String? }
+
+    public func embed(_ texts: [String]) async throws -> [[Float]] {
+        var out: [[Float]] = []
+        var start = 0
+        while start < texts.count {
+            let batch = Array(texts[start..<min(texts.count, start + batchSize)])
+            var request = URLRequest(url: baseURL.appendingPathComponent("api/embed"))
+            request.httpMethod = "POST"
+            request.timeoutInterval = 120
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(EmbedRequest(model: model, input: batch, keep_alive: OllamaClient.keepAlive))
+            let data: Data, response: URLResponse
+            do { (data, response) = try await URLSession.shared.data(for: request) }
+            catch { throw LLMError.notRunning }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let decoded = try? JSONDecoder().decode(EmbedResponse.self, from: data)
+            if status == 404 || (decoded?.error?.contains("not found") ?? false) { throw LLMError.modelMissing(model) }
+            guard status == 200, let vectors = decoded?.embeddings, vectors.count == batch.count else {
+                throw LLMError.badResponse(decoded?.error ?? "HTTP \(status) from /api/embed")
+            }
+            out += vectors
+            start += batchSize
+        }
+        return out
+    }
+}

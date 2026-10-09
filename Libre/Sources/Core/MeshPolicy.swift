@@ -18,12 +18,15 @@ public struct MemoryManifest: Codable, Equatable, Sendable {
     public var resetAt: Date?
     /// When the Mac last cleared the team timeline. Phones drop older timeline entries.
     public var clearedAt: Date?
+    /// Knowledge titles this phone may see (filtered by its role on the Mac). nil from older Macs.
+    public var library: [LibraryListing]? = nil
 
-    public init(ruleIDs: [UUID], taskIDs: [UUID], resetAt: Date?, clearedAt: Date?) {
+    public init(ruleIDs: [UUID], taskIDs: [UUID], resetAt: Date?, clearedAt: Date?, library: [LibraryListing]? = nil) {
         self.ruleIDs = ruleIDs
         self.taskIDs = taskIDs
         self.resetAt = resetAt
         self.clearedAt = clearedAt
+        self.library = library
     }
 }
 

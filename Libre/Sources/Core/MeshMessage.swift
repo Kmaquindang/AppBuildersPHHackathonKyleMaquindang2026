@@ -111,6 +111,9 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var unverifiedRules: [String]?
     /// For answers: true when no saved rule or note backs the answer.
     public var noRule: Bool?
+    /// For answers: Knowledge passages the reply used (title, page, version, excerpt of at most
+    /// 600 characters). Older builds ignore the field.
+    public var docRefs: [DocRef]? = nil
     /// For asks sent with staged photos ("@pasa what is this?" as a caption): the photos' media
     /// ids. The AI Mac waits until the first one has arrived, then answers about it.
     public var attachments: [UUID]? = nil
