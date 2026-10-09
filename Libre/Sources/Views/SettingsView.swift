@@ -108,7 +108,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     HStack {
-                        Button("Export \(mesh.activeRoom.label) memory...") {
+                        Button("Export \(mesh.activeRoom.displayName) memory...") {
                             do {
                                 exportDoc = MemoryBackupDocument(data: try mesh.exportMemoryData())
                                 showExporter = true
@@ -116,7 +116,7 @@ struct SettingsView: View {
                                 backupMessage = "Export failed: \(error.localizedDescription)"
                             }
                         }
-                        Button("Import into \(mesh.activeRoom.label)...") { showImporter = true }
+                        Button("Import into \(mesh.activeRoom.displayName)...") { showImporter = true }
                     }
                     if let backupMessage {
                         Text(backupMessage).font(.caption).foregroundStyle(.secondary)
@@ -223,7 +223,7 @@ struct SettingsView: View {
                 Button("Erase team memory", role: .destructive) { mesh.resetMemory() }
             }
             .fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .json,
-                          defaultFilename: "pasa-\(mesh.activeRoom.label.lowercased())-memory-\(Date().formatted(.iso8601.year().month().day())).json") { result in
+                          defaultFilename: "pasa-\(mesh.activeRoom.displayName.lowercased().replacingOccurrences(of: " ", with: "-"))-memory-\(Date().formatted(.iso8601.year().month().day())).json") { result in
                 switch result {
                 case .success(let url): backupMessage = "Saved \(url.lastPathComponent)."
                 case .failure(let error): backupMessage = "Export failed: \(error.localizedDescription)"

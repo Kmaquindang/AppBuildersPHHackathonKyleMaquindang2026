@@ -66,7 +66,12 @@ struct ConnectionSheet: View {
                                 mesh.activateRoom(room.id)
                             } label: {
                                 HStack {
-                                    Text(room.isDefault ? "Default" : room.displayName)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(room.displayName)
+                                        if let subtitle = room.subtitle {
+                                            RoomSubtitle(text: subtitle)
+                                        }
+                                    }
                                     if room.isClosed { Text("closed").foregroundStyle(.secondary) }
                                     Spacer()
                                     if room.id == mesh.activeRoom.id { Image(systemName: "checkmark").accessibilityLabel("Current room") }

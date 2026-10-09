@@ -226,7 +226,7 @@ private struct RoomStep: View {
                         next()
                     }
                 }
-            } label: { BusyLabel(title: choice == .create ? "Create room" : (choice == .join ? "Join room" : "Use the Default room"), busy: mesh.roomBusy).frame(maxWidth: .infinity) }
+            } label: { BusyLabel(title: choice == .create ? "Create room" : (choice == .join ? "Join room" : "Use Town Square"), busy: mesh.roomBusy).frame(maxWidth: .infinity) }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(mesh.roomBusy || !RoomOnboardingPicker.isReady(choice: choice, name: name, passcode: passcode, confirm: confirm, joinText: joinText))
@@ -235,7 +235,7 @@ private struct RoomStep: View {
             }
             .buttonStyle(.bordered)
             if choice != .open {
-                Button("Try Default (the open room) for now") { next() }
+                Button("Use Town Square (open to everyone nearby) for now") { next() }
                     .font(.callout)
             }
         }
@@ -245,7 +245,7 @@ private struct RoomStep: View {
     }
 }
 
-/// Join, create or stay in Default. Returns an error line, or nil when done.
+/// Join, create or stay in Town Square (the open room). Returns an error line, or nil when done.
 enum RoomEntry {
     @MainActor
     static func perform(mesh: MeshService, choice: RoomOnboardingPicker.Choice, name: String, passcode: String, joinText: String) async -> String? {
@@ -264,7 +264,7 @@ enum RoomEntry {
             if let beacon = mesh.nearbyRooms.first(where: { $0.beacon.label == Room.cleanLabel(name) })?.beacon {
                 switch await mesh.joinNearby(beacon, passcode: passcode) {
                 case .joined: return nil
-                case .wrongPasscode: return "Wrong passcode for \(beacon.label). Ask the room admin."
+                case .wrongPasscode: return "Wrong passcode for \(Room.displayName(forLabel: beacon.label)). Ask the room admin."
                 case .failed: return "Could not join. Check the room name and passcode."
                 }
             }

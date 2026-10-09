@@ -70,7 +70,28 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     /// Room tag: first 8 bytes of HKDF(key), hex. Same on every member device. Also the folder name.
     public var id: String { RoomCrypto.tag(for: key) }
     public var isDefault: Bool { key == RoomCrypto.defaultKey }
-    public var displayName: String { isDefault ? "Default (open)" : label }
+    /// What people see. The open room's internal label stays "DEFAULT" (and its key and tag are
+    /// unchanged), so older builds, saved chat and rules keep working; only the name shown changes
+    /// (Kyle, Oct 9 2026, 10:41 PM PHT).
+    public var displayName: String { isDefault ? Room.townSquareName : label }
+    /// One line under the open room wherever it is listed or picked.
+    public var subtitle: String? { isDefault ? Room.townSquareSubtitle : nil }
+
+    public static let townSquareName = "Town Square"
+    public static let townSquareSubtitle = "Open to everyone nearby. No code needed."
+    /// Internal label of the open room (never shown).
+    public static let defaultLabel = "DEFAULT"
+
+    /// Display name for a raw room label (beacons, join links): the open room maps to Town Square.
+    public static func displayName(forLabel label: String) -> String {
+        isReservedLabel(label) ? townSquareName : label
+    }
+
+    /// Names a new room may not take: the open room's internal label and its shown name.
+    public static func isReservedLabel(_ label: String) -> Bool {
+        let clean = cleanLabel(label)
+        return clean == defaultLabel || clean == cleanLabel(townSquareName)
+    }
 
     /// Admin device ids for this room: the pinned creator plus those ticked on the Mac.
     public func adminDevices(selfID: String) -> Set<String> {
@@ -138,7 +159,7 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     public static func fromPasscode(name raw: String, passcode: String, creator: String, now: Date = Date(),
                                     rounds: Int = RoomPasscode.rounds) -> Room? {
         let label = cleanLabel(raw)
-        guard !label.isEmpty, RoomPasscode.isAcceptable(passcode), label != "DEFAULT" else { return nil }
+        guard !label.isEmpty, RoomPasscode.isAcceptable(passcode), !Room.isReservedLabel(label) else { return nil }
         let key = RoomPasscode.deriveKey(name: label, passcode: passcode, rounds: rounds)
         return Room(label: label, key: key, creator: creator, createdAt: now, admins: [], keySource: .passcode)
     }
@@ -147,13 +168,13 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     /// is checked by the admin at admission. nil for an empty or reserved name.
     public static func fromCode(name raw: String, creator: String, now: Date = Date()) -> Room? {
         let label = cleanLabel(raw)
-        guard !label.isEmpty, label != "DEFAULT" else { return nil }
+        guard !label.isEmpty, !Room.isReservedLabel(label) else { return nil }
         return Room(label: label, key: CodeRoom.baseKey(name: label), creator: creator, createdAt: now, admins: [], keySource: .code)
     }
 
     /// The open room every device starts in (and where data from before rooms is migrated).
     public static func makeDefault(now: Date = Date()) -> Room {
-        Room(label: "DEFAULT", key: RoomCrypto.defaultKey, creator: "", createdAt: now)
+        Room(label: Room.defaultLabel, key: RoomCrypto.defaultKey, creator: "", createdAt: now)
     }
 }
 

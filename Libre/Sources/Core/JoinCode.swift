@@ -158,7 +158,7 @@ public struct JoinLink: Equatable, Sendable {
         let items = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard let v = items["v"].flatMap(Int.init), v == version else { return .failure(.unsupportedVersion) }
         let room = Room.cleanLabel(items["room"] ?? "")
-        guard !room.isEmpty, room != "DEFAULT" else { return .failure(.badRoom) }
+        guard !room.isEmpty, !Room.isReservedLabel(room) else { return .failure(.badRoom) }
         guard let code = items["code"], JoinCode.isValid(code) else { return .failure(.badCode) }
         let exp = items["exp"].flatMap(Double.init).map { Date(timeIntervalSince1970: $0) }
         return .success(JoinLink(room: room, code: code, expiresAt: exp))
