@@ -70,7 +70,7 @@ struct TasksView: View {
             TaskDetailCard(task: task, now: now, room: mesh.activeRoom.displayName,
                            canMarkDone: canDone, waiting: asked.contains(task.id) && task.status == .open,
                            onDone: { markDone(task) },
-                           onReopen: mesh.isAIPeer && task.status == .done ? { mesh.setTaskDone(task.id, done: false) } : nil)
+                           onReopen: reopenAction(task))
                 #if os(iOS)
                 .swipeActions(edge: .trailing) {
                     if canDone {
@@ -80,6 +80,16 @@ struct TasksView: View {
                 }
                 #endif
         }
+    }
+
+    /// Only the AI Mac can reopen (it holds the source of truth).
+    private func reopenAction(_ task: TaskItem) -> (() -> Void)? {
+        #if os(macOS)
+        guard mesh.isAIPeer, task.status == .done else { return nil }
+        return { mesh.setTaskDone(task.id, done: false) }
+        #else
+        return nil
+        #endif
     }
 
     private func markDone(_ task: TaskItem) {
