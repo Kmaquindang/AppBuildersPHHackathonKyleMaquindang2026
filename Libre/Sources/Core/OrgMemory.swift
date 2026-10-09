@@ -366,8 +366,72 @@ public final class OrgMemory {
     public func recordChat(from: String, text: String, at: Date = Date(), device: String? = nil) {
         snapshot.chatLog.append(ChatLogLine(from: from, text: text, at: at, device: device))
         if snapshot.chatLog.count > maxChatLog {
-            snapshot.chatLog.removeFirst(snapshot.chatLog.count - maxChatLog)
+            let overflow = snapshot.chatLog.count - maxChatLog
+            // Never lose chat: lines that leave the in-memory log go to an append-only archive
+            // file next to the memory file (JSON lines), which recall still searches.
+            archiveChat(Array(snapshot.chatLog.prefix(overflow)))
+            snapshot.chatLog.removeFirst(overflow)
         }
+        save()
+    }
+
+    /// `<memory file>-chat-archive.jsonl` (nil for in-memory stores, which keep everything).
+    public var chatArchiveURL: URL? {
+        fileURL.map { $0.deletingPathExtension().appendingPathExtension("chat-archive.jsonl") }
+    }
+
+    /// In-memory stores (tests) keep archived lines here instead of a file.
+    private var memoryArchive: [ChatLogLine] = []
+
+    private func archiveChat(_ lines: [ChatLogLine]) {
+        guard !lines.isEmpty else { return }
+        guard let url = chatArchiveURL else {
+            memoryArchive.append(contentsOf: lines)
+            return
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var blob = Data()
+        for line in lines {
+            if let data = try? encoder.encode(line) {
+                blob.append(data)
+                blob.append(0x0A)
+            }
+        }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(blob)
+            try? handle.close()
+        } else {
+            try? blob.write(to: url)
+        }
+    }
+
+    /// Chat lines that left the in-memory log, oldest first.
+    public func archivedChat() -> [ChatLogLine] {
+        guard let url = chatArchiveURL else { return memoryArchive }
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return data.split(separator: 0x0A).compactMap { try? decoder.decode(ChatLogLine.self, from: Data($0)) }
+    }
+
+    // MARK: Conversation thread (AI Mac)
+
+    public var threadTurns: [ThreadTurn] { snapshot.thread ?? [] }
+    public var roomSummary: RoomSummary? { snapshot.roomSummary }
+
+    public func recordTurn(_ turn: ThreadTurn) {
+        var turns = snapshot.thread ?? []
+        turns.removeAll { $0.id == turn.id }
+        turns.append(turn)
+        snapshot.thread = turns
+        save()
+    }
+
+    public func setRoomSummary(_ summary: RoomSummary) {
+        snapshot.roomSummary = summary
         save()
     }
 

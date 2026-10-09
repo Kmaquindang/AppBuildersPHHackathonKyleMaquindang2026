@@ -109,3 +109,58 @@ func runRound2UITests() {
     check(MacName.suggested(fullUserName: nil, hostName: "Kyle's MaC") == "Kyle's Mac", "round2: host name casing cleaned")
     check(MacName.suggested(fullUserName: nil, hostName: nil) == "Mac", "round2: fallback Mac")
 }
+
+/// Admin badges come from the signed manifest (device keys), never from names.
+@MainActor
+func runAdminBadgeTests() {
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    var room = Room.fromPasscode(name: "GROUP-2", passcode: "mangga hinog 42", creator: "Mac", now: t0, rounds: 1000)!
+    let teacher = DeviceIdentity.generate()
+    let ana = DeviceIdentity.generate()
+    let ben = DeviceIdentity.generate()
+    _ = RoomGovernor.setUp(&room, identity: teacher, device: "Mac", name: "Teacher", now: t0)
+    check(room.gov?.manifest?.creatorKey == teacher.signKey && room.gov?.manifest?.role(device: "Mac") == .creator, "badge: creator from the signed manifest")
+    for (id, dev, name) in [(ana, "PHONE_A", "Ana"), (ben, "PHONE_B", "Teacher")] {
+        let req = RoomGovernor.joinRequest(room: room, identity: id, device: dev, name: name, now: t0)!
+        _ = RoomGovernor.admit(req, room: &room, identity: teacher, now: t0)
+    }
+    check(room.gov?.manifest?.role(device: "PHONE_A") == .member, "badge: members have no badge")
+    check(room.gov?.manifest?.role(device: "PHONE_B") == .member, "badge: a member named like the admin gets no badge")
+    _ = RoomGovernor.setCoAdmin(ana.signKey, on: true, room: &room, identity: teacher, now: t0)
+    check(room.gov?.manifest?.role(device: "PHONE_A") == .admin && RoomRole.admin.spoken == "admin" && RoomRole.creator.spoken == "creator, admin", "badge: co-admin gets the shield, VoiceOver says admin")
+    check(room.gov?.manifest?.role(device: "NOBODY") == nil && RoomRole.member.symbol == nil, "badge: unknown device has no role")
+    // Older manifests without creatorKey still decode; the creator stamps it on its next action.
+    var legacy = room.gov!.manifest!
+    legacy.creatorKey = nil
+    let json = try! PasaJSON.encoder.encode(legacy)
+    let stripped = String(decoding: json, as: UTF8.self).replacingOccurrences(of: #","creatorKey":null"#, with: "")
+    check((try? PasaJSON.decoder.decode(RoomManifest.self, from: Data(stripped.utf8)))?.role(device: "Mac") == .member, "badge: older manifest decodes, creator unknown until stamped")
+}
+
+/// Composer staging: photos wait in the composer until the send arrow.
+func runStagingTests() {
+    func photo() -> StagedItem { StagedItem(kind: .image, data: Data([1, 2, 3]), mime: "image/jpeg", width: 10, height: 10) }
+    var d = ComposerDraft()
+    check(!d.canSend && d.photoSlots == 4 && d.plan.isEmpty, "staging: empty draft cannot send")
+    d.text = "   "
+    check(!d.canSend, "staging: spaces alone do not show the send arrow")
+    let dropped = d.addPhotos([photo(), photo(), photo()])
+    check(dropped == 0 && d.photos.count == 3 && d.canSend && d.photoSlots == 1, "staging: photos alone enable send")
+    check(d.addPhotos([photo(), photo()]) == 1 && d.photos.count == 4 && d.photoSlots == 0, "staging: capped at 4 photos")
+    check(d.addPhotos([StagedItem(kind: .audio, data: Data([9]), mime: "audio/mp4")]) == 1, "staging: voice notes are not photos")
+    let second = d.photos[1].id
+    check(d.accessibilityLabel(for: second) == "Photo 2 of 4, staged. Not sent yet.", "staging: VoiceOver label for a staged photo")
+    d.removePhoto(second)
+    check(d.photos.count == 3 && !d.photos.contains { $0.id == second } && d.photoSlots == 1, "staging: X removes that photo")
+    check(d.plan.text == nil && d.plan.photos.count == 3 && !d.plan.isAsk, "staging: photos without a caption")
+    d.text = "  @pasa what is this? "
+    check(d.plan.isAsk && d.plan.text == "@pasa what is this?" && d.plan.photos.count == 3, "staging: @pasa caption is one ask with the photos")
+    d.text = "new rebar delivery"
+    check(!d.plan.isAsk && d.plan.text == "new rebar delivery", "staging: plain caption goes as chat")
+    d.clear()
+    check(d.isEmpty && !d.canSend && d.photos.isEmpty, "staging: cleared after sending")
+    var t = ComposerDraft(text: "hi")
+    check(t.canSend && t.plan.photos.isEmpty && t.plan.text == "hi", "staging: text alone sends as before")
+    t.text = ""
+    check(!t.canSend, "staging: send arrow hides when the text is cleared")
+}

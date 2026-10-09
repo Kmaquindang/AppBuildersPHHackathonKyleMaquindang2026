@@ -82,6 +82,10 @@ public final class ExecutiveAssistant {
     /// Clock for summaries (tests use a fixed time).
     public var now: () -> Date = { Date() }
     public var digestSchedule = DigestSchedule.standard
+    /// num_ctx Pasa asks Ollama for; compaction starts above 75% of it (tests use a small one).
+    public var contextTokens = PromptBudget.contextTokens
+    /// Per room: context fill of the last answer, last compaction, summary size (Mac Proof panel).
+    public private(set) var contextStats: [String: ContextStats] = [:]
 
     /// Room switch: ground on the new room's memory only, and forget "more" text from the old one.
     public func switchRoom(memory newMemory: OrgMemory, clearedAt newClearedAt: Date?) {
@@ -144,7 +148,74 @@ public final class ExecutiveAssistant {
 
     /// - Parameter since: the asker was away from this time on (sent by the phone with the ask).
     ///   "What did I miss" then summarizes only chat after it. nil means a plain recap.
-    public func handle(_ rawText: String, from asker: String, since: Date? = nil) async -> AssistantOutcome {
+    /// - Parameter askID: the ask's id (askKey); names the thread turn this exchange becomes.
+    public func handle(_ rawText: String, from asker: String, since: Date? = nil, askID: UUID? = nil) async -> AssistantOutcome {
+        var outcome = await handleCore(rawText, from: asker, since: since)
+        recordTurn(question: rawText, outcome: &outcome, asker: asker, askID: askID)
+        return outcome
+    }
+
+    /// Saves the exchange in this room's thread (not "more", summaries or photo prompts, and not
+    /// failures), so the next answer can see it.
+    private func recordTurn(question: String, outcome: inout AssistantOutcome, asker: String, askID: UUID?) {
+        guard outcome.error == nil, ![.more, .dailySummary, .describePhoto].contains(outcome.intent) else { return }
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let answer = outcome.fullReply ?? outcome.reply
+        memory.recordTurn(ThreadTurn(id: askID ?? UUID(), asker: asker, askerName: directory[asker] ?? asker,
+                                     question: text, answer: answer, at: now()))
+        if var stats = contextStats[roomKey] {
+            stats.totalTurns = memory.threadTurns.count
+            contextStats[roomKey] = stats
+        }
+    }
+
+    /// Thread context for an answer: summary, verbatim turns, recalled older lines.
+    private func conversation(for question: String, asker: String, keep: Int = ConversationMemory.maxVerbatimTurns,
+                              withRecall: Bool = true) -> ConversationContext {
+        let all = memory.threadTurns
+        let uncovered = ConversationMemory.uncovered(all, summary: memory.roomSummary, clearedAt: clearedAt)
+        let verbatim = ConversationMemory.verbatim(uncovered, asker: asker, limit: keep)
+        let ids = Set(verbatim.map(\.id))
+        let older = all.filter { !ids.contains($0.id) }
+        let recalled = withRecall
+            ? ConversationMemory.recall(question: question, chat: memory.archivedChat() + memory.snapshot.chatLog, olderTurns: older,
+                                        now: now(), calendar: calendar, clearedAt: clearedAt)
+            : []
+        let summary = memory.roomSummary.map(\.text)
+        return ConversationContext(summary: (summary ?? "").isEmpty ? nil : summary, turns: verbatim, recalled: recalled)
+    }
+
+    /// Folds the oldest uncovered turns (all but the newest 4) and the previous summary into a new
+    /// "room so far" summary: one model call. Returns false when there was nothing to fold or the
+    /// call failed (the answer then goes ahead with a trimmed thread).
+    @discardableResult
+    func compactThread(tracker: inout CallTracker) async -> Bool {
+        let uncovered = ConversationMemory.uncovered(memory.threadTurns, summary: memory.roomSummary, clearedAt: clearedAt)
+        let fold = ConversationMemory.toCompact(uncovered)
+        guard let first = fold.first, let last = fold.last else { return false }
+        let previous = memory.roomSummary
+        let turns: [ChatTurn] = [
+            .system(ConversationMemory.summarySystem),
+            .user(ConversationMemory.summaryUser(previous: previous?.text, turns: fold, calendar: calendar))
+        ]
+        do {
+            let result = try await llm.chat(turns, json: false, maxTokens: TokenCaps.summarize)
+            tracker.add(result, prompt: turns)
+            let text = ConversationMemory.cleanSummary(result.text)
+            guard !text.isEmpty else { return false }
+            let at = now()
+            memory.setRoomSummary(RoomSummary(text: text, updatedAt: at,
+                                              firstTurn: previous?.firstTurn ?? first.id, lastTurn: last.id,
+                                              turnCount: (previous?.turnCount ?? 0) + fold.count,
+                                              coveredFrom: previous?.coveredFrom ?? first.at, coveredTo: last.at))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func handleCore(_ rawText: String, from asker: String, since: Date? = nil) async -> AssistantOutcome {
         let started = Date()
         var tracker = CallTracker()
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -360,18 +431,50 @@ public final class ExecutiveAssistant {
         case .answer:
             let question = plan.question ?? text
             // Only relevant knowledge goes in (locked rules always), within a token budget.
-            let selection = KnowledgeRetriever.select(question: question, rules: memory.rules, notes: memory.notes)
+            let previousTurn = ConversationMemory.uncovered(memory.threadTurns, summary: memory.roomSummary, clearedAt: clearedAt)
+                .last { $0.asker == asker }
+            let selection = KnowledgeRetriever.select(question: ConversationMemory.retrievalQuery(question, previous: previousTurn),
+                                                      rules: memory.rules, notes: memory.notes)
             checked = selection.checkedTitles
             let open = memory.openTasks
             // Lean prompt: the task list only goes in when the question is about tasks or people.
             let withTasks = QuestionRouter.needsTasks(question, taskTitles: open.map { $0.title })
-            do {
-                let turns: [ChatTurn] = [
+            // Thread context: summary, latest turns verbatim, recalled older lines. Above 75% of
+            // num_ctx, compact the oldest turns first; if still too big, trim the thread.
+            func build(_ context: ConversationContext) -> [ChatTurn] {
+                [
                     .system(AssistantPrompts.answerSystem),
                     .user(AssistantPrompts.answerUser(question: question, asker: asker, rules: selection.rules, notes: selection.notes,
                                                       openTasks: open, noRelevantKnowledge: selection.relevantCount == 0,
-                                                      includeTasks: withTasks))
+                                                      includeTasks: withTasks, conversation: context))
                 ]
+            }
+            var context = conversation(for: question, asker: asker)
+            var turns = build(context)
+            var compacted = false
+            if ConversationMemory.needsCompaction(promptTokens: PromptBudget.tokens(turns) + TokenCaps.answer, context: contextTokens) {
+                compacted = await compactThread(tracker: &tracker)
+                context = conversation(for: question, asker: asker)
+                turns = build(context)
+                if ConversationMemory.needsCompaction(promptTokens: PromptBudget.tokens(turns) + TokenCaps.answer, context: contextTokens) {
+                    context = conversation(for: question, asker: asker, keep: ConversationMemory.keepAfterCompaction, withRecall: false)
+                    turns = build(context)
+                }
+            }
+            let estimate = PromptBudget.tokens(turns) + TokenCaps.answer
+            var stats = contextStats[roomKey] ?? ContextStats()
+            stats.promptTokens = estimate
+            stats.contextTokens = contextTokens
+            stats.fill = Double(estimate) / Double(max(1, contextTokens))
+            stats.verbatimTurns = context.turns.count
+            stats.recalledLines = context.recalled.count
+            stats.totalTurns = memory.threadTurns.count
+            if compacted { stats.lastCompaction = now() }
+            stats.lastCompaction = stats.lastCompaction ?? memory.roomSummary?.updatedAt
+            stats.summaryTokens = memory.roomSummary.map { PromptBudget.tokens($0.text) } ?? 0
+            stats.summaryTurns = memory.roomSummary?.turnCount ?? 0
+            contextStats[roomKey] = stats
+            do {
                 let result = try await llm.chat(turns, json: false, maxTokens: TokenCaps.answer)
                 tracker.add(result, prompt: turns)
                 // Never pass on a citation that is not in memory: fix versions, flag the rest,

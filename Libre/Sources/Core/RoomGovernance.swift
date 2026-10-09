@@ -49,6 +49,28 @@ public struct RoomMember: Codable, Equatable, Sendable, Identifiable {
 
 public enum RoomOpenState: String, Codable, Sendable { case open, closed }
 
+/// Admin badge: creator (crown) and co-admins (shield). Members get no badge.
+public enum RoomRole: String, Codable, Sendable {
+    case creator, admin, member
+
+    public var isAdmin: Bool { self != .member }
+    /// VoiceOver word(s) read after the name.
+    public var spoken: String? {
+        switch self {
+        case .creator: return "creator, admin"
+        case .admin: return "admin"
+        case .member: return nil
+        }
+    }
+    public var symbol: String? {
+        switch self {
+        case .creator: return "crown.fill"
+        case .admin: return "checkmark.shield.fill"
+        case .member: return nil
+        }
+    }
+}
+
 public struct RoomManifest: Codable, Equatable, Sendable {
     public var room: String
     public var label: String
@@ -66,8 +88,25 @@ public struct RoomManifest: Codable, Equatable, Sendable {
     /// Member signing key (base64url) -> current epoch key sealed to that member. Empty at epoch 0.
     public var boxes: [String: Data]
     public var issuedAt: Date
+    /// The creator device's signing key (not the room admin key). Set on new rooms and stamped by
+    /// the creator on its next admin action for older rooms. Optional so older manifests decode.
+    public var creatorKey: Data? = nil
 
     public var isFull: Bool { members.count >= cap }
+
+    /// Role from the signed manifest only (device keys), never from display names.
+    public func role(of signKey: Data) -> RoomRole {
+        if let creatorKey, signKey == creatorKey { return .creator }
+        if coAdmins.contains(signKey) { return .admin }
+        return .member
+    }
+
+    /// Role of the member with this mesh device id (the id inside the signed manifest), or nil
+    /// when the device is not on the roster.
+    public func role(device: String) -> RoomRole? {
+        guard let m = members.first(where: { $0.device == device }) else { return nil }
+        return role(of: m.signKey)
+    }
     public func member(_ signKey: Data) -> RoomMember? { members.first { $0.signKey == signKey } }
     public func isCoAdmin(_ signKey: Data) -> Bool { coAdmins.contains(signKey) }
     /// "Open", "Closed" or "Full", for beacons and badges.
@@ -206,6 +245,7 @@ public enum RoomGovernor {
         var manifest = RoomManifest(room: room.id, label: room.label, seq: 1, adminKey: adminKey, adminName: name, coAdmins: [],
                                     epoch: 0, cap: RoomLimits.clampCap(cap), state: .open, listed: listed,
                                     passcode: room.usesPasscode, members: [me], banned: [], boxes: [:], issuedAt: now)
+        manifest.creatorKey = identity.signKey
         let gov = RoomGov(adminKey: adminKey, adminSecret: adminSecret)
         if rotate {
             let fresh = RoomCrypto.randomKey()
@@ -325,6 +365,10 @@ public enum RoomGovernor {
         guard let current = room.gov?.manifest, let secret = signerSecret(room, identity: identity) else { return nil }
         var next = current
         guard mutate(&next) else { return nil }
+        // Older rooms: the creator (admin key holder) names its own device key on its next action.
+        if next.creatorKey == nil, isCreatorAdmin(room), next.member(identity.signKey) != nil {
+            next.creatorKey = identity.signKey
+        }
         next.seq = current.seq + 1
         next.issuedAt = now
         guard let blob = PasaSign.sign(next, secret: secret, domain: manifestDomain) else { return nil }
@@ -381,7 +425,7 @@ public enum RoomGovernor {
         guard signKey != identity.signKey else { return nil }
         let roomID = room.id
         return issue(&room, identity: identity, now: now) { next in
-            guard next.member(signKey) != nil, signKey != next.adminKey else { return false }
+            guard next.member(signKey) != nil, signKey != next.adminKey, signKey != next.creatorKey else { return false }
             next.members.removeAll { $0.signKey == signKey }
             next.coAdmins.removeAll { $0 == signKey }
             if !next.banned.contains(signKey) { next.banned.append(signKey) }

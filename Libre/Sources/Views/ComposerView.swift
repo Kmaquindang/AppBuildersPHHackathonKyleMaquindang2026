@@ -3,6 +3,10 @@
 // - One "+" button on the left opens a menu: Photo, Voice note.
 // - A rounded field. Trailing inside it: the mic while the field is empty (touch and hold to
 //   record, release to send), the send arrow (arrow.up.circle.fill) as soon as there is text.
+// - Photos are staged, not sent: up to 4 thumbnails sit in the composer with an X each, you can
+//   add a caption (an "@pasa ..." caption asks the AI Mac about the photos as one question), and
+//   nothing leaves until the send arrow.
+// - Releasing the mic shows a small preview (play, duration, delete, send) instead of sending.
 // - "Voice note" in the "+" menu (and a VoiceOver double-tap on the mic) records hands-free:
 //   tap Send or Cancel. Hold to record stays on the mic.
 // - Typing "@" shows an inline list: @pasa, @pasa my tasks, @pasa what did I miss?, @pasa summary.
@@ -18,8 +22,12 @@ import PhotosUI
 struct ComposerView: View {
     @EnvironmentObject private var mesh: MeshService
     @StateObject private var recorder = VoiceRecorder()
-    @State private var text = ""
-    @State private var photoItem: PhotosPickerItem?
+    @State private var draft = ComposerDraft()
+    @State private var photoItems: [PhotosPickerItem] = []
+    /// Small thumbnails of staged photos, made once when they are staged.
+    @State private var thumbs: [UUID: CGImage] = [:]
+    /// A recorded voice note waiting for Send or Delete.
+    @State private var voiceDraft: StagedItem?
     @State private var preparingPhoto = false
     @State private var pressing = false
     @State private var note: String?
@@ -38,17 +46,28 @@ struct ComposerView: View {
                 answeredRow(hint)
             }
 
-            let suggestions = MentionSuggest.suggestions(for: text)
+            let suggestions = MentionSuggest.suggestions(for: draft.text)
             if !suggestions.isEmpty {
                 suggestionList(suggestions)
             }
 
             if StarterChipPolicy.visible(entriesEmpty: mesh.entries.isEmpty, afterOnboarding: mesh.showStarterChips,
-                                         canSend: mesh.activeRoom.canSend, typing: !text.isEmpty) {
+                                         canSend: mesh.activeRoom.canSend, typing: !draft.text.isEmpty || !draft.photos.isEmpty) {
                 starterChips
             }
 
-            if recorder.isRecording || tapRecording {
+            if !draft.photos.isEmpty {
+                stagedPhotos
+            }
+
+            if let voice = voiceDraft, !recorder.isRecording {
+                VoicePreviewRow(item: voice,
+                                onDelete: { voiceDraft = nil },
+                                onSend: {
+                                    mesh.sendMedia(voice.data, kind: .audio, mime: voice.mime, durationSeconds: voice.seconds)
+                                    voiceDraft = nil
+                                })
+            } else if recorder.isRecording || tapRecording {
                 recordingRow
             } else if let problem = recorder.problem ?? note ?? mesh.composerNote {
                 TintedLabel(text: problem, symbol: "info.circle", tint: .orange, font: .footnote)
@@ -61,7 +80,8 @@ struct ComposerView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .photosPicker(isPresented: $showPicker, selection: $photoItem, matching: .images, photoLibrary: .shared())
+        .photosPicker(isPresented: $showPicker, selection: $photoItems, maxSelectionCount: max(1, draft.photoSlots),
+                      selectionBehavior: .ordered, matching: .images, photoLibrary: .shared())
         .alert(primer == "mic" ? "Record a voice note" : "Share a photo", isPresented: Binding(get: { primer != nil }, set: { if !$0 { primer = nil } })) {
             Button("Continue") {
                 let kind = primer ?? ""
@@ -78,11 +98,11 @@ struct ComposerView: View {
         } message: {
             Text(primer == "mic" ? PermissionPrimer.microphone + " Then hold the mic button to record, or pick Voice note from the + menu." : PermissionPrimer.photos)
         }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            sendPhoto(item)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            stagePhotos(items)
         }
-        .onChange(of: text) { _, new in
+        .onChange(of: draft.text) { _, new in
             if !new.isEmpty, mesh.answeredHint != nil { mesh.answeredHint = nil }
         }
         .onChange(of: recorder.problem) { _, problem in
@@ -90,8 +110,7 @@ struct ComposerView: View {
         }
     }
 
-    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var isAsk: Bool { AssistantMention.strip(text) != nil }
+    private var isAsk: Bool { AssistantMention.strip(draft.text) != nil }
 
     // MARK: Input row
 
@@ -100,7 +119,8 @@ struct ComposerView: View {
         Menu {
             Button {
                 if mesh.primerNeeded("photos") { primer = "photos" } else { showPicker = true }
-            } label: { Label("Photo", systemImage: "photo.on.rectangle") }
+            } label: { Label(draft.photoSlots == 0 ? "Photo (4 max)" : "Photo", systemImage: "photo.on.rectangle") }
+            .disabled(draft.photoSlots == 0)
             Button {
                 if mesh.primerNeeded("mic") {
                     primerStartsRecording = true
@@ -129,7 +149,7 @@ struct ComposerView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         #endif
-        .disabled(preparingPhoto || recorder.isRecording || !mesh.activeRoom.canSend)
+        .disabled(preparingPhoto || recorder.isRecording || voiceDraft != nil || !mesh.activeRoom.canSend)
         .accessibilityLabel("Add photo or voice note")
         .accessibilityHint("Opens a menu: Photo, Voice note")
     }
@@ -137,7 +157,7 @@ struct ComposerView: View {
     /// Rounded field with the mic (empty) or the send arrow (any text) inside, trailing.
     private var field: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            TextField("Message, or @pasa to ask", text: $text, axis: .vertical)
+            TextField(draft.photos.isEmpty ? "Message, or @pasa to ask" : "Add a caption, or @pasa what is this?", text: $draft.text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($fieldFocused)
@@ -147,7 +167,7 @@ struct ComposerView: View {
                 .onSubmit(send)
                 .accessibilityLabel("Message")
                 .accessibilityHint("Start with @pasa to ask the AI")
-            if trimmed.isEmpty {
+            if !draft.canSend {
                 micButton
             } else {
                 Button(action: send) {
@@ -159,7 +179,7 @@ struct ComposerView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isAsk ? "Ask Pasa" : "Send")
+                .accessibilityLabel(isAsk ? (draft.photos.isEmpty ? "Ask Pasa" : "Ask Pasa about the photos") : (draft.photos.isEmpty ? "Send" : "Send \(draft.photos.count) photo\(draft.photos.count == 1 ? "" : "s")"))
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
@@ -193,17 +213,17 @@ struct ComposerView: View {
                         pressing = false
                         if primer != nil { return }   // the primer is up; nothing was recorded
                         if let clip = recorder.end() {
-                            mesh.sendMedia(clip.data, kind: .audio, mime: "audio/mp4", durationSeconds: clip.seconds)
+                            voiceDraft = StagedItem(kind: .audio, data: clip.data, mime: "audio/mp4", seconds: clip.seconds)
                         }
                     }
             )
             .disabled(!mesh.activeRoom.canSend)
             .accessibilityElement()
             .accessibilityLabel(recorder.isRecording ? "Recording voice note" : "Voice note")
-            .accessibilityHint(tapRecording ? "Double-tap to send" : "Touch and hold to record, release to send. Or double-tap to start, then double-tap again to send.")
+            .accessibilityHint(tapRecording ? "Double-tap to stop and preview" : "Touch and hold to record, release to preview. Or double-tap to start, then double-tap again to stop.")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction {
-                if tapRecording { finishTapRecording(send: true) } else if mesh.primerNeeded("mic") {
+                if tapRecording { finishTapRecording(keep: true) } else if mesh.primerNeeded("mic") {
                     primerStartsRecording = true
                     primer = "mic"
                 } else {
@@ -218,21 +238,21 @@ struct ComposerView: View {
         HStack(spacing: 8) {
             TintedLabel(text: tapRecording
                         ? "Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30"
-                        : "Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30. Release to send.",
+                        : "Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30. Release to stop.",
                         symbol: "record.circle", tint: .red, font: .callout.weight(.semibold))
             if tapRecording {
                 Spacer(minLength: 4)
-                Button("Cancel") { finishTapRecording(send: false) }
+                Button("Cancel") { finishTapRecording(keep: false) }
                     .frame(minHeight: 44)
                     .accessibilityHint("Deletes this recording")
                 Button {
-                    finishTapRecording(send: true)
+                    finishTapRecording(keep: true)
                 } label: {
-                    Label("Send", systemImage: "arrow.up.circle.fill").font(.callout.weight(.semibold))
+                    Label("Stop", systemImage: "stop.circle.fill").font(.callout.weight(.semibold))
                         .frame(minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityHint("Sends the voice note to the room")
+                .accessibilityHint("Stops recording and shows a preview before sending")
             }
         }
     }
@@ -243,14 +263,14 @@ struct ComposerView: View {
         recorder.begin()
     }
 
-    private func finishTapRecording(send: Bool) {
+    private func finishTapRecording(keep: Bool) {
         tapRecording = false
         let clip = recorder.end()
-        if send, let clip {
-            mesh.sendMedia(clip.data, kind: .audio, mime: "audio/mp4", durationSeconds: clip.seconds)
-        } else if send, recorder.problem == "Hold the mic button while you talk." {
+        if keep, let clip {
+            voiceDraft = StagedItem(kind: .audio, data: clip.data, mime: "audio/mp4", seconds: clip.seconds)
+        } else if keep, recorder.problem == "Hold the mic button while you talk." {
             recorder.problem = "That voice note was too short. Talk for at least a second."
-        } else if !send {
+        } else if !keep {
             recorder.problem = nil
         }
     }
@@ -298,7 +318,7 @@ struct ComposerView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element) { index, item in
                 Button {
-                    text = MentionSuggest.apply(item, to: text)
+                    draft.text = MentionSuggest.apply(item, to: draft.text)
                     fieldFocused = true
                 } label: {
                     HStack(spacing: 10) {
@@ -357,32 +377,137 @@ struct ComposerView: View {
 
     // MARK: Sending
 
-    private func sendPhoto(_ item: PhotosPickerItem) {
+    /// Loads, shrinks and stages picked photos (up to 4 in the composer). Nothing is sent here.
+    private func stagePhotos(_ items: [PhotosPickerItem]) {
         preparingPhoto = true
         note = nil
         Task {
             defer {
                 preparingPhoto = false
-                photoItem = nil
+                photoItems = []
             }
-            guard let raw = try? await item.loadTransferable(type: Data.self) else {
-                note = "Could not read that photo."
-                return
+            var staged: [StagedItem] = []
+            var failed = 0
+            let slots = draft.photoSlots
+            for item in items.prefix(slots) {
+                guard let raw = try? await item.loadTransferable(type: Data.self),
+                      let shrunk = await Task.detached(priority: .userInitiated, operation: { MediaImage.compress(raw) }).value else {
+                    failed += 1
+                    continue
+                }
+                let photo = StagedItem(kind: .image, data: shrunk.data, mime: "image/jpeg", width: shrunk.width, height: shrunk.height)
+                thumbs[photo.id] = MediaImage.thumbnail(shrunk.data, maxPixel: 180)
+                staged.append(photo)
             }
-            let shrunk = await Task.detached(priority: .userInitiated) { MediaImage.compress(raw) }.value
-            guard let shrunk else {
-                note = "Could not shrink that photo enough to send."
-                return
+            let dropped = draft.addPhotos(staged) + max(0, items.count - slots)
+            if failed > 0 { note = failed == 1 ? "Could not read one photo." : "Could not read \(failed) photos." }
+            else if dropped > 0 { note = "Up to \(ComposerDraft.maxPhotos) photos per message." }
+        }
+    }
+
+    /// Staged photo thumbnails with an X each. Scrolls sideways at large text sizes.
+    private var stagedPhotos: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(draft.photos) { photo in
+                    ZStack(alignment: .topTrailing) {
+                        Group {
+                            if let thumb = thumbs[photo.id] {
+                                Image(decorative: thumb, scale: 1).resizable().scaledToFill()
+                            } else {
+                                Color.secondary.opacity(0.2)
+                            }
+                        }
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityElement()
+                        .accessibilityLabel(draft.accessibilityLabel(for: photo.id))
+                        Button {
+                            draft.removePhoto(photo.id)
+                            thumbs[photo.id] = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(Color.white, Color.black.opacity(0.7))
+                                .font(.title3)
+                                .frame(width: 44, height: 44, alignment: .topTrailing)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: 6, y: -6)
+                        .accessibilityLabel("Remove photo \((draft.photos.firstIndex(of: photo) ?? 0) + 1)")
+                    }
+                    .padding(.top, 6)
+                }
             }
-            mesh.sendMedia(shrunk.data, kind: .image, mime: "image/jpeg", width: shrunk.width, height: shrunk.height)
+            .padding(.horizontal, 2)
         }
     }
 
     private func send() {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty else { return }
-        mesh.send(line)
-        text = ""
+        let plan = draft.plan
+        guard !plan.isEmpty else { return }
+        if plan.photos.isEmpty {
+            if let text = plan.text { mesh.send(text) }
+        } else {
+            mesh.sendStaged(plan)
+        }
+        draft.clear()
+        thumbs = [:]
+    }
+}
+
+/// After recording: play, duration, delete or send. Nothing leaves until Send.
+struct VoicePreviewRow: View {
+    @ObservedObject private var player = AudioPlayback.shared
+    let item: StagedItem
+    var onDelete: () -> Void
+    var onSend: () -> Void
+
+    var body: some View {
+        let playing = player.playingID == item.id
+        HStack(spacing: 6) {
+            Button {
+                player.toggle(item.id, data: item.data)
+            } label: {
+                Image(systemName: playing ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .accessibilityLabel(playing ? "Stop preview" : "Play your voice note, \(MediaManifest.clock(item.seconds ?? 0))")
+            Image(systemName: "waveform").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text(MediaManifest.clock(item.seconds ?? 0))
+                .font(.callout.monospacedDigit())
+                .accessibilityHidden(true)
+            Spacer(minLength: 4)
+            Button(role: .destructive) {
+                if playing { player.stop() }
+                onDelete()
+            } label: {
+                Image(systemName: "trash").frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
+            .accessibilityLabel("Delete voice note")
+            Button {
+                if playing { player.stop() }
+                onSend()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, BubbleStyle.mine)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send voice note")
+        }
+        .padding(.leading, 4)
+        .background(BubbleStyle.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

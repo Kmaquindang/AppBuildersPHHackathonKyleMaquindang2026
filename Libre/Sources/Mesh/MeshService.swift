@@ -203,6 +203,10 @@ final class MeshService: ObservableObject {
     @Published private(set) var showStarterChips = false
     /// One-line note under the composer (for example a coalesced duplicate ask).
     @Published var composerNote: String?
+    /// AI Mac: caption asks waiting for their photo to finish arriving (media id -> ask, room).
+    private var photoAsks: [UUID: (ask: MeshMessage, room: String)] = [:]
+    /// AI Mac: per room context fill, last compaction and summary size (Proof panel).
+    @Published private(set) var contextStats: [String: ContextStats] = [:]
     /// Round 2: the same question was answered in the last 10 minutes ("Answered above", "Ask again").
     @Published var answeredHint: AnsweredHint?
     /// Round 2: asks the timeline to scroll to a row (the answer above).
@@ -517,6 +521,17 @@ final class MeshService: ObservableObject {
     var roomMembers: [RoomMember] { activeRoom.gov?.manifest?.members ?? [] }
     func isCoAdmin(_ member: RoomMember) -> Bool { activeRoom.gov?.manifest?.isCoAdmin(member.signKey) ?? false }
     func isMe(_ member: RoomMember) -> Bool { member.signKey == identity.signKey }
+    /// Admin badge for a device in the active room, from the signed manifest only (device keys,
+    /// never names). This device also knows it is the creator when it holds the admin key.
+    func roomRole(forDevice device: String) -> RoomRole? {
+        guard let m = activeRoom.gov?.manifest else { return nil }
+        if device == displayName, isRoomCreatorAdmin { return .creator }
+        return m.role(device: device)
+    }
+    func roomRole(of member: RoomMember) -> RoomRole {
+        if isMe(member), isRoomCreatorAdmin { return .creator }
+        return activeRoom.gov?.manifest?.role(of: member.signKey) ?? .member
+    }
     /// "7/12" for the header, nil for rooms without a roster.
     var roomCountText: String? {
         guard let m = activeRoom.gov?.manifest else { return nil }
@@ -1395,7 +1410,8 @@ final class MeshService: ObservableObject {
     /// One chat for everything: a line starting with "@pasa" (or the old "@libre") is an ask for
     /// the AI peer, anything else is team chat.
     /// `force` skips the "Answered above" check (the composer's "Ask again").
-    func send(_ rawText: String, force: Bool = false) {
+    /// `attachments`: media ids of photos sent just before, for an @pasa caption.
+    func send(_ rawText: String, force: Bool = false, attachments: [UUID]? = nil) {
         var text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         if let blocker = activeRoom.sendBlocker {
@@ -1408,13 +1424,14 @@ final class MeshService: ObservableObject {
             kind = .ask
             text = question
             if text.isEmpty { return }
-            // The same question is still waiting: do not queue it twice.
-            if AskCoalescer.pendingDuplicate(of: text, from: displayName, in: entries) != nil {
+            // The same question is still waiting: do not queue it twice (a question about new
+            // photos is never a repeat).
+            if attachments == nil, AskCoalescer.pendingDuplicate(of: text, from: displayName, in: entries) != nil {
                 composerNote = "You already asked that. It sends once and Pasa answers once."
                 return
             }
             // Answered in the last 10 minutes: point at the answer instead of asking again.
-            if !force, let hit = AskCoalescer.recentAnswer(of: text, in: entries) {
+            if !force, attachments == nil, let hit = AskCoalescer.recentAnswer(of: text, in: entries) {
                 composerNote = nil
                 answeredHint = AnsweredHint(question: text, answerID: hit.answer.id)
                 return
@@ -1425,6 +1442,7 @@ final class MeshService: ObservableObject {
 
         let destination: MeshDestination? = kind == .ask ? .role(MeshDestination.aiRole) : nil
         var message = engine.makeOutgoing(kind: kind, body: text, destination: destination)
+        if kind == .ask, let attachments, !attachments.isEmpty { message.attachments = attachments }
         if kind == .ask {
             sentAsks[message.id] = Date()
             // Phones tell the Mac since when they were away (or cleared), for "what did I miss".
@@ -1537,19 +1555,35 @@ final class MeshService: ObservableObject {
 
     /// Sends a photo or voice note: saves it in the cache, sends the manifest as a timeline
     /// message (queued like chat when nobody is linked), then the chunks, paced.
-    func sendMedia(_ data: Data, kind: MediaKind, mime: String, durationSeconds: Double? = nil, width: Int? = nil, height: Int? = nil) {
+    /// Sends what was staged in the composer: each photo as before, then the caption. An @pasa
+    /// caption becomes one ask that names the photos.
+    func sendStaged(_ plan: ComposerDraft.Plan) {
+        var ids: [UUID] = []
+        for photo in plan.photos {
+            if let id = sendMedia(photo.data, kind: .image, mime: photo.mime, width: photo.width, height: photo.height) { ids.append(id) }
+        }
+        guard let text = plan.text else { return }
+        if plan.isAsk, !ids.isEmpty {
+            send(text, force: true, attachments: ids)
+        } else {
+            send(text)
+        }
+    }
+
+    @discardableResult
+    func sendMedia(_ data: Data, kind: MediaKind, mime: String, durationSeconds: Double? = nil, width: Int? = nil, height: Int? = nil) -> UUID? {
         if let blocker = activeRoom.sendBlocker {
             lastProblem = blocker
-            return
+            return nil
         }
         guard !data.isEmpty, data.count <= MediaLimits.maxBytes else {
             lastProblem = "That \(kind == .image ? "photo" : "voice note") is too large to send (\(data.count / 1024) KB, limit \(MediaLimits.maxBytes / 1024) KB)."
-            return
+            return nil
         }
         let manifest = MediaChunker.manifest(for: data, kind: kind, mime: mime, durationSeconds: durationSeconds, width: width, height: height)
         guard mediaStore.put(manifest.mediaId, data: data, ext: manifest.fileExtension), let body = manifest.encoded() else {
             lastProblem = "Could not save the \(kind == .image ? "photo" : "voice note") on this device."
-            return
+            return nil
         }
         mediaVersion += 1
         let message = engine.makeOutgoing(kind: .media, body: body, destination: nil)
@@ -1562,6 +1596,7 @@ final class MeshService: ObservableObject {
         if kind == .audio { transcribeIfNeeded(manifest.mediaId) }
         if kind == .image { photoArrived(manifest.mediaId) }
         #endif
+        return manifest.mediaId
     }
 
     private func queueChunks(of data: Data, manifest: MediaManifest, indexes: [Int], outgoing: Bool, room: String) {
@@ -2151,6 +2186,18 @@ final class MeshService: ObservableObject {
             askQueue.finish(job.askID, answerID: nil)
             return
         }
+        // An @pasa caption sent with staged photos: answer about the first photo. If it has not
+        // fully arrived yet, park the ask; photoArrived picks it up.
+        if aiEngine == .assistant, let first = ask.attachments?.first {
+            if let media = mediaMessage(first, in: roomID), mediaStore.data(first) != nil {
+                await runPhoto(media: media, ask: ask, room: roomID, memory: mem)
+            } else {
+                photoAsks[first] = (ask, roomID)
+            }
+            askQueue.finish(job.askID, answerID: nil)
+            saveLedger()
+            return
+        }
         // "@pasa what is this": check the newest photo in this room with the vision model.
         if aiEngine == .assistant, IntentParser.fastPath(ask.body)?.kind == .describePhoto {
             if let media = latestPhoto(in: roomID, preferFrom: ask.origin) {
@@ -2168,7 +2215,8 @@ final class MeshService: ObservableObject {
             assistant.serve(room: roomID, memory: mem, clearedAt: clearedAtFor(roomID))
             assistant.roomLabel = room.displayName
             assistant.digestSchedule = digestSchedule
-            let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since)
+            let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since, askID: ask.askKey)
+            contextStats = assistant.contextStats
             if outcome.error != nil, askQueue.wasCutBySleep(job) {
                 // The Mac slept during the model call: answer it after wake instead.
                 askQueue.requeueInFlight()
@@ -2527,8 +2575,20 @@ final class MeshService: ObservableObject {
         return (photos.last { $0.message.origin == device } ?? photos.last)?.message
     }
 
-    /// A photo is complete on the Mac: check it once with the vision model, if on and installed.
+    /// The media message (manifest) for a media id in a room.
+    private func mediaMessage(_ mediaId: UUID, in roomID: String) -> MeshMessage? {
+        entriesFor(roomID).last { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }?.message
+    }
+
+    /// A photo is complete on the Mac: answer a parked caption ask about it, or check it once
+    /// with the vision model, if on and installed.
     private func photoArrived(_ mediaId: UUID) {
+        if isAIPeer, let parked = photoAsks.removeValue(forKey: mediaId), let media = mediaMessage(mediaId, in: parked.room) {
+            _ = askQueue.enqueue(room: parked.room, askID: media.id, payload: .photo(media: media, ask: parked.ask))
+            aiQueueDepth = askQueue.depth
+            pumpAsks()
+            return
+        }
         guard isAIPeer, autoDescribePhotos, visionModel != nil, aiEngine == .assistant, visionCache[mediaId] == nil else { return }
         let roomID = mediaRoom[mediaId] ?? activeRoom.id
         guard let entry = entriesFor(roomID).last(where: { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }),
