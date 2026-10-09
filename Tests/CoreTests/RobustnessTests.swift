@@ -21,6 +21,12 @@ func runRobustnessTests() {
         check(!s.rules.contains { $0.title == "Cement orders" } && !s.rules.contains { $0.title.hasPrefix("Filler") }, "A: irrelevant rules left out")
         check(s.relevantCount == 1 && s.checkedTitles.contains("No site visits after 5 PM"), "A: relevant count and checked titles")
 
+        check(s.strongCount == 1, "A: title word match is strong")
+        _ = mem.upsertRule(title: "Petty cash limit", body: "Purchases above 2,000 pesos need the foreman's OK first.", by: "Mac", now: t0)
+        let weak = KnowledgeRetriever.select(question: "Ano ang paboritong kulay ng foreman?", rules: mem.rules, notes: [])
+        check(weak.relevantCount == 1 && weak.strongCount == 0, "A: a lone body word (foreman) is a weak match: \(weak.relevantCount) \(weak.strongCount)")
+        let two = KnowledgeRetriever.select(question: "Do purchases need the foreman?", rules: mem.rules, notes: [])
+        check(two.strongCount == 1, "A: two body words is a strong match")
         let cement = KnowledgeRetriever.select(question: "Saan tayo mag-order ng cement?", rules: mem.rules, notes: [])
         check(cement.rules.contains { $0.title == "Cement orders" }, "A: Taglish question still matches by keyword")
 

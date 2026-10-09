@@ -75,7 +75,7 @@ public enum AnswerStyle {
         return noInfoPhrases.contains { lower.contains($0) }
     }
 
-    /// No saved rule matched the question and the reply itself says it has no information: rule
+    /// No saved rule matched the question strongly (Selection.strongCount == 0) and the reply itself says it has no information: rule
     /// chips under such a reply would contradict it, so they are dropped (Oct 9, 2026, benchmark #19).
     public static func dropContradictedCitations(_ styled: StyledAnswer, noRelevantKnowledge: Bool) -> StyledAnswer {
         guard noRelevantKnowledge, !styled.rulesUsed.isEmpty || !styled.unverifiedRules.isEmpty, saysNoInfo(styled.text) else { return styled }
