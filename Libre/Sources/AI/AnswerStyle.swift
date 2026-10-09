@@ -59,6 +59,22 @@ public enum AnswerStyle {
         return StyledAnswer(text: text, rulesUsed: used, unverifiedRules: unverified, noRule: used.isEmpty)
     }
 
+    /// QA fix (Oct 9, 9:30 PM PHT, real qwen3:8b run): the model copied the system prompt's example
+    /// citation into plain answers ("79." came back with a "No site visits after 5 PM" chip) and
+    /// echoed prompt placeholders as warning chips ("[Note: no saved rule or note matched this
+    /// question]", "[Rule: General knowledge]"). Only rules and notes the model was actually shown
+    /// can become chips. When it was shown nothing, invented tags are dropped too: the answer is
+    /// already marked noRule, so a warning chip would only be noise.
+    public static func restrict(_ styled: StyledAnswer, shown titles: [String]) -> StyledAnswer {
+        let allowed = Set(titles.map { NameMatcher.normalize($0) })
+        var out = styled
+        out.rulesUsed = styled.rulesUsed.filter { allowed.contains(NameMatcher.normalize(title(in: $0))) }
+        if allowed.isEmpty { out.unverifiedRules = [] }
+        out.noRule = out.rulesUsed.isEmpty
+        if out.text == emptyFallback && out.noRule { out.text = noRuleFallback }
+        return out
+    }
+
     private static let legacyTag = try! NSRegularExpression(
         pattern: #"\[(Rule|Skill|Note)\s*:\s*([^\]\n]{1,200})\](\s*\(unverified\))?"#, options: [.caseInsensitive])
 

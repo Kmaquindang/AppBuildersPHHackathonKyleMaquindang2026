@@ -479,7 +479,8 @@ public final class ExecutiveAssistant {
                 tracker.add(result, prompt: turns)
                 // Never pass on a citation that is not in memory: fix versions, flag the rest,
                 // then move citations out of the text into chips.
-                let styled = AnswerStyle.style(result.text, rules: memory.rules, notes: memory.notes)
+                let styled = AnswerStyle.restrict(AnswerStyle.style(result.text, rules: memory.rules, notes: memory.notes),
+                                                  shown: selection.checkedTitles)
                 reply = styled.text
                 rulesUsed = styled.rulesUsed
                 unverifiedRules = styled.unverifiedRules

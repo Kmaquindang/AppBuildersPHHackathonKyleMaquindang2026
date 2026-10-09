@@ -111,6 +111,9 @@ enum AssistantPrompts {
         }
         if noRelevantKnowledge { lines.append("Note from Pasa: no saved rule or note matched this question.") }
         if LiveInfo.looksLive(question) { lines.append(LiveInfo.note) }
+        if let language = LanguageHint.detect(question) {
+            lines.append("Note from Pasa: the question is in \(language). Reply in \(language).")
+        }
         lines.append("")
         lines.append("Question from \(asker): \(question)")
         return lines.joined(separator: "\n")
@@ -154,5 +157,41 @@ public enum LiveInfo {
     public static func looksLive(_ question: String) -> Bool {
         let text = " " + question.lowercased() + " "
         return phrases.contains { text.contains($0) }
+    }
+}
+
+/// QA fix (Oct 9, 9:30 PM PHT): on the real model a Tagalog question ("Pwede ba akong pumunta sa
+/// site ng alas sais ng gabi?") was answered in Cebuano, also seen in benchmark #9. The general
+/// "reply in the language of the question" line was not enough, so a question that is clearly
+/// Tagalog or clearly Cebuano gets a one-line hint. Only words that belong to one language count;
+/// shared words (pwede, ba, sa, ang, wala) are ignored. English and mixed text get no hint.
+public enum LanguageHint {
+    static let tagalog: Set<String> = [
+        "ng", "hindi", "gabi", "pumunta", "saan", "ano", "anong", "kailan", "bakit", "sino", "natin", "namin",
+        "dito", "tayo", "magkano", "ilan", "ito", "po", "opo", "paano", "ngayon", "bukas", "kahapon", "meron",
+        "akong", "ako", "ikaw", "siya", "nila", "niya", "yung", "iyong", "kailangan", "puwede", "pwedeng", "mag",
+        "lahat", "wala", "walang", "may", "naman", "rin", "din", "lang", "sabi", "pa", "na"
+    ]
+    static let cebuano: Set<String> = [
+        "dili", "gabii", "moadto", "unsa", "unsay", "asa", "kanus", "ngano", "kinsa", "og", "ug", "naa", "karon",
+        "ugma", "kagahapon", "nako", "nimo", "imo", "unsaon", "mahimo", "adto", "diri", "sab", "pud", "lagi",
+        "bitaw", "nato", "ato", "atong", "inyo", "ila", "kani", "kana", "dinhi", "didto", "bisan", "gyud", "jud"
+    ]
+    /// Words both languages use: they never decide.
+    static let shared: Set<String> = ["pwede", "sa", "ang", "mga", "kay", "lang", "ba", "wala", "na", "pa", "may", "akong", "ako", "ko", "mo"]
+
+    /// "Tagalog", "Cebuano (Bisaya)" or nil (English, Taglish, mixed or too short to tell).
+    public static func detect(_ question: String) -> String? {
+        let words = NameMatcher.normalize(question).split(separator: " ").map(String.init)
+        var tl = 0, ceb = 0
+        for w in words where !shared.contains(w) {
+            if tagalog.contains(w) { tl += 1 }
+            if cebuano.contains(w) { ceb += 1 }
+        }
+        if tl >= 1 && ceb == 0 { return "Tagalog" }
+        if ceb >= 1 && tl == 0 { return "Cebuano (Bisaya)" }
+        if tl >= 2 * ceb + 2 { return "Tagalog" }
+        if ceb >= 2 * tl + 2 { return "Cebuano (Bisaya)" }
+        return nil
     }
 }
