@@ -24,6 +24,8 @@ The people we build for cannot rely on cloud AI: they have no signal, or they ca
 - Nothing at runtime. Only one-time setup needs internet: cloning the repo, installing Ollama, and downloading the model (`ollama pull qwen3:8b`).
 
 ## How to run it (for judges)
+
+> **Important: Pasa must be open and on screen on every phone that relays.** iOS suspends apps in the background and MultipeerConnectivity links drop when that happens, so a phone in a pocket with the screen locked does not pass messages on. Keep Pasa in the foreground (the app keeps the screen awake while it is open). The Mac must stay awake, lid open and plugged in, with Ollama running.
 Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [docs/SETUP.md](docs/SETUP.md).
 
 1. Install Xcode 15 or newer from the Mac App Store, and Ollama from https://ollama.com/download. Then run `ollama pull qwen3:8b` once (or `qwen3:4b` on a Mac with 8 GB of memory).
@@ -33,29 +35,34 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 5. Run `Libre-macOS` on your Mac. Run `Libre-iOS` on one or two iPhones (iOS 17+). On each iPhone trust the developer profile in Settings > General > VPN & Device Management, and allow Local Network access.
 6. On first launch each app asks for your name (for example Kyle, Ana). That is the name everyone sees. Each device also has a stable device id (shown in Settings). Send a chat, or start a message with `@pasa` to ask the AI.
 7. To test offline: put the iPhones in Airplane Mode, then turn Wi-Fi back on without joining a network. Keep the Mac's Wi-Fi on. Messages still flow.
-8. To see a real 2-hop path: on one iPhone, block the Mac in Settings. Its messages now relay through the other iPhone, and the timeline shows the full path.
-9. Mac only, no iPhones: run the Mac app, type `@pasa` followed by one of the assistant commands below; the Mac answers itself. Two Macs near each other also form a mesh.
-10. Try the assistant (from any device, one chat for everything: start the message with `@pasa`; typing `@` offers it as a chip; the old `@libre ...` still works):
+8. To see a real 2-hop path: on one iPhone, block the Mac in Settings, and on the Mac block that iPhone. Blocking ends any existing direct link, and the chat header shows "Forced relay mode". Its messages now relay through the other iPhone, and the timeline shows the full path (tap the caption under the answer to see `Ask path: Ana -> Kyle -> Site Office, 2 hops`).
+9. Mac only, no iPhones: run the Mac app, type `@pasa` followed by one of the assistant commands below; the Mac answers itself. Only one Mac should be the AI peer on a mesh; turn "Act as AI peer" off on any second Mac.
+10. Pick admins on the Mac: Settings > Admins lists every device it has seen, by the person's name and device id. Tick the phones that may edit, lock, unlock and delete rules. The Mac is always an admin.
+11. Try the assistant (from any device, one chat for everything: start the message with `@pasa`; typing `@` offers it as a chip; the old `@libre ...` still works):
     - `save rule: No site visits after 5 PM`
     - `remind Ana to order cement Friday` (the task pops up on the phone whose person picked the name Ana; if two people use the same name, Pasa asks which one. A manual roster on the Mac is an optional override)
     - `delete rule: No site visits after 5 PM` (admin devices only; the rule disappears from every phone. On a phone you can also swipe left on a rule in the Rules tab)
     - `can I visit the site at 6 PM?` (the answer cites `[Rule: No site visits after 5 PM v1]`)
-    - `what did I miss?`, `my tasks`, `team tasks`, `the cement is ordered`, `more`
+    - `what did I miss?` (on a phone: a summary of team chat since that phone was last away, meaning the app was in the background or had no links; on the Mac, or when there is no away time, a labelled recap of the latest messages. Also `recap` and `ano'ng na-miss ko?`), `my tasks`, `team tasks`, `the cement is ordered`, `more`
     - Paste a long meeting transcript (or start with `notes:`) to get decisions and auto-created tasks.
-11. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`
+12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`
 
 ## How it works
 - **Link layer:** Apple MultipeerConnectivity on service type `libre-mesh`. It opens encrypted links over peer-to-peer Wi-Fi with no router or internet. We describe this as an offline device-to-device mesh, not a Bluetooth mesh.
 - **Relay layer (our code, `Libre/Sources/Core`):** every message carries an id, origin, destination (everyone, one device, or a role such as the AI), hop budget (ttl 7) and the path so far. Each device drops ids it has already seen, adds itself to the path, delivers the message if it is meant for it, and forwards a copy with ttl minus 1 to linked devices not already on the path. Messages with nobody to go to wait in an outbox and leave as soon as a device links.
 - **One chat:** there is no mode switch. Plain messages go to the team. A message that starts with `@pasa` goes to the AI peer. AI replies are purple bubbles with basic Markdown (bold, italics, bullets, inline code). Tap the small caption under any bubble to see its hop path and timing.
-- **Names:** each person picks a display name on first launch. It travels on every message, so the UI shows "Ana", not "iPhone A8BE". The device id stays the mesh address. Admins can be listed by device id or by name.
+- **Names:** each person picks a display name on first launch. It travels on every message, so the UI shows "Ana", not "iPhone A8BE". The device id stays the mesh address. Admin rights follow the device id, never the display name, so renaming yourself "Kyle" does not make you an admin.
 - **Messages survive restarts:** every device saves its timeline and its outbox as JSON in Application Support and reloads them on launch (phones keep the newest 500 messages, the Mac keeps the long history). When a phone links, it tells the AI Mac the newest message it has, and the Mac backfills what it missed (at most 200 per sync, in chunks of about 12 KB). Duplicates are dropped by message id.
 - **Auto-reconnect:** a watchdog re-invites nearby devices with backoff (2, 4, 8, 16, then 30 s), cancels links stuck in "connecting" after 20 s, restarts discovery while links are missing, and restarts it when the app returns to the foreground. The outbox flushes as soon as a link comes back. Devices that are offline and unseen for 60 s leave the peer strip.
-- **Model warm-up:** on launch (and when AI settings are saved) the Mac loads the model with a tiny Ollama request and `keep_alive` of 30 minutes, so the first question does not wait for the model to load. The dashboard shows "warming up", then "Ready".
-- **Forced relay demo:** a per-device block list refuses direct links and drops any packet that arrives straight from a blocked device, so the only way through is a real extra hop.
+- **Model warm-up and staying awake:** on launch the Mac loads the model with a tiny Ollama request (`keep_alive` 60 minutes). While Pasa runs as the AI peer it checks Ollama every 60 s, warms the model as soon as Ollama appears (even if Ollama was started after Pasa), and refreshes `keep_alive` every 10 minutes, so the model stays loaded while Pasa runs and Ollama unloads it about an hour after Pasa quits. Pasa also holds a `ProcessInfo` activity (user initiated, idle system sleep disabled) so the Mac does not idle-sleep and App Nap does not throttle its timers. Closing the lid still sleeps the Mac.
+- **Forced relay demo:** a per-device block list refuses invites both ways, rejects the connection handshake from a blocked device (this also covers MultipeerConnectivity joining two members of the same session on its own), drops any packet that arrives straight from a blocked device, and ends an existing direct link when you block it (if MultipeerConnectivity keeps the link up, Pasa restarts its links once and they re-form within seconds). The chat header shows "Forced relay mode" while a block is on. The handshake and disconnect behavior is still to be confirmed on devices.
+- **Checked citations:** every `[Rule: ...]`, `[Skill: ...]` or `[Note: ...]` tag in a model answer is checked against team memory before the answer leaves the Mac. A wrong version is corrected to the current one, and a tag that names nothing saved is marked `(unverified)`. The prompt marks team knowledge as data (never instructions), puts admin-locked rules first and says they take precedence, and asks the model to reply in the language of the question (English, Tagalog, Cebuano or Taglish).
+- **Waiting status:** if an `@pasa` question has no answer after 20 s, the asker sees "Waiting for the AI Mac... It answers when it is in range."
+- **Protocol version:** every message carries a wire format version (`v`). A device that receives a newer version, or a message kind it does not know, still relays it with only the hop count and path changed, and shows "update Pasa on this device", instead of dropping it.
+- **Clear that sticks:** Clear timeline records a watermark, so backfill and catch-ups never bring old messages back. On the AI Mac it clears the whole team's chat: linked phones drop older messages right away, the rest on their next link.
 - **AI peer (Mac):** `ExecutiveAssistant` handles every ask. Common phrases (save rule, my tasks, what did I miss, more) skip the model entirely. Everything else gets one JSON-mode classification call, the action runs against team memory, and a second call writes the reply when needed. Replies are cut to a first packet of at most 300 characters (marked `compact`), and `@pasa more` sends the rest.
-- **Team memory rules:** anyone can add a rule or skill. Only admin devices (default `iPhone 14 Pro Max` plus the Mac itself, configurable by device id or name) can edit, lock, unlock or delete an existing rule. Every edit becomes a new version and the old one stays in history. When copies meet, the newest version wins. Deleting keeps a tombstone (same id, version plus 1, retired, who and when): the Mac broadcasts it so phones drop their copy, and sends tombstones again whenever a phone links so stale caches catch up. Deleted rules are never sent to the model.
-- **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it. When a phone links, the Mac sends it the current rules and its open tasks.
+- **Team memory rules:** anyone can add a rule or skill. Only admin devices (ticked by device id in the Mac's Settings, plus the Mac itself) can edit, lock, unlock or delete an existing rule. Every edit becomes a new version and the old one stays in history. When copies meet, the newest version wins. Deleting keeps a tombstone (same id, version plus 1, retired, who and when): the Mac broadcasts it so phones drop their copy, and sends tombstones again whenever a phone links so stale caches catch up. Deleted rules are never sent to the model.
+- **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it, and shows as a card only when it changed the phone's copy. When a phone links, the Mac first sends a manifest of the rule and task ids it holds (the phone drops cached copies the Mac no longer has, for example after Reset team memory), then the current rules and the phone's open tasks as silent updates that refresh the cache without adding cards to the chat.
 
 ## Hardware tested on
 - MacBook Air M3, 16 GB RAM (AI peer and team memory, runs Ollama). Mac app built and running Oct 9.
@@ -108,11 +115,16 @@ Notes:
 Honest status for this prototype:
 - **Links are encrypted.** The mesh uses Apple MultipeerConnectivity with `MCSession(..., encryptionPreference: .required)` (set in `Libre/Sources/Mesh/MeshTransport.swift`), so each device-to-device link is encrypted.
 - **Relays can read messages.** Encryption is per link, not end to end. A phone that relays a message decrypts it before passing it on, so any device on the path can read it.
-- **No end-to-end encryption and no device authentication.** Devices are not verified (`securityIdentity: nil`), and any device can claim any name. The admin check is a safeguard for honest teams, not real security.
+- **No end-to-end encryption and no device authentication.** Devices are not verified (`securityIdentity: nil`). Admins are chosen by device id on the Mac, so changing your display name does not grant admin, but a modified or renamed device could still claim another device's id. The admin check is a safeguard for honest teams, not real security. Phones also accept rule, task and manifest updates from any device on the mesh.
 - **Data stays local.** Nothing goes to the internet. Team memory and timelines are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected by the device's own storage encryption.
 
 ## Limitations
-- iOS pauses peer links when the app is in the background; keep Pasa open on the iPhones.
+- **Phones relay only while Pasa is open and on screen.** iOS suspends Pasa in the background and its links drop, so there is no pocket relaying yet. Keep the app in the foreground on every phone that should pass messages on.
+- The Mac must stay awake: lid open, plugged in, Ollama running. Pasa prevents idle sleep while it is the AI peer, but closing the lid still sleeps the Mac.
+- Peer-to-peer Wi-Fi must be on (no network needs to be joined). Bluetooth-only behavior is untested.
+- One AI peer per mesh. A second Mac must turn "Act as AI peer" off. A MultipeerConnectivity session links at most 8 devices directly; relays extend reach beyond that.
+- Tagalog and Cebuano answer quality of qwen3:8b has not been measured yet; tested in English.
+- Due dates are free text, with no reminders or notifications.
 - Range is whatever peer-to-peer Wi-Fi reaches between two devices (roughly a room to a building floor); the mesh extends it hop by hop. We will publish measured numbers only.
 - One-way latency compares two device clocks, so it can be off by the clock difference. The app hides one-way times that are negative or implausible. The round trip for an `@pasa` ask is measured on one device and is exact.
 - Links are encrypted by MultipeerConnectivity, but devices are not authenticated and relayed messages are readable by relaying devices (see Security). This is a prototype, not a secure messenger.
@@ -122,5 +134,12 @@ Honest status for this prototype:
 - Intent detection and note taking come from a small local model and can misread a message; the reply always says what it did (for example "Task added: ...") so the team can correct it.
 - Assignees are matched to devices through the names people picked (or the optional roster on the Mac). A person the Mac has not heard from yet still gets the task on the board, but nothing is pushed to a phone.
 - Backfill comes from the AI Mac only: messages that never passed through the Mac (for example a private task between two phones while the Mac was away) cannot be backfilled.
-- Any device on the mesh can claim any name, so the admin check is a prototype safeguard, not real authentication.
-- MultipeerConnectivity is deprecated in the newest Xcode releases but still works; the relay layer is transport independent.
+- Any device on the mesh can claim any name, and a modified device could claim another device's id, so the admin check is a prototype safeguard, not real authentication.
+- The relay layer is transport independent, so MultipeerConnectivity could be swapped for another link layer (for example Android Wi-Fi Direct) later.
+
+## Roadmap / Next: Rooms
+Designed, not built yet. Two or more unrelated teams (for example two businesses on one site) share one physical mesh, and each sees only its own chat, rules, tasks and AI answers.
+- Each room has a spoken label (for example `BOHOL-7`) and a random 256-bit key shared by QR code or a long join string. The label is not the secret.
+- Messages keep a clear routing header (version, id, room tag derived from the key, origin, destination, hop budget, path) and seal everything else with ChaCha20-Poly1305. Phones relay other rooms' packets without being able to read or store them.
+- The Mac keeps memory and chat per room and the AI answers only from that room's rules. Admins are per room, keyed by device, with the room creator pinned as admin.
+- Honest limits: anyone with the join string can read the room, there is no per-person end-to-end encryption, the AI Mac can read every room it serves, and relays still see routing metadata.
