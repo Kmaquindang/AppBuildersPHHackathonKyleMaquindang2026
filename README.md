@@ -76,6 +76,19 @@ The two misses, as recorded: #8 ("Is smoking allowed near the cement and paint s
 - One-time internet is needed to download Ollama (about 206 MB) and the models (qwen3:8b is 5.2 GB, the optional vision model 3.3 GB, the optional Knowledge search model nomic-embed-text 274 MB). The Mac's "Set up AI" button can do this for you, only after you tap it (see Mac setup: done for you). After that Pasa is fully offline.
 - Nothing at runtime. The manual setup is cloning the repo, installing Ollama, and running `ollama pull qwen3:8b`.
 
+## Where Pasa works and where it doesn't
+| Setup | What works | What does not |
+|---|---|---|
+| iPhones only (no Mac) | Chat, multi-hop relay, photos and voice notes, rooms, room codes, rules and tasks already synced from a Mac (read-only) | AI answers, voice transcription, Knowledge. A question shows "No AI computer nearby. Your question is saved and will be answered when the Mac is back." and is resent when an AI Mac serving the room is heard again (for up to a day) |
+| Mac plus iPhones | Everything: AI answers, rules and tasks, voice transcription, photo checks, Knowledge, room admin | Nothing extra needed. The Mac must be awake and in the room |
+| Windows or Linux laptop | Not yet. Ollama runs on Windows and Linux, but the host app is Mac only (SwiftUI and Apple's peer-to-peer Wi-Fi) | Cannot act as the AI host. Roadmap |
+| Android phones only | Not supported. The mesh uses Apple's peer-to-peer Wi-Fi (MultipeerConnectivity), which Android does not speak | Everything |
+| Mixed iPhone and Android | iPhones and the Mac work as above | Android phones are left out of the mesh |
+
+The "No AI computer nearby" line comes from the AI Mac's signed status heartbeat (sent every 10 s). A Mac that is connected but busy with a long answer keeps sending it, so the phone shows typing dots, not the line; the line appears only after 35 s with no heartbeat, or when no AI Mac was ever heard. It promises an answer only while the question is still in the phone's resend list (one day, 8 tries); after that it says "Ask again when the Mac is nearby." A voice note sent with no AI Mac nearby still reaches the room, with a notice that transcripts and spoken questions need the Mac.
+
+Roadmap: a Windows host app, an Android app over Bluetooth LE and Wi-Fi, and a small model on the phone for basic answers without a Mac.
+
 ## How to run it (for judges)
 
 > **Important: Pasa must be open and on screen on every phone that relays.** iOS suspends apps in the background and MultipeerConnectivity links drop when that happens, so a phone in a pocket with the screen locked does not pass messages on. Keep Pasa in the foreground (the app keeps the screen awake while it is open). The Mac must stay awake, lid open and plugged in, with Ollama running.

@@ -169,6 +169,12 @@ public struct PendingAskBook: Codable, Equatable, Sendable {
 
     public func contains(_ askID: UUID) -> Bool { items.contains { $0.ask.id == askID } }
 
+    /// Saved and still going to be resent when an AI Mac is back (not expired, attempts left).
+    public func isQueued(_ askID: UUID, now: Date = Date()) -> Bool {
+        items.contains { $0.ask.id == askID && $0.attempts < PendingAskBook.maxAttempts
+            && now.timeIntervalSince($0.firstSentAt) < PendingAskBook.lifetime }
+    }
+
     public mutating func prune(now: Date = Date()) {
         items.removeAll { now.timeIntervalSince($0.firstSentAt) >= PendingAskBook.lifetime || $0.attempts >= PendingAskBook.maxAttempts + 1 }
     }
