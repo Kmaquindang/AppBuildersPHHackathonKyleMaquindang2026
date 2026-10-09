@@ -17,6 +17,8 @@ await runCatchUpAssistantTests()
 runRobustnessTests()
 await runRobustnessAssistantTests()
 runRoomTests()
+runPasscodeTests()
+runMediaTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

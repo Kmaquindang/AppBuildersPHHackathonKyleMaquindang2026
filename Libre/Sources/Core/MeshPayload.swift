@@ -44,6 +44,12 @@ public enum MeshPayload {
             return "\(rule.citation)\(rule.locked ? " (locked)" : "") \(rule.body)"
         case .sync:
             return "Sync"
+        case .media:
+            return MediaManifest.decode(message.body)?.displayLine ?? "Media"
+        case .transcript:
+            return TranscriptPayload.decode(message.body)?.displayLine ?? message.body
+        case .chunk, .mediaNack:
+            return ""
         default:
             return message.body
         }

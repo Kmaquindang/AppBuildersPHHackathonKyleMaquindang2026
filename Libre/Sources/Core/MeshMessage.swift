@@ -14,6 +14,11 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case task     // to-do item (milestone 3)
     case sync     // timeline backfill: phone asks the AI Mac for missed messages, Mac replies in chunks
     case sealed   // protocol v2: a room packet; the real kind and body are inside `sealed`
+    // Media (inside sealed room packets only; a build without these kinds drops them unread):
+    case media      // photo or voice note: body is a MediaManifest, shown in the timeline
+    case chunk      // one piece of a media file (MediaChunk); never shown
+    case mediaNack  // "send me these chunks again" (MediaNack); never shown
+    case transcript // text of a voice note (TranscriptPayload), replyTo = the media message id
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.
