@@ -241,11 +241,11 @@ private struct MediaTransferStatus: View {
             VStack(alignment: .leading, spacing: 2) {
                 ProgressView(value: fraction).frame(width: 140)
                 Text(isMine && has ? "Sending \(Int(fraction * 100))%" : "Receiving \(Int(fraction * 100))% of \(manifest.byteCount / 1024) KB")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary)
             }
         } else if !has {
             Label("Waiting for the file. It arrives when a teammate who has it is linked.", systemImage: "arrow.down.circle")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -333,11 +333,13 @@ struct VoiceBubble: View {
                     if let data = mesh.mediaData(manifest.mediaId) { player.toggle(manifest.mediaId, data: data) }
                 } label: {
                     Image(systemName: playing ? "stop.circle.fill" : "play.circle.fill").font(.title2)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!has)
                 .accessibilityLabel(playing ? "Stop voice note" : "Play voice note")
-                Image(systemName: "waveform").foregroundStyle(.secondary)
+                Image(systemName: "waveform").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(MediaManifest.clock(manifest.durationSeconds ?? 0))
                     .font(.callout.monospacedDigit())
             }
@@ -346,7 +348,7 @@ struct VoiceBubble: View {
             .background(isMine ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.18), in: RoundedRectangle(cornerRadius: 16))
             MediaTransferStatus(manifest: manifest, isMine: isMine)
             if mesh.transcribing.contains(manifest.mediaId) {
-                Label("Transcribing on this Mac...", systemImage: "text.bubble").font(.caption2).foregroundStyle(.secondary)
+                Label("Transcribing on this Mac...", systemImage: "text.bubble").font(.caption).foregroundStyle(.secondary)
             } else if let transcript, !transcript.isEmpty {
                 Text(transcript)
                     .font(.caption.italic())
