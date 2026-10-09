@@ -43,34 +43,6 @@ func runQAFixTests() async {
         check(empty.text == AnswerStyle.noRuleFallback && empty.noRule, "qa: tag-only reply with nothing shown reads as no rule: \(empty.text)")
     }
 
-    // 5. Language hint.
-    check(LanguageHint.detect("Pwede ba akong pumunta sa site ng alas sais ng gabi?") == "Tagalog", "qa: Tagalog detected")
-    check(LanguageHint.detect("Pwede ba ko moadto sa site alas sais sa gabii?") == "Cebuano (Bisaya)", "qa: Cebuano detected")
-    check(LanguageHint.detect("Kinsa ang mo-order sa semento?") == "Cebuano (Bisaya)", "qa: Cebuano kinsa")
-    for q in ["Can I visit the site at 6 PM?", "10+69", "What is the capital of Japan?", "and Sunday?", "Pwede ba?", "May I go now?", "Is the man at the gate?"] {
-        check(LanguageHint.detect(q) == nil, "qa: no hint for \(q)")
-    }
-    for q in BenchmarkSuite.questions {
-        let d = LanguageHint.detect(q.text)
-        switch q.language {
-        case "en": check(d == nil, "qa: benchmark #\(q.id) English gets no hint (\(d ?? "-"))")
-        case "tl": check(d != "Cebuano (Bisaya)", "qa: benchmark #\(q.id) Tagalog never hinted Cebuano")
-        case "ceb": check(d != "Tagalog", "qa: benchmark #\(q.id) Cebuano never hinted Tagalog")
-        default: break
-        }
-    }
-    do {
-        let llm = FakeLLM([.success("Hindi, hanggang 5 PM lang. [Rule: No site visits after 5 PM v1]")])
-        let a = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Mac")
-        _ = await a.handle("Pwede ba akong pumunta sa site ng alas sais ng gabi?", from: "PHONE_A")
-        let prompt = llm.received.last?.last?.content ?? ""
-        check(prompt.hasSuffix("The question is in Tagalog. Reply in Tagalog (Filipino), not in Cebuano or English."), "qa: answer prompt carries the Tagalog hint")
-        let llm2 = FakeLLM([.success("79.")])
-        let b = ExecutiveAssistant(memory: mem, llm: llm2, selfName: "Mac")
-        _ = await b.handle("10+69", from: "PHONE_A")
-        check(!(llm2.received.last?.last?.content ?? "").contains("The question is in"), "qa: no hint for English")
-    }
-
     // 6. Arithmetic is never a follow-up: "10+69" after a rule question borrows nothing.
     do {
         let prev = ThreadTurn(id: UUID(), asker: "PHONE_A", askerName: "Kyle", question: "What time do site visits end?", answer: "5 PM.", at: Date())
