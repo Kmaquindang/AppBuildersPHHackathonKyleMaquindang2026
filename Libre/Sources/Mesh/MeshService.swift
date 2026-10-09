@@ -165,6 +165,19 @@ final class MeshService: ObservableObject {
     @Published private(set) var aiQueueDepth = 0
 
     // Local AI: proof, daily digest, photo checks (Mac).
+    /// Link layer debug counters: discovery restarts performed and requests folded or deferred.
+    @Published private(set) var discoveryRestarts = 0
+    @Published private(set) var discoveryRestartsCoalesced = 0
+    #if os(iOS)
+    private var backgroundedAt: Date?
+    #endif
+
+    func refreshTransportStats() {
+        guard let transport else { return }
+        if transport.restartCount != discoveryRestarts { discoveryRestarts = transport.restartCount }
+        if transport.coalescedRestarts != discoveryRestartsCoalesced { discoveryRestartsCoalesced = transport.coalescedRestarts }
+    }
+
     /// Mac: internet route state from NWPathMonitor (listens only, never sends).
     @Published private(set) var internetState: InternetState = .unknown
     /// Mac: last 20 answers and cards with their proof (Proof panel).
@@ -719,8 +732,12 @@ final class MeshService: ObservableObject {
     }
 
     func stop() {
-        transport?.stop()
+        // Keep the old transport (and its browser and advertiser) alive for a few seconds after
+        // stop, so MultipeerConnectivity finishes tearing down its CFNetService objects first.
+        let old = transport
+        old?.stop()
         transport = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { withExtendedLifetime(old) {} }
         peerStates.removeAll()
         housekeeping?.invalidate()
         housekeeping = nil
@@ -737,7 +754,17 @@ final class MeshService: ObservableObject {
 
     /// App came back to the foreground: restart discovery, send what is queued, catch up.
     func appBecameActive() {
-        transport?.restartDiscovery(force: true)
+        // macOS reports "active" every time the window gets focus: never restart a running
+        // browser for that. iOS suspends Multipeer in the background, so after real time away a
+        // (debounced) restart is asked for; otherwise found peers are only re-invited.
+        #if os(iOS)
+        let away = backgroundedAt.map { Date().timeIntervalSince($0) } ?? 0
+        backgroundedAt = nil
+        transport?.restartDiscovery(away >= 10 ? .wake : .foreground)
+        #else
+        transport?.restartDiscovery(.foreground)
+        #endif
+        refreshTransportStats()
         if connectedCount > 0 {
             flushOutbox()
             requestBackfill()
@@ -747,6 +774,9 @@ final class MeshService: ObservableObject {
 
     /// App left the foreground (iOS suspends it and drops links): remember when, for catch-ups.
     func appWentToBackground() {
+        #if os(iOS)
+        backgroundedAt = Date()
+        #endif
         markAway()
     }
 
@@ -771,6 +801,7 @@ final class MeshService: ObservableObject {
 
     private func housekeepingTick() {
         let now = Date()
+        refreshTransportStats()
         let stale = peerStates.filter { pair in
             pair.value != .connected && now.timeIntervalSince(lastSeen[pair.key] ?? .distantPast) > MeshService.stalePeerAfter
         }.map { $0.key }
@@ -2302,7 +2333,8 @@ final class MeshService: ObservableObject {
     private func macDidWake() {
         macAsleep = false
         askQueue.didWake()
-        transport?.restartDiscovery(force: true)
+        transport?.restartDiscovery(.wake)
+        refreshTransportStats()
         if isAIPeer {
             sendAIStatus(asleep: false)
             checkOllama()
