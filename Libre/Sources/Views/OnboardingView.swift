@@ -124,7 +124,7 @@ private struct NameStep: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(PeopleDirectory.clean(draft).isEmpty)
-            Text("Device id: \(mesh.displayName). You can change both in Settings.")
+            Text("Device id: \(mesh.displayName). Change your name any time in Settings.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -147,7 +147,7 @@ private struct LocalNetworkStep: View {
         VStack(alignment: .leading, spacing: 14) {
             Image(systemName: "antenna.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.tint).padding(.top, 20).accessibilityHidden(true)
             Text("Find teammates nearby").font(.title.weight(.bold))
-            Text("Pasa needs Local Network access so your phone can find teammates. Messages go phone to phone over Wi-Fi and Bluetooth, never to the internet.")
+            Text("\(AppBrand.name) needs Local Network access to find teammates. Messages go phone to phone, never to the internet. Keep Wi-Fi and Bluetooth switched on. No network or signal needed.")
                 .foregroundStyle(.secondary)
             if !asked {
                 Button {
@@ -214,7 +214,7 @@ private struct RoomStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Join your team").font(.title.weight(.bold)).padding(.top, 20)
-            Text("Pick a nearby room, type its name and passcode, paste a join string, or create one.")
+            Text("Scan the room's QR code or type its code. Or start in Town Square, open to everyone nearby.")
                 .foregroundStyle(.secondary)
             RoomOnboardingPicker(choice: $choice, name: $name, passcode: $passcode, confirm: $confirm, joinText: $joinText)
             if let error { TintedLabel(text: error, symbol: "exclamationmark.triangle.fill", tint: .red, font: .callout) }
