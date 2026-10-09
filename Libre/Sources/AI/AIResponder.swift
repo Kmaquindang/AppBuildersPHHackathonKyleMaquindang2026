@@ -16,9 +16,17 @@ public struct AIReply: Sendable {
     public var tokensPerSecond: Double?
     /// Rule and note titles the model was shown for this answer.
     public var checked: [String]?
+    /// Structured grounding (see AnswerStyle): rule chips, invented tags, and "no rule used".
+    public var rulesUsed: [String]?
+    public var unverifiedRules: [String]?
+    public var noRule: Bool?
 
-    public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil, checked: [String]? = nil) {
+    public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil, checked: [String]? = nil,
+                rulesUsed: [String]? = nil, unverifiedRules: [String]? = nil, noRule: Bool? = nil) {
         self.checked = checked
+        self.rulesUsed = rulesUsed
+        self.unverifiedRules = unverifiedRules
+        self.noRule = noRule
         self.text = text
         self.compact = compact
         self.model = model

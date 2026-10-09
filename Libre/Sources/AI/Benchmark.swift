@@ -7,11 +7,13 @@
 //   (11 English, 6 Tagalog, 3 Cebuano; 16 expect a rule citation, 4 expect "no rule"). Synthetic data only.
 // - Each question runs on a fresh copy of the memory, so a misread question cannot change the
 //   next one.
-// - Scoring is exact, never an LLM judge:
-//   * "cites" questions pass when the answer's checked citations include the expected rule
-//     and no tag is "(unverified)".
-//   * "no rule" questions pass when the answer cites no saved rule and contains
-//     "No saved team rule covers this".
+// - Scoring is exact, never an LLM judge, and reads the STRUCTURED answer fields (the reply text
+//   carries no citation tags since the chat-style answers of Oct 9 night):
+//   * "cites" questions pass when `rulesUsed` (verified by CitationGuard) includes the expected
+//     rule and `unverifiedRules` is empty.
+//   * "no rule" questions pass when `noRule` is true, nothing was cited (verified or not), and
+//     the reply admits it does not know (a short list of English, Tagalog and Cebuano phrases,
+//     so an invented answer like a made-up Wi-Fi password fails).
 // - Measured per question: wall time (ms), generation speed (tok/s from Ollama eval_count /
 //   eval_duration), prompt tokens (Ollama prompt_eval_count), generated tokens, model calls.
 
@@ -48,6 +50,7 @@ public struct BenchmarkResult: Equatable, Sendable {
     public var evalTokens: Int?
     public var modelCalls: Int
     public var reply: String
+    public var rulesUsed: [String] = []
 }
 
 public enum BenchmarkSuite {
@@ -105,20 +108,35 @@ public enum BenchmarkSuite {
         return q.enumerated().map { BenchmarkQuestion(id: $0.offset + 1, language: $0.element.0, text: $0.element.1, expect: $0.element.2) }
     }()
 
-    /// Exact scoring of one reply against the expectation.
-    public static func score(reply: String, intent: String, expect: BenchmarkExpectation, rules: [RuleEntry]) -> (Bool, String) {
-        let guarded = CitationGuard.validate(reply, rules: rules, notes: [])
-        if !guarded.unverified.isEmpty { return (false, "unverified citation \(guarded.unverified.joined(separator: " "))") }
+    /// Phrases that admit "I don't know / no team rule" (English, Tagalog, Cebuano).
+    public static let admitsPhrases = [
+        "don't have", "do not have", "don't know", "do not know", "not sure", "no team rule", "no saved", "no rule",
+        "no info", "no information", "isn't saved", "is not saved", "not saved", "haven't", "can't tell", "cannot tell",
+        "can't say", "cannot say", "unable", "no record", "not in", "no details", "i don't", "i do not", "no data",
+        "wala akong", "walang", "wala pa", "hindi ko alam", "hindi ko", "wala koy", "wala ko", "dili ko", "walay"
+    ]
+
+    public static func admitsUnknown(_ reply: String) -> Bool {
+        let lower = reply.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return admitsPhrases.contains { lower.contains($0) }
+    }
+
+    /// Exact scoring of one structured answer against the expectation.
+    public static func score(rulesUsed: [String], unverified: [String], noRule: Bool?, reply: String, intent: String,
+                             expect: BenchmarkExpectation, rules: [RuleEntry]) -> (Bool, String) {
+        if !unverified.isEmpty { return (false, "unverified citation \(unverified.joined(separator: " "))") }
         switch expect {
         case .cites(let title):
             let want = rules.first { $0.title == title }?.citation ?? "[Rule: \(title)"
-            if guarded.verified.contains(want) { return (true, "cited \(want)") }
+            if rulesUsed.contains(want) { return (true, "cited \(want)") }
             if intent != IntentKind.answer.rawValue { return (false, "routed to \(intent), not answer") }
-            return (false, guarded.verified.isEmpty ? "no citation" : "cited \(guarded.verified.joined(separator: " ")) instead")
+            return (false, rulesUsed.isEmpty ? "no citation" : "cited \(rulesUsed.joined(separator: " ")) instead")
         case .noRule:
-            if !guarded.verified.isEmpty { return (false, "cited \(guarded.verified.joined(separator: " ")) for a question no rule covers") }
-            if reply.lowercased().contains(Grounding.noRuleLine.lowercased().dropLast()) { return (true, "said no saved rule") }
-            return (false, intent != IntentKind.answer.rawValue ? "routed to \(intent)" : "did not say no saved rule covers it")
+            if intent != IntentKind.answer.rawValue { return (false, "routed to \(intent)") }
+            if !rulesUsed.isEmpty { return (false, "cited \(rulesUsed.joined(separator: " ")) for a question no rule covers") }
+            guard noRule == true else { return (false, "noRule flag not set") }
+            if admitsUnknown(reply) { return (true, "noRule, said it does not know") }
+            return (false, "noRule, but the reply did not say it does not know")
         }
     }
 
@@ -147,11 +165,12 @@ public enum BenchmarkSuite {
         let out = await assistant.handle(q.text, from: "DEVICE_A")
         let wall = Int((Date().timeIntervalSince(started) * 1000).rounded())
         let full = out.fullReply ?? out.reply
-        var (ok, why) = score(reply: full, intent: out.intent.rawValue, expect: q.expect, rules: snapshot.activeRules)
+        var (ok, why) = score(rulesUsed: out.rulesUsed, unverified: out.unverifiedRules, noRule: out.noRule, reply: full,
+                              intent: out.intent.rawValue, expect: q.expect, rules: snapshot.activeRules)
         if let error = out.error { ok = false; why = "error: \(error)" }
         return BenchmarkResult(question: q, model: out.model ?? model, correct: ok, reason: why, intent: out.intent.rawValue,
                                latencyMs: wall, tokensPerSecond: out.tokensPerSecond, promptTokens: out.promptEvalCount,
-                               evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full)
+                               evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full, rulesUsed: out.rulesUsed)
     }
 }
 
@@ -191,12 +210,12 @@ public enum BenchmarkReport {
     }
 
     public static func csv(_ results: [BenchmarkResult]) -> String {
-        var lines = ["id,language,model,expect,correct,reason,intent,latency_ms,tok_per_s,prompt_tokens,eval_tokens,model_calls,question,reply"]
+        var lines = ["id,language,model,expect,correct,reason,intent,latency_ms,tok_per_s,prompt_tokens,eval_tokens,model_calls,question,reply,rules_used"]
         for r in results {
             lines.append([String(r.question.id), r.question.language, csvField(r.model), csvField(r.question.expect.label), r.correct ? "1" : "0",
                           csvField(r.reason), r.intent, String(r.latencyMs), r.tokensPerSecond.map { String(format: "%.2f", $0) } ?? "",
                           r.promptTokens.map(String.init) ?? "", r.evalTokens.map(String.init) ?? "", String(r.modelCalls),
-                          csvField(r.question.text), csvField(r.reply)].joined(separator: ","))
+                          csvField(r.question.text), csvField(r.reply), csvField(r.rulesUsed.joined(separator: " "))].joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -223,8 +242,8 @@ public enum BenchmarkReport {
         var out = ["# Pasa benchmark (\(BenchmarkSuite.version))", "",
                    "- Date: \(header.date)", "- Machine: \(header.machine)", "- Ollama: \(header.ollamaVersion)",
                    "- Questions: \(BenchmarkSuite.questions.count) fixed (11 English, 6 Tagalog, 3 Cebuano; 16 with a matching rule, 4 with none), synthetic team memory of 10 rules",
-                   "- Pipeline: the app's ExecutiveAssistant (intent call + grounded answer call, keyword retrieval, citation guard), local Ollama on 127.0.0.1 only",
-                   "- Scoring: exact checks (expected rule citation present and verified, or \"No saved team rule covers this\" with no citation). No LLM judge.", ""]
+                   "- Pipeline: the app's ExecutiveAssistant (plain questions skip the intent call; grounded answer call with keyword retrieval, citation guard and chat styling), local Ollama on 127.0.0.1 only",
+                   "- Scoring: exact checks on the structured answer (expected rule in rulesUsed and nothing unverified, or noRule with no citation and a reply that admits it does not know). No LLM judge.", ""]
         for (model, _) in runs {
             out.append("- Model `\(model)` digest `\(header.digests[model] ?? "unknown")`" + (header.memoryInUse[model].map { ", in memory after the run: \($0)" } ?? ""))
         }

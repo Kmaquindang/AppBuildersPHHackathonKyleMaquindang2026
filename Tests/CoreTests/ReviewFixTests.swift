@@ -246,12 +246,12 @@ func runCatchUpAssistantTests() async {
     let rules = OrgMemory(admins: ["Mac"])
     _ = rules.upsertRule(title: "No site visits after 5 PM", body: "No site visits after 5 PM.", by: "Mac")
     let fake2 = FakeLLM([
-        .success(#"{"intent":"answer","question":"pwede ba bumisita sa site ng 6 PM?"}"#),
         .success("Hindi pwede [Rule: No site visits after 5 PM v3]. Pero [Rule: Night shift allowed v1].")
     ])
     let b = ExecutiveAssistant(memory: rules, llm: fake2, selfName: "Mac")
     let out = await b.handle("pwede ba bumisita sa site ng 6 PM?", from: "iPhone A8BE")
-    check(out.reply.contains("[Rule: No site visits after 5 PM v1]") && !out.reply.contains("v3"), "fix3: answer citation version corrected")
-    check(out.reply.contains("[Rule: Night shift allowed v1] (unverified)"), "fix3: invented citation flagged in the answer")
+    check(out.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && !out.reply.contains("v3"), "fix3: answer citation version corrected (chip)")
+    check(out.unverifiedRules == ["[Rule: Night shift allowed v1]"] && !out.reply.contains("[Rule"), "fix3: invented citation flagged as unverified, out of the text")
+    check(out.modelCalls == 1 && out.skippedClassify, "plain question: one model call, intent call skipped")
     check(fake2.received.last?.first?.content.contains("Tagalog") == true, "fix3: answer prompt asks for the asker's language")
 }

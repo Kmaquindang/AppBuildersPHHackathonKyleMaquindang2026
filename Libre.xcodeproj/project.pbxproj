@@ -26,6 +26,7 @@
 		82D59309065D65FB0D70258D /* Vision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824716F47AEEE79CEA06DC6 /* Vision.swift */; };
 		3C6DDF8817540DA08DB3F056 /* DailyDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E546B988B7C0903917F44F /* DailyDigest.swift */; };
 		0486A0F76BDC819B7E0BF5E2 /* CitationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D512A643AFFFF7957CC39D /* CitationGuard.swift */; };
+		4BDCC8E38B3B2F8CB5EE6EA5 /* AnswerStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8669A129346743B9AEBA225 /* AnswerStyle.swift */; };
 		44188202F91D2C0DE2071A20 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */; };
 		CB7955D0E97E0B424CEA51D3 /* Retrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A500F48269B909767508F /* Retrieval.swift */; };
 		16287D69E579B43CFB7DA26C /* MacSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1090058612ED5A20A04DF683 /* MacSetup.swift */; };
@@ -33,6 +34,7 @@
 		EB9DEC452C7222E8C54E18D3 /* Vision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824716F47AEEE79CEA06DC6 /* Vision.swift */; };
 		6B188DB35C7024D827F07E24 /* DailyDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E546B988B7C0903917F44F /* DailyDigest.swift */; };
 		5687285F00FF9FE42F08DB3D /* CitationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D512A643AFFFF7957CC39D /* CitationGuard.swift */; };
+		132947AF2635EDDA94B93B52 /* AnswerStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8669A129346743B9AEBA225 /* AnswerStyle.swift */; };
 		44A24D1A140D5B4576D00374 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EB20852E75BC8350878E33 /* People.swift */; };
 		394E3839A96D80AE46A4353E /* MeshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F379B52A6BD676489720A926 /* MeshPolicy.swift */; };
 		66FF495C3F5FB0BF02D5233B /* Rooms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C15F19562940628FE094226 /* Rooms.swift */; };
@@ -127,6 +129,7 @@
 		3824716F47AEEE79CEA06DC6 /* Vision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vision.swift; sourceTree = "<group>"; };
 		E2E546B988B7C0903917F44F /* DailyDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyDigest.swift; sourceTree = "<group>"; };
 		79D512A643AFFFF7957CC39D /* CitationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationGuard.swift; sourceTree = "<group>"; };
+		E8669A129346743B9AEBA225 /* AnswerStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerStyle.swift; sourceTree = "<group>"; };
 		13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantIntent.swift; sourceTree = "<group>"; };
 		96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAsk.swift; sourceTree = "<group>"; };
 		16F146780F3C887A53042E80 /* MeshPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPayload.swift; sourceTree = "<group>"; };
@@ -315,6 +318,7 @@
 				3824716F47AEEE79CEA06DC6 /* Vision.swift */,
 				E2E546B988B7C0903917F44F /* DailyDigest.swift */,
 				79D512A643AFFFF7957CC39D /* CitationGuard.swift */,
+				E8669A129346743B9AEBA225 /* AnswerStyle.swift */,
 				56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */,
 			);
 			path = AI;
@@ -437,6 +441,7 @@
 				82D59309065D65FB0D70258D /* Vision.swift in Sources */,
 				3C6DDF8817540DA08DB3F056 /* DailyDigest.swift in Sources */,
 				0486A0F76BDC819B7E0BF5E2 /* CitationGuard.swift in Sources */,
+				4BDCC8E38B3B2F8CB5EE6EA5 /* AnswerStyle.swift in Sources */,
 				A6595F049D3E2969F231024D /* LibreApp.swift in Sources */,
 				75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */,
 				C09DB26CD2F6ABD903F6ABDC /* MeshPayload.swift in Sources */,
@@ -498,6 +503,7 @@
 				EB9DEC452C7222E8C54E18D3 /* Vision.swift in Sources */,
 				6B188DB35C7024D827F07E24 /* DailyDigest.swift in Sources */,
 				5687285F00FF9FE42F08DB3D /* CitationGuard.swift in Sources */,
+				132947AF2635EDDA94B93B52 /* AnswerStyle.swift in Sources */,
 				69A5774AE1550EF4BBCC64DD /* LibreApp.swift in Sources */,
 				2FCC55F9835AFA48DB237C6E /* MeshMessage.swift in Sources */,
 				095F6D943987B5B3E62BE86E /* MeshPayload.swift in Sources */,

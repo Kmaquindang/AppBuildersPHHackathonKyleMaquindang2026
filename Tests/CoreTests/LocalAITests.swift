@@ -226,29 +226,97 @@ func runBenchmarkTests() async {
     let rules = BenchmarkSuite.memory().activeRules
     check(rules.count == 10, "10 synthetic rules")
     for q in BenchmarkSuite.questions { if case .cites(let t) = q.expect { check(rules.contains { $0.title == t }, "expected rule exists: \(t)") } }
-    check(BenchmarkSuite.score(reply: "No. [Rule: No site visits after 5 PM v1]", intent: "answer", expect: .cites("No site visits after 5 PM"), rules: rules).0, "score: cited")
-    check(!BenchmarkSuite.score(reply: "No. [Rule: Night visits v1]", intent: "answer", expect: .cites("No site visits after 5 PM"), rules: rules).0, "score: invented citation fails")
-    check(!BenchmarkSuite.score(reply: "No visits after 5.", intent: "answer", expect: .cites("No site visits after 5 PM"), rules: rules).0, "score: no citation fails")
-    check(BenchmarkSuite.score(reply: "No saved team rule covers this. Ask the office.", intent: "answer", expect: .noRule, rules: rules).0, "score: no rule")
-    check(!BenchmarkSuite.score(reply: "No saved team rule covers this. [Rule: Visitor sign-in v1]", intent: "answer", expect: .noRule, rules: rules).0, "score: citing on a no-rule question fails")
+    let visit = "[Rule: No site visits after 5 PM v1]"
+    func sc(_ used: [String], _ unv: [String], _ noRule: Bool?, _ reply: String, _ e: BenchmarkExpectation, intent: String = "answer") -> Bool {
+        BenchmarkSuite.score(rulesUsed: used, unverified: unv, noRule: noRule, reply: reply, intent: intent, expect: e, rules: rules).0
+    }
+    check(sc([visit], [], false, "No, visits end at 5 PM.", .cites("No site visits after 5 PM")), "score: cited via rulesUsed")
+    check(!sc([], ["[Rule: Night visits]"], true, "No.", .cites("No site visits after 5 PM")), "score: invented citation fails")
+    check(!sc([], [], true, "No visits after 5.", .cites("No site visits after 5 PM")), "score: no citation fails")
+    check(!sc(["[Rule: Visitor sign-in v1]"], [], false, "Sign in.", .cites("No site visits after 5 PM")), "score: wrong rule fails")
+    check(sc([], [], true, "I don't have the Wi-Fi password saved.", .noRule), "score: no rule, admits it")
+    check(sc([], [], true, "Wala akong impormasyon tungkol diyan.", .noRule), "score: no rule, Tagalog admission")
+    check(!sc([], [], true, "The password is pasa1234.", .noRule), "score: no rule but invented answer fails")
+    check(!sc(["[Rule: Visitor sign-in v1]"], [], false, "I don't know.", .noRule), "score: citing on a no-rule question fails")
+    check(!sc([], [], nil, "I don't know.", .noRule), "score: missing noRule flag fails")
+    check(!sc([], [], true, "I don't know.", .noRule, intent: "add_task"), "score: routed elsewhere fails")
 
-    // Full run with a fake model: classify as answer, then answer citing the first matching rule.
+    // Full run with a fake model. Every benchmark question is a plain question, so the intent
+    // call is skipped and each question makes exactly one model call.
     var script: [Result<String, LLMError>] = []
     for q in BenchmarkSuite.questions {
-        script.append(.success(#"{"intent":"answer"}"#))
+        check(QuestionRouter.isPlainQuestion(q.text), "benchmark question skips the intent call: \(q.text)")
         switch q.expect {
-        case .cites(let t): script.append(.success("Answer. [Rule: \(t) v1]"))
-        case .noRule: script.append(.success("No saved team rule covers this."))
+        case .cites(let t): script.append(.success("Here is the answer. [Rule: \(t) v1]"))
+        case .noRule: script.append(.success("I don't have that info."))
         }
     }
     let fake = FakeLLM(script)
     let results = await BenchmarkSuite.run(llm: fake, model: "fake:1b")
     check(results.count == 20 && results.allSatisfy(\.correct) && fake.remaining == 0, "benchmark run with fake model scores 20/20")
-    check(results.allSatisfy { $0.modelCalls == 2 && $0.tokensPerSecond == 50 }, "benchmark records calls and speed")
+    check(results.allSatisfy { $0.modelCalls == 1 && $0.tokensPerSecond == 50 }, "benchmark records calls (one per plain question) and speed")
+    check(results.filter { if case .cites = $0.question.expect { return true }; return false }.allSatisfy { !$0.reply.contains("[Rule") && $0.rulesUsed.count == 1 }, "benchmark replies carry no tags; rules travel in rulesUsed")
     let csv = BenchmarkReport.csv(results)
     check(csv.split(separator: "\n").count == 21 && csv.hasPrefix("id,language,model,expect,correct"), "benchmark CSV")
     let md = BenchmarkReport.markdown(header: .init(date: "2026-10-09", machine: "test", ollamaVersion: "0", digests: ["fake:1b": "abc"]), runs: [("fake:1b", results)])
     check(md.contains("| fake:1b | 20/20 | 11/11 | 6/6 | 3/3 |"), "benchmark markdown summary row")
     let s = BenchmarkSummary(model: "fake", results: results)
     check(s.correct == 20 && s.byLanguage.count == 3, "benchmark summary")
+}
+
+/// Chat-style answers: citation tags become chips, preambles go, plain questions skip the intent call.
+@MainActor
+func runAnswerStyleTests() async {
+    let mem = OrgMemory(admins: ["Mac"])
+    _ = mem.upsertRule(title: "No site visits after 5 PM", body: "Site visits end at 5 PM.", by: "Mac")
+    _ = mem.upsertRule(title: "Hard hats inside the fence", body: "Wear a hard hat.", by: "Mac")
+    let rules = mem.rules
+    func st(_ s: String) -> StyledAnswer { AnswerStyle.style(s, rules: rules, notes: []) }
+
+    let end = st("No, visits end at 5 PM. [Rule: No site visits after 5 PM v1]")
+    check(end.text == "No, visits end at 5 PM." && end.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && !end.noRule, "style: trailing tag becomes a chip")
+    let inline = st("No, you cannot visit at 6 PM. [Rule: No site visits after 5 PM v1] says site visits end at 5 PM.")
+    check(inline.text == "No, you cannot visit at 6 PM. \u{201C}No site visits after 5 PM\u{201D} says site visits end at 5 PM.", "style: tag used as a subject keeps its title: \(inline.text)")
+    let mid = st("You cannot visit after 5 PM [Rule: No site visits after 5 PM], and wear a hard hat [Rule: Hard hats inside the fence v1].")
+    check(mid.text == "You cannot visit after 5 PM, and wear a hard hat." && mid.rulesUsed.count == 2, "style: inline tags removed cleanly: \(mid.text)")
+    let per = st("Per [Rule: No site visits after 5 PM v1], no.")
+    check(per.text == "Per \u{201C}No site visits after 5 PM\u{201D}, no.", "style: tag after 'per' keeps its title: \(per.text)")
+    let paren = st("No visits after 5 PM ([Rule: No site visits after 5 PM v1]).")
+    check(paren.text == "No visits after 5 PM.", "style: parenthesized tag removed: \(paren.text)")
+    let dup = st("No. [Rule: No site visits after 5 PM v1] [Rule: No site visits after 5 PM v1]")
+    check(dup.rulesUsed.count == 1 && dup.text == "No.", "style: duplicate citations fold into one chip")
+    let fake = st("Yes, until 7 PM. [Rule: Night visits allowed v1]")
+    check(fake.text == "Yes, until 7 PM." && fake.rulesUsed.isEmpty && fake.unverifiedRules == ["[Rule: Night visits allowed v1]"] && fake.noRule, "style: invented rule goes to unverifiedRules, never rulesUsed")
+    let math = st("No saved team rule covers this. General advice, not a team rule: 10+69 equals 79.")
+    check(math.text == "10+69 equals 79." && math.noRule, "style: Kyle's 8:33 PM bubble loses both preambles: \(math.text)")
+    check(AnswerStyle.title(in: "[Rule: No site visits after 5 PM v2]") == "No site visits after 5 PM" && AnswerStyle.kind(in: "[Note: Monday huddle]") == "Note", "style: chip title and kind")
+
+    // Router
+    for q in ["10+69", "12 x 7 = ?", "What is the capital of Japan?", "Can I visit the site at 6 PM?", "It is raining. Can we keep pouring concrete",
+              "Pwede ba akong pumunta sa site?", "Unsa orasa ang tanghalian?"] {
+        check(QuestionRouter.isPlainQuestion(q), "router: plain question \(q)")
+    }
+    for q in ["remind Ana to order cement Friday", "save rule: no smoking", "cement order is done", "Can you add a task for Ana?",
+              "is the cement task done?", "delete rule night shift", "ipaalala kay Ana ang semento", "Ana will order cement", ""] {
+        check(!QuestionRouter.isPlainQuestion(q), "router: goes to the intent call \(q)")
+    }
+    check(!QuestionRouter.needsTasks("10+69", taskTitles: ["Order cement"]) && QuestionRouter.needsTasks("who is ordering cement?", taskTitles: ["Order cement"]),
+          "router: task list only for task questions")
+
+    // End to end: "10+69" is one model call with a lean prompt and a clean reply.
+    _ = mem.addTask(title: "Order cement", assignee: "Ana", assigneeDevice: "PHONE_A", due: nil, by: "Mac", source: "ask")
+    let llm = FakeLLM([.success("10 + 69 = 79.")])
+    let a = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Mac")
+    let out = await a.handle("10+69", from: "PHONE_A")
+    check(out.modelCalls == 1 && out.skippedClassify && out.reply == "10 + 69 = 79." && out.noRule == true && out.rulesUsed.isEmpty, "e2e: 10+69 one call, clean reply")
+    let prompt = llm.received.first?.last?.content ?? ""
+    check(!prompt.contains("Open tasks") && !prompt.contains("No saved team rule"), "e2e: lean prompt, no task list, no old marker")
+    check(!AssistantPrompts.answerSystem.contains("No saved team rule covers this") && AssistantPrompts.answerSystem.contains("very end"), "prompt: no text markers, citations at the end")
+
+    // Commands still classify first, and rule replies carry a chip instead of a tag.
+    let llm2 = FakeLLM([.success(#"{"intent":"save_rule","title":"Gloves for rebar","body":"Wear gloves when handling rebar."}"#)])
+    let b = ExecutiveAssistant(memory: mem, llm: llm2, selfName: "Mac")
+    let saved = await b.handle("everyone must wear gloves for rebar, remember that", from: "Mac")
+    check(saved.intent == .saveRule && saved.modelCalls == 1 && !saved.skippedClassify, "command goes through the intent call")
+    check(saved.reply.hasPrefix("Saved.") && saved.rulesUsed == ["[Rule: Gloves for rebar v1]"] && saved.noRule == nil, "save rule reply: chip, no tag: \(saved.reply)")
 }

@@ -2165,7 +2165,10 @@ final class MeshService: ObservableObject {
             }
             let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
                                 latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond,
-                                checked: outcome.intent == .answer ? outcome.checked : nil)
+                                checked: outcome.intent == .answer ? outcome.checked : nil,
+                                rulesUsed: outcome.rulesUsed.isEmpty ? nil : outcome.rulesUsed,
+                                unverifiedRules: outcome.unverifiedRules.isEmpty ? nil : outcome.unverifiedRules,
+                                noRule: outcome.noRule)
             let answerID = sendAnswer(reply, to: ask, room: roomID, intent: outcome.intent.rawValue, error: outcome.error,
                                       promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
             askQueue.finish(job.askID, answerID: answerID)
@@ -2211,6 +2214,9 @@ final class MeshService: ObservableObject {
         copy.latencyMs = stored.message.latencyMs
         copy.tokensPerSecond = stored.message.tokensPerSecond
         copy.checked = stored.message.checked
+        copy.rulesUsed = stored.message.rulesUsed
+        copy.unverifiedRules = stored.message.unverifiedRules
+        copy.noRule = stored.message.noRule
         copy.proof = stored.message.proof
         copy.card = stored.message.card
         copy.personal = stored.message.personal
@@ -2233,6 +2239,9 @@ final class MeshService: ObservableObject {
         message.latencyMs = reply.latencyMs
         message.tokensPerSecond = reply.tokensPerSecond
         message.checked = reply.checked
+        message.rulesUsed = reply.rulesUsed
+        message.unverifiedRules = reply.unverifiedRules
+        message.noRule = reply.noRule
         message.proof = proof(model: reply.model, tps: reply.tokensPerSecond, ms: reply.latencyMs)
         logProof(message.proof!, room: roomID, kind: intent)
 

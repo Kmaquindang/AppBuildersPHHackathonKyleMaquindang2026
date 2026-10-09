@@ -104,6 +104,13 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var personal: [String: String]?
     /// Photo cards: suggested task titles an admin can accept.
     public var suggestions: [String]?
+    /// For answers: exact citations of the saved rules and notes the reply relied on. Shown as
+    /// chips under the bubble; the body carries no citation tags (chat-style answers, Oct 9 night).
+    public var rulesUsed: [String]?
+    /// For answers: citation tags that named nothing saved (shown as a warning chip).
+    public var unverifiedRules: [String]?
+    /// For answers: true when no saved rule or note backs the answer.
+    public var noRule: Bool?
 
     public init(
         id: UUID = UUID(),
