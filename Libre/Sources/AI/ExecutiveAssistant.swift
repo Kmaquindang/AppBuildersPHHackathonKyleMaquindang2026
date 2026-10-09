@@ -36,7 +36,8 @@ public struct AssistantOutcome: Sendable {
 
 @MainActor
 public final class ExecutiveAssistant {
-    public let memory: OrgMemory
+    /// Team memory of the active room. Swapped when the Mac switches rooms (see switchRoom).
+    public private(set) var memory: OrgMemory
     public var llm: any LLMClient
     /// This Mac's mesh name (always an admin).
     public var selfName: String
@@ -53,6 +54,13 @@ public final class ExecutiveAssistant {
     public var clearedAt: Date?
 
     private var pendingMore: [String: String] = [:]
+
+    /// Room switch: ground on the new room's memory only, and forget "more" text from the old one.
+    public func switchRoom(memory newMemory: OrgMemory, clearedAt newClearedAt: Date?) {
+        memory = newMemory
+        clearedAt = newClearedAt
+        pendingMore.removeAll()
+    }
 
     public init(memory: OrgMemory, llm: any LLMClient, selfName: String, roster: [String: String] = [:], knownDevices: [String] = []) {
         self.memory = memory

@@ -31,11 +31,16 @@ public struct OutboxItem: Codable, Equatable, Sendable {
     public var message: MeshMessage
     public var excluding: Set<String>
     public var queuedAt: Date
+    /// Another room's packet this device only relays. Capped and short-lived.
+    public var foreign: Bool?
 }
 
 public final class RelayEngine {
     public private(set) var selfName: String
     public var roles: Set<String>
+    /// Tag of this device's active room. A sealed packet of another room is never "for" one of
+    /// our roles, so an "@ai" ask from room B passes through room A's AI Mac to room B's.
+    public var roomID: String?
     /// Chosen display name stamped on every outgoing message (nil until the person picks one).
     public var senderName: String?
 
@@ -43,6 +48,9 @@ public final class RelayEngine {
     public let maxSeen: Int
     public let outboxLifetime: TimeInterval
     public let maxOutbox: Int
+    /// Other rooms' packets: at most this many queued, for at most this long.
+    public let maxForeign = 50
+    public let foreignLifetime: TimeInterval = 3600
 
     private var seen: [UUID: Date] = [:]
     public private(set) var outbox: [OutboxItem] = []
@@ -76,7 +84,9 @@ public final class RelayEngine {
         guard let destination = message.destination else { return true }
         switch destination {
         case .peer(let name): return name == selfName
-        case .role(let role): return roles.contains(role)
+        case .role(let role):
+            if message.kind == .sealed, let roomID, message.room != roomID { return false }
+            return roles.contains(role)
         }
     }
 
@@ -165,10 +175,15 @@ public final class RelayEngine {
 
     // MARK: Store and forward
 
-    public func enqueue(_ message: MeshMessage, excluding: Set<String> = [], now: Date = Date()) {
+    public func enqueue(_ message: MeshMessage, excluding: Set<String> = [], foreign: Bool = false, now: Date = Date()) {
         pruneOutbox(now: now)
         if outbox.contains(where: { $0.message.id == message.id }) { return }
-        outbox.append(OutboxItem(message: message, excluding: excluding, queuedAt: now))
+        outbox.append(OutboxItem(message: message, excluding: excluding, queuedAt: now, foreign: foreign ? true : nil))
+        let foreignIndexes = outbox.indices.filter { outbox[$0].foreign == true }
+        if foreignIndexes.count > maxForeign {
+            let drop = Set(foreignIndexes.prefix(foreignIndexes.count - maxForeign))
+            outbox = outbox.enumerated().filter { !drop.contains($0.offset) }.map { $0.element }
+        }
         if outbox.count > maxOutbox {
             outbox.removeFirst(outbox.count - maxOutbox)
         }
@@ -199,8 +214,9 @@ public final class RelayEngine {
         seen = seen.filter { $0.value >= cutoff }
     }
 
-    private func pruneOutbox(now: Date) {
+    public func pruneOutbox(now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-outboxLifetime)
-        outbox.removeAll { $0.queuedAt < cutoff }
+        let foreignCutoff = now.addingTimeInterval(-foreignLifetime)
+        outbox.removeAll { $0.queuedAt < cutoff || ($0.foreign == true && $0.queuedAt < foreignCutoff) }
     }
 }

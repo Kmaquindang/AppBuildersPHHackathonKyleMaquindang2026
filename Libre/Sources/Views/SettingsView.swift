@@ -66,6 +66,8 @@ struct SettingsView: View {
                     Text("The mesh address of this device. It must be unique, and it stays the same unless you change it here. Saving restarts the mesh link. Admin rights belong to the device id, never to a name.")
                 }
 
+                RoomSettingsSection()
+
                 #if os(macOS)
                 Section {
                     Toggle("Act as AI peer (answer Ask AI messages)", isOn: Binding(
@@ -98,7 +100,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                     HStack {
-                        Button("Export team memory...") {
+                        Button("Export \(mesh.activeRoom.label) memory...") {
                             do {
                                 exportDoc = MemoryBackupDocument(data: try mesh.exportMemoryData())
                                 showExporter = true
@@ -106,7 +108,7 @@ struct SettingsView: View {
                                 backupMessage = "Export failed: \(error.localizedDescription)"
                             }
                         }
-                        Button("Import team memory...") { showImporter = true }
+                        Button("Import into \(mesh.activeRoom.label)...") { showImporter = true }
                     }
                     if let backupMessage {
                         Text(backupMessage).font(.caption).foregroundStyle(.secondary)
@@ -122,20 +124,23 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("This Mac (\(mesh.label(for: mesh.displayName)))", value: "always admin")
+                    if !mesh.activeRoom.creator.isEmpty && mesh.activeRoom.creator != mesh.displayName {
+                        LabeledContent("Room creator (\(adminLabel(mesh.activeRoom.creator)))", value: "pinned admin")
+                    }
                     if mesh.adminCandidates.isEmpty {
                         Text("No other devices seen yet. Open Pasa on a phone nearby, then come back here.")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(mesh.adminCandidates, id: \.self) { device in
+                    ForEach(mesh.adminCandidates.filter { $0 != mesh.activeRoom.creator }, id: \.self) { device in
                         Toggle(adminLabel(device), isOn: Binding(
                             get: { mesh.adminDevices.contains(device) },
                             set: { mesh.setAdmin(device, $0) }
                         ))
                     }
                 } header: {
-                    Text("Admins")
+                    Text("Admins for \(mesh.activeRoom.displayName)")
                 } footer: {
-                    Text("Admins can edit, lock, unlock and delete rules. Tick devices, not names: anyone can change their display name, so a name never grants admin.")
+                    Text("Admins can edit, lock, unlock and delete rules in this room. Each room has its own admins, and its creator is always one. Tick devices, not names: anyone can change their display name, so a name never grants admin.")
                 }
                 #endif
 
@@ -193,11 +198,11 @@ struct SettingsView: View {
                 rosterDraft = mesh.rosterText
             }
             #if os(macOS)
-            .confirmationDialog("Erase all tasks, notes, rules and the chat log on this Mac?", isPresented: $confirmReset) {
+            .confirmationDialog("Erase all tasks, notes, rules and the chat log of \(mesh.activeRoom.displayName) on this Mac?", isPresented: $confirmReset) {
                 Button("Erase team memory", role: .destructive) { mesh.resetMemory() }
             }
             .fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .json,
-                          defaultFilename: "pasa-team-memory-\(Date().formatted(.iso8601.year().month().day())).json") { result in
+                          defaultFilename: "pasa-\(mesh.activeRoom.label.lowercased())-memory-\(Date().formatted(.iso8601.year().month().day())).json") { result in
                 switch result {
                 case .success(let url): backupMessage = "Saved \(url.lastPathComponent)."
                 case .failure(let error): backupMessage = "Export failed: \(error.localizedDescription)"
@@ -219,7 +224,7 @@ struct SettingsView: View {
                     backupMessage = "Import failed: \(error.localizedDescription)"
                 }
             }
-            .confirmationDialog("Replace this Mac's team memory with the backup? Current rules, tasks, notes and chat log are replaced.",
+            .confirmationDialog("Replace the team memory of \(mesh.activeRoom.displayName) with the backup? Its current rules, tasks, notes and chat log are replaced. Other rooms are not touched.",
                                 isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
                 Button("Replace team memory", role: .destructive) {
                     if let data = pendingImport {
