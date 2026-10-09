@@ -197,6 +197,9 @@ struct MessageRow: View {
             lines.append("Ask path: \(replyPath.map(labelFor).joined(separator: " -> ")), \(hopWord(replyPath.count - 1))")
         }
         if let meta = answerMeta { lines.append(meta) }
+        if message.kind == .answer, let checked = message.checked {
+            lines.append(checked.isEmpty ? "Checked: no saved rule matched" : "Checked: \(checked.joined(separator: "; "))")
+        }
         if let rtt = entry.roundTripMs { lines.append("Round trip \(rtt) ms (measured on this device)") }
         if lines.isEmpty { lines.append("From \(message.origin)") }
         return lines

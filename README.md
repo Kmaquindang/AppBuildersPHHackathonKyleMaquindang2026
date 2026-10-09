@@ -21,7 +21,8 @@ The people we build for cannot rely on cloud AI: they have no signal, or they ca
 - **Team memory on the Mac** (source of truth): tasks, notes, rules and skills with versions and history, saved as JSON in the app's Application Support folder. Phones keep a read-only copy received over the mesh.
 
 ## What requires internet
-- Nothing at runtime. Only one-time setup needs internet: cloning the repo, installing Ollama, and downloading the model (`ollama pull qwen3:8b`).
+- One-time internet is needed to download Ollama and the model (5.2 GB). After that Pasa is fully offline.
+- Nothing at runtime. The one-time setup is cloning the repo, installing Ollama, and running `ollama pull qwen3:8b`.
 
 ## How to run it (for judges)
 
@@ -62,6 +63,9 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 - **Clear that sticks:** Clear timeline records a watermark, so backfill and catch-ups never bring old messages back. On the AI Mac it clears the whole team's chat: linked phones drop older messages right away, the rest on their next link.
 - **AI peer (Mac):** `ExecutiveAssistant` handles every ask. Common phrases (save rule, my tasks, what did I miss, more) skip the model entirely. Everything else gets one JSON-mode classification call, the action runs against team memory, and a second call writes the reply when needed. Replies are cut to a first packet of at most 300 characters (marked `compact`), and `@pasa more` sends the rest.
 - **Team memory rules:** anyone can add a rule or skill. Only admin devices (ticked by device id in the Mac's Settings, plus the Mac itself) can edit, lock, unlock or delete an existing rule. Every edit becomes a new version and the old one stays in history. When copies meet, the newest version wins. Deleting keeps a tombstone (same id, version plus 1, retired, who and when): the Mac broadcasts it so phones drop their copy, and sends tombstones again whenever a phone links so stale caches catch up. Deleted rules are never sent to the model.
+- **Small, grounded prompts:** the answer prompt carries only the rules and notes that match the question (BM25-style keyword scoring, title words count double, top 8 rules within about 2,500 tokens), plus every admin-locked rule. Catch-ups read the newest chat that fits in about 3,000 tokens. Pasa asks Ollama for an 8,192-token context (`num_ctx`), estimates each prompt at about 4 characters per token, and the Mac dashboard shows the estimate next to Ollama's `prompt_eval_count`, with a warning above 80% of the context. When no saved rule or note matches, the answer starts with "No saved team rule covers this." instead of guessing, and every answer's details list the rule titles it checked.
+- **Model pinning and low-memory Macs:** the dashboard shows the digest of the model Ollama is serving and says whether it is the build we tested. Macs with less than 12 GB of memory default to `qwen3:4b-instruct`; you can change the model in Settings.
+- **Backup:** on the Mac, Settings > Export team memory saves rules, tasks, notes and the chat log as a JSON file you choose. Import asks for confirmation, replaces team memory, and updates linked phones.
 - **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it, and shows as a card only when it changed the phone's copy. When a phone links, the Mac first sends a manifest of the rule and task ids it holds (the phone drops cached copies the Mac no longer has, for example after Reset team memory), then the current rules and the phone's open tasks as silent updates that refresh the cache without adding cards to the chat.
 
 ## Hardware tested on
@@ -94,12 +98,13 @@ Notes:
 
 ## Disclosures
 ### Models used
-- Qwen3 8B (`qwen3:8b`, 5.2 GB download, Apache 2.0) from the Ollama library: https://ollama.com/library/qwen3
+- Qwen3 8B, tag `qwen3:8b`, digest `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41` (Q4_K_M, 8.2B parameters, 5.2 GB download), served by Ollama 0.35.0 on the MacBook Air M3 16 GB. Read from `ollama list` and `/api/tags` on Oct 9, 2026. Library page: https://ollama.com/library/qwen3. License: Apache 2.0 (https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE).
+- Memory: the default `qwen3:8b` is meant for Macs with 12 GB of memory or more (tested on 16 GB). Its memory use while loaded has not been measured yet (check with `ollama ps`). Macs under 12 GB default to `qwen3:4b-instruct`.
 - Qwen3 4B (`qwen3:4b`, 2.5 GB, Apache 2.0) as the fallback. Note: in the Ollama library `qwen3:4b` now points to the 2507 thinking build; `qwen3:4b-instruct` (2.5 GB) is the non-thinking build and may be faster for short replies.
 ### Technologies and frameworks
 - Swift, SwiftUI, Apple MultipeerConnectivity, Foundation.
 - XcodeGen (project generation from `project.yml`).
-- Ollama (local model runtime, HTTP API on 127.0.0.1:11434).
+- Ollama (local model runtime, HTTP API on 127.0.0.1:11434). License: MIT (https://github.com/ollama/ollama/blob/main/LICENSE).
 ### APIs and cloud services
 - None at runtime. The only API used is the local Ollama server on the same Mac.
 ### Existing code and assets
@@ -131,6 +136,8 @@ Honest status for this prototype:
 - Device ids must be unique; they are the mesh addresses. People's display names should be unique too; when two people share a name, task assignment asks which one.
 - Free Apple ID builds expire after 7 days on iPhones.
 - The AI only runs on the Mac in this milestone; phones ask it over the mesh. On-phone models are a stretch goal.
+- The local model can still be wrong. Pasa checks citations against saved rules, flags invented ones as "(unverified)", and says when no saved rule covers a question, but the wording of an answer can still misstate a rule. Read the cited rule when it matters.
+- Context is limited to 8,192 tokens. With many rules, only the best keyword matches (plus locked rules) reach the model, so a relevant rule with different wording can be missed. Catch-ups read only the newest chat that fits the budget.
 - Intent detection and note taking come from a small local model and can misread a message; the reply always says what it did (for example "Task added: ...") so the team can correct it.
 - Assignees are matched to devices through the names people picked (or the optional roster on the Mac). A person the Mac has not heard from yet still gets the task on the board, but nothing is pushed to a phone.
 - Backfill comes from the AI Mac only: messages that never passed through the Mac (for example a private task between two phones while the Mac was away) cannot be backfilled.

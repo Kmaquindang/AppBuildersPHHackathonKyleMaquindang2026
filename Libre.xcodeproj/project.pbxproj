@@ -15,8 +15,10 @@
 		366295450FEC192AF47C94FB /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D22E702E09FB434DD2B72C3 /* ComposerView.swift */; };
 		373691461211877260B9AC9B /* AssistantPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */; };
 		39EF21D8502684A5D5E3FDE9 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */; };
+		75C6DDD6D79ADE9403D8E98C /* Retrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A500F48269B909767508F /* Retrieval.swift */; };
 		0486A0F76BDC819B7E0BF5E2 /* CitationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D512A643AFFFF7957CC39D /* CitationGuard.swift */; };
 		44188202F91D2C0DE2071A20 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */; };
+		CB7955D0E97E0B424CEA51D3 /* Retrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07A500F48269B909767508F /* Retrieval.swift */; };
 		5687285F00FF9FE42F08DB3D /* CitationGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D512A643AFFFF7957CC39D /* CitationGuard.swift */; };
 		44A24D1A140D5B4576D00374 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EB20852E75BC8350878E33 /* People.swift */; };
 		394E3839A96D80AE46A4353E /* MeshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F379B52A6BD676489720A926 /* MeshPolicy.swift */; };
@@ -69,6 +71,7 @@
 		0021F15E98B6E08C0E44C038 /* Libre-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Libre-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		030DCA88E0E635C2077D1DAA /* Compactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Compactor.swift; sourceTree = "<group>"; };
 		0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMClient.swift; sourceTree = "<group>"; };
+		F07A500F48269B909767508F /* Retrieval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Retrieval.swift; sourceTree = "<group>"; };
 		79D512A643AFFFF7957CC39D /* CitationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationGuard.swift; sourceTree = "<group>"; };
 		13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantIntent.swift; sourceTree = "<group>"; };
 		16F146780F3C887A53042E80 /* MeshPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPayload.swift; sourceTree = "<group>"; };
@@ -210,6 +213,7 @@
 				A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */,
 				737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */,
 				0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */,
+				F07A500F48269B909767508F /* Retrieval.swift */,
 				79D512A643AFFFF7957CC39D /* CitationGuard.swift */,
 				56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */,
 			);
@@ -322,6 +326,7 @@
 				A808B018F066255B3BD6FE15 /* ContentView.swift in Sources */,
 				6E551BA2F198CE111E650798 /* ExecutiveAssistant.swift in Sources */,
 				39EF21D8502684A5D5E3FDE9 /* LLMClient.swift in Sources */,
+				75C6DDD6D79ADE9403D8E98C /* Retrieval.swift in Sources */,
 				0486A0F76BDC819B7E0BF5E2 /* CitationGuard.swift in Sources */,
 				A6595F049D3E2969F231024D /* LibreApp.swift in Sources */,
 				75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */,
@@ -357,6 +362,7 @@
 				0B903DA39F5C0828DF3D6B07 /* ContentView.swift in Sources */,
 				5C7A6DDE45A4253B435D4C19 /* ExecutiveAssistant.swift in Sources */,
 				44188202F91D2C0DE2071A20 /* LLMClient.swift in Sources */,
+				CB7955D0E97E0B424CEA51D3 /* Retrieval.swift in Sources */,
 				5687285F00FF9FE42F08DB3D /* CitationGuard.swift in Sources */,
 				69A5774AE1550EF4BBCC64DD /* LibreApp.swift in Sources */,
 				2FCC55F9835AFA48DB237C6E /* MeshMessage.swift in Sources */,

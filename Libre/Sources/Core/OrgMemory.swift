@@ -71,6 +71,29 @@ public final class OrgMemory {
         }
     }
 
+    // MARK: Export and import (Mac backup)
+
+    /// Team memory as pretty JSON, for a backup file.
+    public func exportData() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(snapshot)
+    }
+
+    /// Reads a backup file. Throws when it is not Pasa team memory, so nothing is replaced.
+    public static func decodeBackup(_ data: Data) throws -> OrgSnapshot {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(OrgSnapshot.self, from: data)
+    }
+
+    /// Replaces team memory with a backup (the caller confirms first).
+    public func replace(with backup: OrgSnapshot) {
+        snapshot = backup
+        save()
+    }
+
     // MARK: Rules
 
     /// Rules and skills in force. Tombstones of deleted rules are left out.

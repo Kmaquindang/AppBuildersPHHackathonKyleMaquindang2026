@@ -25,8 +25,11 @@ public struct LLMResult: Sendable {
     public var evalDurationNs: Int64?
     /// Whole request time in nanoseconds (Ollama total_duration).
     public var totalDurationNs: Int64?
+    /// Prompt tokens the model actually read (Ollama prompt_eval_count).
+    public var promptEvalCount: Int?
 
-    public init(text: String, model: String, evalCount: Int? = nil, evalDurationNs: Int64? = nil, totalDurationNs: Int64? = nil) {
+    public init(text: String, model: String, evalCount: Int? = nil, evalDurationNs: Int64? = nil, totalDurationNs: Int64? = nil, promptEvalCount: Int? = nil) {
+        self.promptEvalCount = promptEvalCount
         self.text = text
         self.model = model
         self.evalCount = evalCount

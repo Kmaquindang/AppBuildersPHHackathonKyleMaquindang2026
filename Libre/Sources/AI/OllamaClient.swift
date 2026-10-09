@@ -140,7 +140,7 @@ public struct OllamaClient: LLMClient {
             stream: false,
             think: OllamaClient.usesThinking(model) ? false : nil,
             format: json ? "json" : nil,
-            options: ChatRequest.Options(temperature: temperature, num_ctx: 8192),
+            options: ChatRequest.Options(temperature: temperature, num_ctx: PromptBudget.contextTokens),
             keep_alive: OllamaClient.keepAlive
         )
         var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
@@ -167,7 +167,8 @@ public struct OllamaClient: LLMClient {
             model: decoded.model ?? model,
             evalCount: decoded.eval_count,
             evalDurationNs: decoded.eval_duration,
-            totalDurationNs: decoded.total_duration
+            totalDurationNs: decoded.total_duration,
+            promptEvalCount: decoded.prompt_eval_count
         )
     }
 
@@ -220,11 +221,37 @@ public struct OllamaClient: LLMClient {
         var total_duration: Int64?
         var eval_count: Int?
         var eval_duration: Int64?
+        var prompt_eval_count: Int?
         var error: String?
     }
 
     struct TagsResponse: Decodable {
-        struct Model: Decodable { var name: String }
+        struct Model: Decodable {
+            var name: String
+            var digest: String?
+        }
         var models: [Model]
+    }
+
+    /// Installed model name -> digest (sha256), for pinning the tested model.
+    public func installedModelDigests() async throws -> [String: String] {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/tags"))
+        request.timeoutInterval = 5
+        let (data, _) = try await perform(request)
+        let tags = try JSONDecoder().decode(TagsResponse.self, from: data)
+        var out: [String: String] = [:]
+        for m in tags.models { if let d = m.digest { out[m.name] = d } }
+        return out
+    }
+
+    /// Model tested for the hackathon on a MacBook Air M3 16 GB (Ollama 0.35.0, Oct 9, 2026).
+    public static let testedModelDigest = "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+    /// Non-thinking 4B build, used by default on Macs with less than 12 GB of memory.
+    public static let lowMemoryModel = "qwen3:4b-instruct"
+    public static let lowMemoryThreshold: UInt64 = 12 * 1024 * 1024 * 1024
+
+    /// Default model for this Mac: qwen3:8b with 12 GB of memory or more, otherwise qwen3:4b-instruct.
+    public static func recommendedModel(physicalMemory: UInt64) -> String {
+        physicalMemory < lowMemoryThreshold ? lowMemoryModel : defaultModel
     }
 }
