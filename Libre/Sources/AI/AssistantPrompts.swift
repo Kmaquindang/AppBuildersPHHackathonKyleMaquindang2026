@@ -111,11 +111,9 @@ enum AssistantPrompts {
         }
         if noRelevantKnowledge { lines.append("Note from Pasa: no saved rule or note matched this question.") }
         if LiveInfo.looksLive(question) { lines.append(LiveInfo.note) }
-        if let language = LanguageHint.detect(question) {
-            lines.append("Note from Pasa: the question is in \(language). Reply in \(language).")
-        }
         lines.append("")
         lines.append("Question from \(asker): \(question)")
+        if let language = LanguageHint.detect(question) { lines.append(LanguageHint.instruction(language)) }
         return lines.joined(separator: "\n")
     }
 
@@ -179,6 +177,13 @@ public enum LanguageHint {
     ]
     /// Words both languages use: they never decide.
     static let shared: Set<String> = ["pwede", "sa", "ang", "mga", "kay", "lang", "ba", "wala", "na", "pa", "may", "akong", "ako", "ko", "mo"]
+
+    /// Goes right after the question, where a small model weighs it most.
+    public static func instruction(_ language: String) -> String {
+        language == "Tagalog"
+            ? "The question is in Tagalog. Reply in Tagalog (Filipino), not in Cebuano or English."
+            : "The question is in Cebuano (Bisaya). Reply in Cebuano (Bisaya), not in Tagalog or English."
+    }
 
     /// "Tagalog", "Cebuano (Bisaya)" or nil (English, Taglish, mixed or too short to tell).
     public static func detect(_ question: String) -> String? {

@@ -64,10 +64,22 @@ func runQAFixTests() async {
         let a = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Mac")
         _ = await a.handle("Pwede ba akong pumunta sa site ng alas sais ng gabi?", from: "PHONE_A")
         let prompt = llm.received.last?.last?.content ?? ""
-        check(prompt.contains("the question is in Tagalog. Reply in Tagalog."), "qa: answer prompt carries the Tagalog hint")
+        check(prompt.hasSuffix("The question is in Tagalog. Reply in Tagalog (Filipino), not in Cebuano or English."), "qa: answer prompt carries the Tagalog hint")
         let llm2 = FakeLLM([.success("79.")])
         let b = ExecutiveAssistant(memory: mem, llm: llm2, selfName: "Mac")
         _ = await b.handle("10+69", from: "PHONE_A")
-        check(!(llm2.received.last?.last?.content ?? "").contains("the question is in"), "qa: no hint for English")
+        check(!(llm2.received.last?.last?.content ?? "").contains("The question is in"), "qa: no hint for English")
+    }
+
+    // 6. Arithmetic is never a follow-up: "10+69" after a rule question borrows nothing.
+    do {
+        let prev = ThreadTurn(id: UUID(), asker: "PHONE_A", askerName: "Kyle", question: "What time do site visits end?", answer: "5 PM.", at: Date())
+        check(ConversationMemory.retrievalQuery("10+69", previous: prev) == "10+69", "qa: arithmetic does not borrow the previous question")
+        check(ConversationMemory.retrievalQuery("and Sunday?", previous: prev).contains("site visits"), "qa: real follow-up still borrows")
+        let llm = FakeLLM([.success("Site visits end at 5 PM. [Rule: No site visits after 5 PM v1]"), .success("79. [Rule: No site visits after 5 PM v1]")])
+        let a = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Mac")
+        let first = await a.handle("What time do site visits end?", from: "PHONE_A")
+        let math = await a.handle("10+69", from: "PHONE_A")
+        check(first.rulesUsed.count == 1 && math.reply == "79." && math.rulesUsed.isEmpty && math.noRule == true, "qa: math after a rule question has no chip: \(math.rulesUsed)")
     }
 }

@@ -103,6 +103,14 @@ public enum ConversationMemory {
     /// previous question so the rule it relied on is retrieved again.
     public static func retrievalQuery(_ question: String, previous: ThreadTurn?) -> String {
         guard let previous else { return question }
+        // QA fix (Oct 9, 9:40 PM PHT): "10+69" has no content words, so it counted as a follow-up and
+        // borrowed the previous question ("What time do site visits end?"), and the answer "79." came
+        // back with the 5 PM rule chip. Arithmetic never borrows.
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains(where: { $0.isNumber }),
+           QuestionRouter.arithmetic.firstMatch(in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length)) != nil {
+            return question
+        }
         let lower = NameMatcher.normalize(question)
         let followUp = ["and ", "what about ", "how about ", "e ", "eh ", "paano kung ", "pano kung ", "at ", "unya "]
             .contains { lower.hasPrefix($0) }
