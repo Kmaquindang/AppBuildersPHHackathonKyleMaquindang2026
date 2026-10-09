@@ -136,7 +136,7 @@ struct ChatTitle: View {
     var onTap: () -> Void
 
     static func roomName(_ mesh: MeshService) -> String {
-        mesh.activeRoom.isDefault ? "Default" : mesh.activeRoom.displayName
+        mesh.activeRoom.displayName
     }
 
     private var ready: Bool { StatusWords.aiReady(isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability) }
@@ -211,7 +211,7 @@ struct RoomSwitcherChip: View {
     @EnvironmentObject private var mesh: MeshService
 
     private var title: String {
-        let name = mesh.activeRoom.isDefault ? "Default room" : "Room \(mesh.activeRoom.label)"
+        let name = mesh.activeRoom.isDefault ? Room.townSquareName : "Room \(mesh.activeRoom.label)"
         if let count = mesh.roomCountText { return "\(name) \(count)" }
         return name
     }
@@ -227,6 +227,8 @@ struct RoomSwitcherChip: View {
                     } else {
                         Text(room.isClosed ? "\(room.displayName) (closed)" : room.displayName)
                     }
+                    // Menus show a second line as the subtitle (Town Square only).
+                    if let subtitle = room.subtitle { Text(subtitle) }
                 }
             }
         } label: {
@@ -310,7 +312,7 @@ struct NameOnboardingView: View {
                         switch await mesh.joinNearby(beacon, passcode: passcode) {
                         case .joined: break
                         case .wrongPasscode:
-                            roomError = "Wrong passcode for \(beacon.label). Ask the room admin."
+                            roomError = "Wrong passcode for \(Room.displayName(forLabel: beacon.label)). Ask the room admin."
                             return
                         case .failed:
                             roomError = "Could not join. Check the room name and passcode."

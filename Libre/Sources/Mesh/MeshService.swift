@@ -988,8 +988,8 @@ final class MeshService: ObservableObject {
             guard case .applied(let change) = result else {
                 if case .rejected(let why) = result, roomID == activeRoom.id {
                     lastProblem = why == "the room code does not match"
-                        ? "That code does not match room \(room.label). Check the code and try again."
-                        : "Ignored a room update for \(room.label): \(why)."
+                        ? "That code does not match room \(room.displayName). Check the code and try again."
+                        : "Ignored a room update for \(room.displayName): \(why)."
                 }
                 return
             }
@@ -998,8 +998,8 @@ final class MeshService: ObservableObject {
             refreshRoomState()
             if change.removed {
                 lastProblem = change.codeChanged
-                    ? "The admin made a new code for \(room.label). Enter the new code to rejoin."
-                    : "An admin removed this device from \(room.label)."
+                    ? "The admin made a new code for \(room.displayName). Enter the new code to rejoin."
+                    : "An admin removed this device from \(room.displayName)."
             }
             if change.admitted {
                 if roomID == activeRoom.id { lastProblem = nil }
@@ -1088,7 +1088,7 @@ final class MeshService: ObservableObject {
     func createCodeRoom(name: String, expiry: CodeExpiry = .off, approval: Bool = false) async -> Room? {
         guard !roomBusy, var room = Room.fromCode(name: name, creator: displayName) else { return nil }
         guard rooms.room(withID: room.id) == nil else {
-            lastProblem = "A room called \(room.label) is already on this device. Pick another name."
+            lastProblem = "A room called \(room.displayName) is already on this device. Pick another name."
             return nil
         }
         roomBusy = true
@@ -1143,7 +1143,7 @@ final class MeshService: ObservableObject {
             if link.isExpired() { lastProblem = "That room code expired. Ask the admin for a new one."; return }
             Task {
                 switch await joinCodeRoom(name: link.room, code: link.code, expiresAt: link.expiresAt) {
-                case .sent(let room): lastProblem = "Joining \(room.label). The admin device lets you in when it is nearby."
+                case .sent(let room): lastProblem = "Joining \(room.displayName). The admin device lets you in when it is nearby."
                 case .expired: lastProblem = "That room code expired. Ask the admin for a new one."
                 case .badCode: lastProblem = "That room code is not valid."
                 case .failed: lastProblem = "Could not join right now. Try again."
@@ -2337,7 +2337,7 @@ final class MeshService: ObservableObject {
         case .alreadyAnswered(let answerID):
             redeliverAnswer(for: ask, answerID: answerID, room: roomID)
         case .roomFull:
-            let reply = AIReply(text: "Too many questions are waiting in \(room.label) right now. Ask again in a minute.")
+            let reply = AIReply(text: "Too many questions are waiting in \(room.displayName) right now. Ask again in a minute.")
             sendAnswer(reply, to: ask, room: roomID, intent: "busy", error: "room queue full")
         }
         aiQueueDepth = askQueue.depth

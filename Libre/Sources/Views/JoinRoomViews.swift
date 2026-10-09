@@ -60,7 +60,7 @@ struct CreateCodeRoomView: View {
                 .controlSize(.large)
                 .disabled(mesh.roomBusy || Room.cleanLabel(name).isEmpty)
                 if showSkip {
-                    Button("Skip for now (use the open Default room)") { onDone() }.font(.callout)
+                    Button("Skip for now (use Town Square, open to everyone nearby)") { onDone() }.font(.callout)
                 }
             }
         }
@@ -119,7 +119,7 @@ struct RoomShareView: View {
             #endif
         } else {
             Text(mesh.activeRoom.usesCode
-                 ? "Only the device that created \(mesh.activeRoom.label) can show its code."
+                 ? "Only the device that created \(mesh.activeRoom.displayName) can show its code."
                  : "This room has no join code. Create a room with a code to show a join screen.")
                 .font(.callout).foregroundStyle(.secondary)
         }
@@ -308,7 +308,7 @@ struct CodeJoinView: View {
     private func join(name: String, code: String, expiresAt: Date?) async {
         switch await mesh.joinCodeRoom(name: name, code: code, expiresAt: expiresAt) {
         case .sent(let room):
-            message = room.canSend ? "You are in \(room.label)." : "Asked to join \(room.label). The admin device lets you in when it is nearby\(room.gov?.manifest?.approval == true ? " and an admin approves" : "")."
+            message = room.canSend ? "You are in \(room.displayName)." : "Asked to join \(room.displayName). The admin device lets you in when it is nearby\(room.gov?.manifest?.approval == true ? " and an admin approves" : "")."
         case .expired: message = "That code expired. Ask the admin for a new one."
         case .badCode: message = "That code is not valid. Check it and try again."
         case .failed: message = "Could not join right now. Try again."

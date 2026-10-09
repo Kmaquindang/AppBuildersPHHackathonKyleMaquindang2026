@@ -112,7 +112,12 @@ struct RoomSettingsSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Active room", value: mesh.activeRoom.displayName)
+            LabeledContent("Active room") {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(mesh.activeRoom.displayName)
+                    if let subtitle = mesh.activeRoom.subtitle { RoomSubtitle(text: subtitle).multilineTextAlignment(.trailing) }
+                }
+            }
             if mesh.activeJoinLink != nil {
                 Button { showShare = true } label: { Label("Show join screen (QR and code)", systemImage: "qrcode") }
             }
@@ -144,7 +149,10 @@ struct RoomSettingsSection: View {
                         message = "Switched to \(room.displayName)."
                     } label: {
                         HStack {
-                            Text(room.displayName)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(room.displayName)
+                                if let subtitle = room.subtitle { RoomSubtitle(text: subtitle) }
+                            }
                             Spacer()
                             if room.id == mesh.activeRoom.id { Image(systemName: "checkmark") }
                         }
@@ -160,7 +168,7 @@ struct RoomSettingsSection: View {
                     Button {
                         Task {
                             if let room = await mesh.createRoom(name: createName, passcode: createCode) {
-                                message = "Created \(room.label) (check code \(room.checkCode)). Teammates join with the name and passcode, or the QR code. The passcode is not saved anywhere, so remember it."
+                                message = "Created \(room.displayName) (check code \(room.checkCode)). Teammates join with the name and passcode, or the QR code. The passcode is not saved anywhere, so remember it."
                                 createName = ""; createCode = ""; createConfirm = ""
                                 showCreate = false
                             } else {
@@ -184,16 +192,16 @@ struct RoomSettingsSection: View {
                             if let beacon = mesh.nearbyRooms.first(where: { $0.beacon.label == Room.cleanLabel(joinName) })?.beacon {
                                 switch await mesh.joinNearby(beacon, passcode: joinCode) {
                                 case .joined(let room):
-                                    message = "Joined \(room.label). \(room.canSend ? "" : "Waiting for an admin device to let you in (automatic when it is nearby). ")Admin fingerprint \(room.adminFingerprint ?? "not heard yet"): compare it with the admin's screen."
+                                    message = "Joined \(room.displayName). \(room.canSend ? "" : "Waiting for an admin device to let you in (automatic when it is nearby). ")Admin fingerprint \(room.adminFingerprint ?? "not heard yet"): compare it with the admin's screen."
                                     joinName = ""; joinCode = ""
                                     showJoin = false
                                 case .wrongPasscode:
-                                    message = "Wrong passcode for \(beacon.label). Ask the room admin."
+                                    message = "Wrong passcode for \(Room.displayName(forLabel: beacon.label)). Ask the room admin."
                                 case .failed:
                                     message = "Could not join. Check the name and passcode."
                                 }
                             } else if let room = await mesh.joinRoom(name: joinName, passcode: joinCode) {
-                                message = "Joined \(room.label). Check code \(room.checkCode): it should match your teammates' screens. If it does not, the name or passcode was typed differently. If an admin must let you in, that happens automatically when an admin device is nearby."
+                                message = "Joined \(room.displayName). Check code \(room.checkCode): it should match your teammates' screens. If it does not, the name or passcode was typed differently. If an admin must let you in, that happens automatically when an admin device is nearby."
                                 joinName = ""; joinCode = ""
                                 showJoin = false
                             } else {
@@ -209,7 +217,7 @@ struct RoomSettingsSection: View {
                             .font(.body.monospaced())
                         Button("Join") {
                             if mesh.joinRoom(joinText) {
-                                message = "Joined \(mesh.activeRoom.label) (check code \(mesh.activeRoom.checkCode))."
+                                message = "Joined \(mesh.activeRoom.displayName) (check code \(mesh.activeRoom.checkCode))."
                                 joinText = ""
                                 showJoin = false
                             } else {
@@ -231,7 +239,7 @@ struct RoomSettingsSection: View {
         .sheet(isPresented: $showShare) {
             NavigationStack {
                 ScrollView { RoomShareView().padding() }
-                    .navigationTitle("Join \(mesh.activeRoom.label)")
+                    .navigationTitle("Join \(mesh.activeRoom.displayName)")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showShare = false } } }
             }
             #if os(macOS)
@@ -267,12 +275,12 @@ struct RoomSettingsSection: View {
             ? "As the AI peer, this Mac answers in every room it has joined (one question at a time, rooms take turns). It still relays other rooms' messages without being able to read them."
             : "This device reads and writes one room at a time (switch from the room chip in the header). It still relays other rooms' messages without being able to read them."
         if mesh.activeRoom.isDefault {
-            return "Default is the open room: its key is public, so anyone running Pasa nearby can read it. Create a room for privacy. " + common
+            return "Town Square is open to everyone nearby, no code needed: its key is public, so anyone running Pasa nearby can read it. Create a room for privacy. " + common
         }
         let pass = mesh.activeRoom.usesPasscode
             ? "Anyone who knows the room name and passcode, or has the QR code or join string, can read and write in it. The passcode is never shown again or stored. A short passcode can be guessed by someone who records room traffic, so use a long one. "
             : "This room was made before passcodes: join it with the QR code or join string. "
-        return pass + "The room name (\(mesh.activeRoom.label)) is not secret. " + common
+        return pass + "The room name (\(mesh.activeRoom.displayName)) is not secret. " + common
     }
 }
 
@@ -289,10 +297,10 @@ struct BusyLabel: View {
     }
 }
 
-/// First run: stay in Default, create a room, or join one (name + passcode, or a join string).
+/// First run: stay in Town Square (the open room), create a room, or join one (name + passcode, or a join string).
 struct RoomOnboardingPicker: View {
     enum Choice: String, CaseIterable, Identifiable {
-        case open = "Default", create = "Create", join = "Join"
+        case open = "Town Square", create = "Create", join = "Join"
         var id: String { rawValue }
     }
 
@@ -313,8 +321,10 @@ struct RoomOnboardingPicker: View {
             .labelsHidden()
             switch choice {
             case .open:
-                Text("The open room. Anyone running Pasa nearby can read it. Fine for a demo; create a room for privacy. You can change this later in Settings.")
+                RoomSubtitle(text: Room.townSquareSubtitle)
+                Text("Anyone running Pasa nearby can read it. Fine for a demo; create a room for privacy. You can change this later in Settings.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             case .create:
                 TextField("Room name, for example BOHOL-7", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -371,7 +381,7 @@ struct NearbyRoomsList: View {
                 } label: {
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(b.label).font(.body.weight(.semibold))
+                            Text(Room.displayName(forLabel: b.label)).font(.body.weight(.semibold))
                             Text("Admin \(b.adminName), key \(b.adminFingerprint)\(heard.conflict ? ". Warning: another device claims this room" : "")")
                                 .font(.caption2).foregroundStyle(heard.conflict ? Color.red : Color.secondary)
                         }
@@ -472,8 +482,22 @@ struct RoomAdminSection: View {
                 kickTarget = nil
             }
         }
-        .confirmationDialog("Close \(room.label)? Nobody can send in it; chat and memory stay read-only. You can reopen it.", isPresented: $confirmClose) {
+        .confirmationDialog("Close \(room.displayName)? Nobody can send in it; chat and memory stay read-only. You can reopen it.", isPresented: $confirmClose) {
             Button("Close room", role: .destructive) { mesh.setRoomClosed(true) }
         }
+    }
+}
+
+
+/// The open room's one-line subtitle ("Open to everyone nearby. No code needed."). Wraps at any
+/// Dynamic Type size instead of truncating.
+struct RoomSubtitle: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
