@@ -33,10 +33,10 @@ func runLocalProofTests() {
     let p = AIProof(mac: "Site Office", model: "qwen3:8b", internet: .offline, tokensPerSecond: 16.63, latencyMs: 6470)
     check(p.badge == "On-device: Site Office · qwen3:8b · offline · 16.6 tok/s · 6470 ms", "proof badge format")
     let fast = AIProof(mac: "Site Office", model: nil, internet: .connected, tokensPerSecond: nil, latencyMs: 9)
-    check(fast.badge == "On-device: Site Office · no model call · internet on, not used · 9 ms", "fast path badge says no model call and internet not used")
+    check(fast.badge == "On-device: Site Office · no model call · internet available, not used · 9 ms", "fast path badge says no model call and internet not used")
     check(InternetState.from(satisfied: true, realInterfaces: 0) == .offline, "satisfied path with only peer-to-peer interfaces is not internet")
     check(InternetState.from(satisfied: true, realInterfaces: 1) == .connected && InternetState.from(satisfied: false, realInterfaces: 2) == .offline, "internet state from path")
-    check(InternetState.offline.label == "Internet: none" && InternetState.connected.label == "Internet: connected (not used)", "dashboard labels")
+    check(InternetState.offline.label == "Internet: none" && InternetState.connected.label == "Internet: available, not used" && InternetState.connected.detailsLabel == "Internet available, not used" && InternetState.offline.detailsLabel == "No internet", "dashboard labels")
 
     // Proof rides on answers and survives sealing round trip (JSON).
     var m = MeshMessage(origin: "Mac", kind: .answer, body: "hi")
@@ -319,4 +319,62 @@ func runAnswerStyleTests() async {
     let saved = await b.handle("everyone must wear gloves for rebar, remember that", from: "Mac")
     check(saved.intent == .saveRule && saved.modelCalls == 1 && !saved.skippedClassify, "command goes through the intent call")
     check(saved.reply.hasPrefix("Saved.") && saved.rulesUsed == ["[Rule: Gloves for rebar v1]"] && saved.noRule == nil, "save rule reply: chip, no tag: \(saved.reply)")
+}
+
+func runChatLayoutTests() {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = TimeZone(identifier: "Asia/Manila")!
+    let t0 = Date(timeIntervalSince1970: 1_791_549_180)   // Oct 9 2026, 8:33 PM Manila
+    func e(_ origin: String, _ kind: MessageKind, _ at: Date, mine: Bool, sentTo: [String] = ["MAC"], replyTo: UUID? = nil) -> ChatEntry {
+        var m = MeshMessage(origin: origin, kind: kind, body: "x", createdAt: at)
+        m.replyTo = replyTo
+        return ChatEntry(id: m.id, message: m, direction: mine ? .sent : .received, receivedAt: at, sentTo: mine ? sentTo : [])
+    }
+    let a1 = e("PHONE_A", .chat, t0, mine: false)
+    let a2 = e("PHONE_A", .chat, t0 + 30, mine: false)
+    let me1 = e("KYLE", .ask, t0 + 60, mine: true)
+    let ai = e("MAC", .answer, t0 + 65, mine: false, replyTo: me1.id)
+    let me2 = e("KYLE", .chat, t0 + 2000, mine: true, sentTo: [])
+    let entries = [a1, a2, me1, ai, me2]
+    let answered = AskCoalescer.answered(entries)
+    var statuses: [UUID: BubbleStatus] = [:]
+    for x in entries { statuses[x.id] = BubbleStatus.of(x, answered: answered, waiting: false) }
+    let l = ChatLayout.layout(entries, statuses: statuses, now: t0 + 2100, calendar: cal)
+    check(l[a1.id]?.timestamp == "Today 8:33 PM" && l[a1.id]?.showName == true, "layout: first row gets a timestamp and the sender name")
+    check(l[a2.id]?.timestamp == nil && l[a2.id]?.showName == false && l[a1.id]?.lastInGroup == false && l[a2.id]?.lastInGroup == true, "layout: same sender groups, name once")
+    check(l[me1.id]?.showName == false && l[me1.id]?.statusWord == nil, "layout: never a name for self; status only on the last own message")
+    check(l[ai.id]?.showName == true && l[ai.id]?.firstInGroup == true && l[ai.id]?.lastInGroup == true, "layout: Pasa AI is its own sender")
+    check(l[me2.id]?.timestamp != nil && l[me2.id]?.statusWord == "Queued", "layout: gap over 15 min shows a timestamp; last own message says Queued")
+    check(ChatLayout.statusWord(.answered) == "Answered" && ChatLayout.statusWord(.sent) == "Delivered" && ChatLayout.statusWord(.received) == nil, "layout: status words")
+    let yesterday = ChatLayout.timestampText(t0 - 86_400, now: t0, calendar: cal)
+    let older = ChatLayout.timestampText(t0 - 3 * 86_400, now: t0, calendar: cal)
+    check(yesterday == "Yesterday 8:33 PM" && older == "Tue, Oct 6 8:33 PM", "layout: yesterday and older stamps (\(yesterday), \(older))")
+    let midnight = e("PHONE_A", .chat, Date(timeIntervalSince1970: 1_791_561_660), mine: false)   // Oct 10 12:01 AM
+    let late = e("PHONE_A", .chat, Date(timeIntervalSince1970: 1_791_561_000), mine: false)       // Oct 9 11:50 PM
+    let l2 = ChatLayout.layout([late, midnight], statuses: [:], now: t0 + 90_000, calendar: cal)
+    check(l2[midnight.id]?.timestamp != nil && l2[midnight.id]?.showName == true, "layout: a new day shows a stamp even within 15 min")
+
+    // Typing
+    let pending = ChatLayout.pendingAsks([me1], device: "KYLE", now: t0 + 70)
+    check(pending.count == 1 && ChatLayout.pendingAsks(entries, device: "KYLE", now: t0 + 70).isEmpty, "typing: pending until answered")
+    check(ChatLayout.pendingAsks([e("KYLE", .ask, t0, mine: true, sentTo: [])], device: "KYLE", now: t0 + 5).isEmpty, "typing: a queued ask shows no dots")
+    check(ChatLayout.pendingAsks([me1], device: "KYLE", now: t0 + 3600).isEmpty, "typing: stops after 10 minutes")
+    check(TypingState.of(pending: 1, isAIPeer: false, ai: .awake) == .typing && TypingState.of(pending: 0, isAIPeer: false, ai: .awake) == .none, "typing: dots when the Mac is awake")
+    check(TypingState.of(pending: 1, isAIPeer: false, ai: .asleep) == .note(TypingState.asleepLine) && TypingState.of(pending: 1, isAIPeer: true, ai: .unknown) == .typing, "typing: asleep line; the Mac itself types")
+
+    // Header
+    check(StatusWords.subtitle(linked: 1, nearby: 1, isAIPeer: false, ai: .awake, aiMac: "Kyle's Mac", firstPeer: "Kyle's Mac") == "Kyle's Mac nearby", "header: Mac nearby")
+    check(StatusWords.subtitle(linked: 3, nearby: 3, isAIPeer: false, ai: .awake, aiMac: "Kyle's Mac", firstPeer: "Ana") == "Kyle's Mac and 2 more nearby", "header: Mac and more")
+    check(StatusWords.subtitle(linked: 0, nearby: 0, isAIPeer: false, ai: .unknown, aiMac: nil, firstPeer: nil) == "No one nearby", "header: no one nearby")
+    check(StatusWords.subtitle(linked: 0, nearby: 0, isAIPeer: false, ai: .asleep, aiMac: "Kyle's Mac", firstPeer: nil) == "Kyle's Mac is asleep", "header: Mac asleep")
+    check(StatusWords.subtitle(linked: 2, nearby: 2, isAIPeer: true, ai: .unknown, aiMac: nil, firstPeer: "Ana") == "Ana and 1 more nearby", "header: on the Mac")
+    check(StatusWords.aiReady(isAIPeer: false, ai: .awake) && !StatusWords.aiReady(isAIPeer: false, ai: .asleep), "header: AI dot")
+
+    // Legacy answers in history display clean.
+    let legacy = AnswerStyle.display(body: "No saved team rule covers this. General advice, not a team rule: 10+69 equals 79.", rulesUsed: nil, unverified: nil)
+    check(legacy.text == "10+69 equals 79." && legacy.rulesUsed.isEmpty, "display: Kyle's old bubble shows clean")
+    let legacy2 = AnswerStyle.display(body: "No. [Rule: No site visits after 5 PM v1] Also [Rule: Night v1] (unverified).", rulesUsed: nil, unverified: nil)
+    check(legacy2.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && legacy2.unverifiedRules == ["[Rule: Night v1]"] && !legacy2.text.contains("["), "display: old tags become chips: \(legacy2.text)")
+    let modern = AnswerStyle.display(body: "No, visits end at 5 PM.", rulesUsed: ["[Rule: No site visits after 5 PM v1]"], unverified: nil)
+    check(modern.text == "No, visits end at 5 PM." && modern.rulesUsed.count == 1, "display: new answers pass through")
 }

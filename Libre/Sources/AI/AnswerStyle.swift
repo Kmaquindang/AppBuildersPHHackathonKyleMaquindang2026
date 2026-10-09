@@ -59,6 +59,27 @@ public enum AnswerStyle {
         return StyledAnswer(text: text, rulesUsed: used, unverifiedRules: unverified, noRule: used.isEmpty)
     }
 
+    private static let legacyTag = try! NSRegularExpression(
+        pattern: #"\[(Rule|Skill|Note)\s*:\s*([^\]\n]{1,200})\](\s*\(unverified\))?"#, options: [.caseInsensitive])
+
+    /// What a phone shows for an answer. New Macs send clean text plus chips. Answers from older
+    /// Macs (and timeline history) still carry tags and preambles in the text: those were checked
+    /// by the Mac when sent, so tags become chips as they are ("(unverified)" ones as warnings).
+    public static func display(body: String, rulesUsed: [String]?, unverified: [String]?) -> StyledAnswer {
+        if rulesUsed != nil || unverified != nil {
+            let used = rulesUsed ?? []
+            return StyledAnswer(text: body, rulesUsed: used, unverifiedRules: unverified ?? [], noRule: used.isEmpty)
+        }
+        let ns = body as NSString
+        var used: [String] = []
+        var bad: [String] = []
+        for m in legacyTag.matches(in: body, range: NSRange(location: 0, length: ns.length)) {
+            let tag = "[" + ns.substring(with: m.range(at: 1)) + ": " + ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces) + "]"
+            if m.range(at: 3).location != NSNotFound { bad.append(tag) } else { used.append(tag) }
+        }
+        return style(guarded: CitationGuard.Result(text: body, verified: used, unverified: bad))
+    }
+
     /// Removes citation tags. A tag that is the subject of its sentence ("[Rule: X v1] says ...")
     /// becomes the rule title in quotes, so the sentence still reads.
     static func stripTags(_ text: String) -> String {

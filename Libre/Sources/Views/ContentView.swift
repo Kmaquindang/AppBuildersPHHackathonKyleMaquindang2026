@@ -39,27 +39,29 @@ struct ContentView: View {
     }
 }
 
-/// Peers, timeline and composer, with the settings sheet.
+/// Timeline and composer under an iMessage-style title (room name, AI dot, one short subtitle).
+/// Tapping the title opens the connection sheet: devices, links, AI status, internet state,
+/// forced relay. Your own name lives in Settings, not in the header.
 struct ChatScreen: View {
     @EnvironmentObject private var mesh: MeshService
     @State private var showSettings = false
+    @State private var showConnection = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                StatusHeader()
-                PeerStripView()
-                Divider()
+                ChatNotices()
                 ChatTimelineView()
-                StarterChips()
-                Divider()
                 ComposerView()
             }
-            .navigationTitle("Pasa")
+            .navigationTitle(ChatTitle.roomName(mesh))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    ChatTitle(onTap: { showConnection = true })
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showSettings = true
@@ -73,90 +75,86 @@ struct ChatScreen: View {
                 SettingsView()
                     .environmentObject(mesh)
             }
+            .sheet(isPresented: $showConnection) {
+                ConnectionSheet()
+                    .environmentObject(mesh)
+            }
         }
     }
 }
 
-/// Two rows that wrap instead of truncating: who and which room, then the status in plain words.
-/// Below them, one offline banner when messages are waiting for a teammate.
-struct StatusHeader: View {
+/// Room name with a green (Pasa can answer) or gray dot, and one short line under it.
+struct ChatTitle: View {
     @EnvironmentObject private var mesh: MeshService
+    var onTap: () -> Void
 
-    private var statusLine: String {
-        StatusWords.line(linked: mesh.connectedCount, nearby: mesh.peers.count, isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability)
-            + (mesh.aiAvailability == .awake && !mesh.isAIPeer ? internetWords : "")
+    static func roomName(_ mesh: MeshService) -> String {
+        mesh.activeRoom.isDefault ? "Default" : mesh.activeRoom.displayName
     }
 
-    /// The AI Mac's own internet state from its status beacon ("no internet" proves answers are local).
-    private var internetWords: String {
-        switch mesh.aiDetail?.internet {
-        case .offline?: return ", no internet"
-        case .connected?: return ", internet not used"
-        default: return ""
-        }
-    }
+    private var ready: Bool { StatusWords.aiReady(isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability) }
 
-    private var statusSymbol: String {
-        mesh.connectedCount > 0 ? "dot.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash"
+    private var subtitle: String {
+        let linked = mesh.peers.filter { $0.state == .connected && !$0.isBlocked }
+        let aiMac = mesh.aiDetail.map { mesh.label(for: $0.device) }
+        return StatusWords.subtitle(linked: mesh.connectedCount, nearby: mesh.peers.count, isAIPeer: mesh.isAIPeer,
+                                    ai: mesh.aiAvailability, aiMac: aiMac, firstPeer: linked.first?.label)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { nameText; RoomSwitcherChip(); Spacer(minLength: 0) }
-                VStack(alignment: .leading, spacing: 4) { nameText; RoomSwitcherChip() }
-            }
-            Label {
-                Text(statusLine)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: statusSymbol)
-                    .foregroundStyle(mesh.connectedCount > 0 ? Color.green : Color.orange)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Status: \(statusLine.replacingOccurrences(of: " · ", with: ". "))")
-            if let banner = StatusWords.offlineBanner(linked: mesh.connectedCount, queued: mesh.queuedMineCount) {
-                Label {
-                    Text(banner).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "clock").foregroundStyle(.orange)
+        Button(action: onTap) {
+            VStack(spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(ChatTitle.roomName(mesh))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Circle()
+                        .fill(ready ? Color.green : Color.gray)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityElement(children: .combine)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            if let blocker = mesh.activeRoom.sendBlocker {
-                notice(blocker, symbol: "lock", tint: .orange)
-            }
-            if let badge = mesh.forcedRelayBadge {
-                notice(badge, symbol: "arrow.triangle.branch", tint: .orange)
-            }
-            if let problem = mesh.lastProblem {
-                notice(problem, symbol: "exclamationmark.triangle.fill", tint: .red)
-            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(ChatTitle.roomName(mesh)). \(subtitle). \(ready ? "Pasa can answer now" : "Pasa is not available right now")")
+        .accessibilityHint("Shows devices, links and AI status")
+        .accessibilityAddTraits(.isButton)
     }
+}
 
-    private var nameText: some View {
-        Text(mesh.personName.isEmpty ? "You are \(mesh.displayName)" : "You: \(mesh.personName)")
-            .font(.headline)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel(mesh.personName.isEmpty ? "You are \(mesh.displayName)" : "You are \(mesh.personName)")
-    }
+/// Only what needs attention, under the title: queued messages with nobody nearby, a room you
+/// cannot send in, forced relay mode, and the last problem.
+struct ChatNotices: View {
+    @EnvironmentObject private var mesh: MeshService
 
-    /// Colored icon, text in the primary label color (colored text on white fails 4.5:1).
-    private func notice(_ text: String, symbol: String, tint: Color) -> some View {
-        Label {
-            Text(text).font(.footnote).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: symbol).foregroundStyle(tint)
+    var body: some View {
+        let banner = StatusWords.offlineBanner(linked: mesh.connectedCount, queued: mesh.queuedMineCount)
+        let items: [(String, String, Color)] = [
+            banner.map { ($0, "clock", Color.orange) },
+            mesh.activeRoom.sendBlocker.map { ($0, "lock", Color.orange) },
+            mesh.forcedRelayBadge.map { ($0, "arrow.triangle.branch", Color.orange) },
+            mesh.lastProblem.map { ($0, "exclamationmark.triangle.fill", Color.red) }
+        ].compactMap { $0 }
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(items, id: \.0) { item in
+                    TintedLabel(text: item.0, symbol: item.1, tint: item.2, font: .footnote)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.10))
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
