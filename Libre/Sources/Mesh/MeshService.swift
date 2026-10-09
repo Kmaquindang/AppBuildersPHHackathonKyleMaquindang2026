@@ -1356,6 +1356,21 @@ final class MeshService: ObservableObject {
 
     // MARK: Mac dashboard actions (the Mac acts as an admin)
 
+    /// Owner or admin may finish a task from its card (the AI Mac checks again on phones' asks).
+    func canComplete(_ task: TaskItem) -> Bool {
+        task.canComplete(by: displayName, names: [personName], isAdmin: isAIPeer || isRoomAdmin || adminDevices.contains(displayName), roster: roster)
+    }
+
+    /// Done button: the Mac marks it right away; a phone asks the Mac, which syncs it back.
+    func completeTask(_ task: TaskItem) {
+        guard canComplete(task) else { return }
+        if isAIPeer {
+            setTaskDone(task.id, done: true)
+        } else {
+            send("\(AssistantMention.primary) mark done: \(task.title) #\(task.shortID)")
+        }
+    }
+
     func setTaskDone(_ id: UUID, done: Bool) {
         let updated = done ? memory.markDone(id, by: displayName) : memory.reopen(id, by: displayName)
         if let updated { notifyTask(updated) }
@@ -2240,7 +2255,7 @@ final class MeshService: ObservableObject {
             let answerID = sendAnswer(reply, to: ask, room: roomID, intent: outcome.intent.rawValue, error: outcome.error,
                                       promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
             askQueue.finish(job.askID, answerID: answerID)
-            for task in outcome.taskUpdates { notifyTask(task, room: roomID) }
+            for task in outcome.taskUpdates { notifyTask(task, room: roomID, also: ask.origin) }
             for rule in outcome.ruleUpdates { broadcastRule(rule, room: roomID) }
             if roomID == activeRoom.id { refreshOrg() }
         case .plain, .echo:
@@ -2338,12 +2353,14 @@ final class MeshService: ObservableObject {
     }
 
     /// Sends a task to its assignee's device (and its creator, when the task is finished).
-    private func notifyTask(_ task: TaskItem, room roomID: String? = nil) {
+    /// `also`: the device that finished it (an admin's Done button), so its copy updates too.
+    private func notifyTask(_ task: TaskItem, room roomID: String? = nil, also: String? = nil) {
         let id = roomID ?? activeRoom.id
         guard let room = rooms.room(withID: id), let body = MeshPayload.encode(task) else { return }
         var targets: [String] = []
         if let device = task.assigneeDevice { targets.append(device) }
         if task.status == .done, !targets.contains(task.createdBy) { targets.append(task.createdBy) }
+        if task.status == .done, let also, !targets.contains(also) { targets.append(also) }
         for device in targets where device != displayName {
             let message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
             var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())

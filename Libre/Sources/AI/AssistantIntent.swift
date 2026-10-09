@@ -124,6 +124,12 @@ public enum IntentParser {
         }
 
         let lower = text.lowercased()
+        // "mark done: Order cement #1a2b3c4d" from a task card's Done button (no model call).
+        for prefix in ["mark done", "mark as done", "done task"] where lower.hasPrefix(prefix) {
+            let rest = remainder(of: text, after: prefix)
+            guard !rest.isEmpty else { return nil }
+            return AssistantPlan(kind: .markDone, taskRef: rest, fromFastPath: true)
+        }
         for prefix in ["accept task", "accept suggested task", "add suggested task"] where lower.hasPrefix(prefix) {
             let rest = remainder(of: text, after: prefix)
             guard !rest.isEmpty else { return nil }

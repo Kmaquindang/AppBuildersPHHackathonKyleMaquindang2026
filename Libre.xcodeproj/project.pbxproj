@@ -54,7 +54,9 @@
 		598BD456450975849EB3D801 /* AssistantIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */; };
 		6EDD3EABEB135E10201E3CFC /* VoiceAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */; };
 		5A315A6B276143E804C4995A /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
+		1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
+		D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5C64ED549D285F92BB0D7FE2 /* AssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */; };
 		047ED0EDA2C31942002386BF /* MacSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73498396C3CAB6F3F557DCA9 /* MacSetupView.swift */; };
 		76D8AF4E621382D3FC8DFE79 /* LocalAIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C378A8D5512AF47750FA548 /* LocalAIViews.swift */; };
@@ -187,6 +189,7 @@
 		B31305907BF0078F6F24B7ED /* Libre-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Libre-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C591AFAD3C57690844D564A4 /* 2026-10-09_1723_mac_ai_peer.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "2026-10-09_1723_mac_ai_peer.jpg"; sourceTree = "<group>"; };
 		D58E2D580356DC437F05A0CD /* OrgModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgModels.swift; sourceTree = "<group>"; };
+		5D0610BC65FEE5454D52E807 /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
 		D6FEB7041148C8E7236CCACB /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		E71424B599E943648E0F4282 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D3E68A9798A776400EC46DDB /* RoomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomViews.swift; sourceTree = "<group>"; };
@@ -286,6 +289,7 @@
 				2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */,
 				9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */,
 				D58E2D580356DC437F05A0CD /* OrgModels.swift */,
+				5D0610BC65FEE5454D52E807 /* TaskDetails.swift */,
 				68EB20852E75BC8350878E33 /* People.swift */,
 				F379B52A6BD676489720A926 /* MeshPolicy.swift */,
 				4C15F19562940628FE094226 /* Rooms.swift */,
@@ -469,6 +473,7 @@
 				613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */,
 				FAC18A04EE738239F7B5CBFA /* OrgMemory.swift in Sources */,
 				5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */,
+				D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */,
 				630F9BF63AE308FFE4AB9D7B /* PeerStripView.swift in Sources */,
 				D4DCCE15241436706548CB37 /* People.swift in Sources */,
 				FA7A94B96EACF7E155C7200E /* MeshPolicy.swift in Sources */,
@@ -534,6 +539,7 @@
 				DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */,
 				CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */,
 				5A315A6B276143E804C4995A /* OrgModels.swift in Sources */,
+				1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */,
 				9886BB428215ABD8165DE5A9 /* PeerStripView.swift in Sources */,
 				44A24D1A140D5B4576D00374 /* People.swift in Sources */,
 				394E3839A96D80AE46A4353E /* MeshPolicy.swift in Sources */,

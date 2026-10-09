@@ -25,6 +25,9 @@ public struct TaskItem: Codable, Identifiable, Hashable, Sendable {
     public var completedBy: String?
     /// Where it came from, for example "ask" or "notes".
     public var source: String?
+    /// When it was marked done. Optional so tasks saved or sent by older builds still decode
+    /// (they fall back to `updatedAt`, see `doneAt`).
+    public var completedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -37,7 +40,8 @@ public struct TaskItem: Codable, Identifiable, Hashable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date? = nil,
         completedBy: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        completedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -50,6 +54,7 @@ public struct TaskItem: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt ?? createdAt
         self.completedBy = completedBy
         self.source = source
+        self.completedAt = completedAt
     }
 
     /// "Order cement (Ana, due Friday)"

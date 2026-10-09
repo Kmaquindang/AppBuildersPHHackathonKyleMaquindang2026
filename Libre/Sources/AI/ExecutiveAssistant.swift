@@ -371,10 +371,18 @@ public final class ExecutiveAssistant {
 
         case .markDone:
             let ref = plan.taskRef ?? plan.taskTitle ?? text
-            if let task = memory.findOpenTask(matching: ref, preferFor: asker, roster: roster),
-               let done = memory.markDone(task.id, by: asker) {
-                reply = "Marked done: \(done.title)."
-                taskUpdates.append(done)
+            if let task = memory.findOpenTask(matching: ref, preferFor: asker, roster: roster) {
+                // Owner or admin only (anyone for a task with no owner).
+                let names = [directory[asker]].compactMap { $0 }
+                guard task.canComplete(by: asker, names: names, isAdmin: memory.isAdmin(asker), roster: roster) else {
+                    let owner = task.assigneeDevice.map { PeopleDirectory.label(for: $0, directory: directory) } ?? task.assignee ?? "the owner"
+                    reply = "Only \(owner) or an admin can mark \"\(task.title)\" done."
+                    break
+                }
+                if let done = memory.markDone(task.id, by: asker) {
+                    reply = "Marked done: \(done.title)."
+                    taskUpdates.append(done)
+                }
             } else {
                 reply = "I could not tell which task. Open tasks: " + numbered(memory.openTasks.prefix(5).map { $0.title })
             }

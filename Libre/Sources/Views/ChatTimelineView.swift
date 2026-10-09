@@ -259,7 +259,7 @@ struct MessageRow: View {
     @ViewBuilder
     private var bubble: some View {
         if isCard {
-            CardView(message: message, text: plainText)
+            CardView(message: message, text: plainText, names: names)
         } else {
             Text(bodyText)
                 .font(.body)
@@ -401,6 +401,8 @@ struct PasaAvatar: View {
 struct CardView: View {
     let message: MeshMessage
     let text: String
+    /// Device id -> chosen name, for the task owner.
+    var names: [String: String] = [:]
 
     private var title: String {
         switch message.kind {
@@ -426,7 +428,9 @@ struct CardView: View {
             return (rule.title + (rule.locked ? " (locked)" : ""), rule.body)
         }
         if message.kind == .task, let task = MeshPayload.decodeTask(message.body) {
-            return (task.title, [task.assignee, task.due].compactMap { $0 }.joined(separator: " · "))
+            // Compact: title, owner, due (the status pill sits next to the title).
+            let owner = task.assigneeDevice.flatMap { names[$0] } ?? task.assignee
+            return (task.title, [owner, task.due.map { "due \($0)" }].compactMap { $0 }.joined(separator: " · "))
         }
         return (nil, text)
     }
@@ -437,7 +441,12 @@ struct CardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             if let headline = lines.0 {
-                Text(headline).font(.subheadline.weight(.semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(headline).font(.subheadline.weight(.semibold))
+                    if message.kind == .task, let task = MeshPayload.decodeTask(message.body) {
+                        TaskStatusPill(status: task.displayStatus())
+                    }
+                }
             }
             if !lines.1.isEmpty {
                 Text(lines.1)
