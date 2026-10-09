@@ -125,27 +125,33 @@ public enum BenchmarkSuite {
     /// Runs every question through a fresh ExecutiveAssistant on a fresh memory copy.
     @MainActor
     public static func run(llm: any LLMClient, model: String, progress: ((BenchmarkResult) -> Void)? = nil) async -> [BenchmarkResult] {
-        let snapshot = memory()
         var results: [BenchmarkResult] = []
         for q in questions {
-            let mem = OrgMemory()
-            mem.replace(with: snapshot)
-            mem.admins = ["Site Office"]
-            let assistant = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Site Office", knownDevices: ["DEVICE_A", "DEVICE_B"])
-            assistant.directory = ["DEVICE_A": "PERSON_A", "DEVICE_B": "PERSON_B"]
-            let started = Date()
-            let out = await assistant.handle(q.text, from: "DEVICE_A")
-            let wall = Int((Date().timeIntervalSince(started) * 1000).rounded())
-            let full = out.fullReply ?? out.reply
-            var (ok, why) = score(reply: full, intent: out.intent.rawValue, expect: q.expect, rules: snapshot.activeRules)
-            if let error = out.error { ok = false; why = "error: \(error)" }
-            let r = BenchmarkResult(question: q, model: out.model ?? model, correct: ok, reason: why, intent: out.intent.rawValue,
-                                    latencyMs: wall, tokensPerSecond: out.tokensPerSecond, promptTokens: out.promptEvalCount,
-                                    evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full)
+            let r = await runOne(q, llm: llm, model: model)
             results.append(r)
             progress?(r)
         }
         return results
+    }
+
+    /// One question (also the Mac setup's one-question self-test).
+    @MainActor
+    public static func runOne(_ q: BenchmarkQuestion, llm: any LLMClient, model: String) async -> BenchmarkResult {
+        let snapshot = memory()
+        let mem = OrgMemory()
+        mem.replace(with: snapshot)
+        mem.admins = ["Site Office"]
+        let assistant = ExecutiveAssistant(memory: mem, llm: llm, selfName: "Site Office", knownDevices: ["DEVICE_A", "DEVICE_B"])
+        assistant.directory = ["DEVICE_A": "PERSON_A", "DEVICE_B": "PERSON_B"]
+        let started = Date()
+        let out = await assistant.handle(q.text, from: "DEVICE_A")
+        let wall = Int((Date().timeIntervalSince(started) * 1000).rounded())
+        let full = out.fullReply ?? out.reply
+        var (ok, why) = score(reply: full, intent: out.intent.rawValue, expect: q.expect, rules: snapshot.activeRules)
+        if let error = out.error { ok = false; why = "error: \(error)" }
+        return BenchmarkResult(question: q, model: out.model ?? model, correct: ok, reason: why, intent: out.intent.rawValue,
+                               latencyMs: wall, tokensPerSecond: out.tokensPerSecond, promptTokens: out.promptEvalCount,
+                               evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full)
     }
 }
 

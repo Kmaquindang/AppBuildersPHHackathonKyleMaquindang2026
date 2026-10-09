@@ -11,9 +11,15 @@ struct PeerStripView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 if mesh.peers.isEmpty {
-                    Text("Looking for nearby devices...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Label {
+                        Text("Teammates show up here when they open Pasa within Wi-Fi range.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "person.2.wave.2").foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: 360, alignment: .leading)
                 }
                 ForEach(mesh.peers) { peer in
                     PeerChip(peer: peer)
@@ -34,15 +40,16 @@ struct PeerChip: View {
                 .fill(color)
                 .frame(width: 8, height: 8)
             Text(peer.label)
-                .font(.caption)
-                .lineLimit(1)
+                .font(.footnote)
             Text(label)
-                .font(.caption2)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .background(Color.gray.opacity(0.15), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(peer.label), \(label)")
     }
 
     private var label: String {

@@ -11,6 +11,28 @@ Name note: the working name was Libre ("free"). On Oct 9, 2026 at 5:18 PM PHT Ky
 ## Why does this product benefit from running AI locally?
 The people we build for cannot rely on cloud AI: they have no signal, or they cannot afford mobile data. Cloud-only AI is impossible for them at the moment they need it and expensive at scale. With Pasa, one laptop running a local model serves everyone in mesh range, so every question costs nothing and works with no cell towers. Team notes, rules and to-dos are private by design because they never leave the group's own devices.
 
+## Local AI
+Why local, shown rather than claimed. Code: `Libre/Sources/Core/LocalProof.swift`, `Libre/Sources/AI/DailyDigest.swift`, `Libre/Sources/AI/Vision.swift`, `Libre/Sources/AI/Benchmark.swift`, tests: `Tests/CoreTests/LocalAITests.swift`.
+
+- **Proof on every answer.** Each AI answer and card carries a badge, for example `On-device: Site Office · qwen3:8b · offline · 16.6 tok/s · 6470 ms`. The Mac watches its own network route with `NWPathMonitor` (it only listens; Pasa makes no outbound call to check). The badge says `offline` when the Mac has no Wi-Fi network, wired or cellular route, and `internet on, not used` when it has one. Peer-to-peer Wi-Fi does not count as internet. The header on phones shows the same thing from the Mac's signed AI status ("AI Awake, no internet").
+- **Proof panel (Mac, Assistant tab).** Internet state, model and digest prefix, the vision model, what Ollama has loaded and how much memory it takes (from the local `/api/ps`), and the last 20 answers with average latency and tok/s as a bar strip. Pull the plug on the Wi-Fi router during the demo and the next answer still arrives, now badged `offline`.
+- **Daily summary.** Once a day per room (default 5:00 PM on the Mac's clock, changeable in Settings) the Mac sends a summary card to everyone: decisions, done today, open tasks per person, new or changed rules, and notable photos and voice notes (with transcripts). Each phone also shows its own line ("Your open tasks (2): ..."). It is built only from that room's log for that day. Done, open, rules and media come straight from team memory. Decisions come from saved notes plus one model call over that day's chat, and a decision that shares no words with the chat is dropped. `@pasa summary` (also `buod`, `eod`) or the Mac's "Send summary now" button makes one on demand. Summaries are saved per room (`digests.json`), sent at most once per room per day, skipped on a quiet day, and sent late (marked "made late") when the Mac wakes after sleeping through 5:00 PM. A fresh install never sends old days.
+- **Photo understanding.** When a photo arrives the Mac's local vision model describes it, reads text and numbers, and suggests up to 3 tasks. Admin devices get an "Add task" button for each (it sends `@pasa accept task: ...`, and the Mac checks admin rights again). `@pasa what is this` (also `ano ito`, `unsa ni`) checks the newest photo in the room. The card lists related saved rules found by Pasa's own keyword retrieval, not by the vision model, so a rule cannot be invented. The photo is downscaled to 896 px and sent as base64 to `/api/chat` on 127.0.0.1 only (the client refuses any other host). If no vision model is installed the reply says `Vision model not installed: run ollama pull qwen3-vl:4b-instruct`. Auto-checking can be turned off in Settings.
+- **Memory policy for vision (`keep_alive`).** On Macs under 24 GB the vision model unloads 30 s after a photo and Pasa reloads the chat model right away, so both never sit in memory together on a 16 GB Mac. On 24 GB and up the vision model stays 10 minutes. Requests use a 4,096-token context.
+- **Recommended vision model:** `qwen3-vl:4b-instruct` (3.3 GB download, Apache 2.0): `ollama pull qwen3-vl:4b-instruct`. Small fallback: `qwen3-vl:2b-instruct` (1.9 GB, Apache 2.0). Pasa also uses `qwen3-vl:8b-instruct`, `qwen2.5vl` or `gemma3:4b` if one of those is already installed. We did not pick `qwen2.5vl:3b` as the default because its license is not Apache 2.0. No vision model was installed on the test Mac during this build, so photo checks are tested with a fake HTTP client only (request shape, parsing, missing-model message), not on a real model yet.
+- **Benchmark.** `scripts/benchmark.sh` (macOS) runs 20 fixed questions (11 English, 6 Tagalog, 3 Cebuano; 16 should cite a rule, 4 have no matching rule) over a fixed synthetic team memory of 10 rules, through the app's real answer pipeline, against local Ollama only. It never pulls: models that are not installed are listed as skipped. Scoring is exact (the expected rule citation is present and verified, or the answer says "No saved team rule covers this" and cites nothing). There is no LLM judge. It writes CSV and markdown with date, machine, Ollama version and model digest to `docs/benchmarks/`.
+
+**Benchmark results (real run, Oct 9, 2026, 7:36 to 7:43 PM PHT).** MacBook Air M3 (Mac15,13), 16 GB, macOS 26.6.2, Ollama 0.35.0, `qwen3:8b` digest `500a1f067a9f`, 6.2 GB in memory after the run (from `/api/ps`). Full per-question table and CSV: [docs/benchmarks/benchmark-2026-10-09-1943.md](docs/benchmarks/benchmark-2026-10-09-1943.md).
+
+| Model | Grounded correct | English | Tagalog | Cebuano | Median latency (ms) | Mean tok/s | Mean prompt tokens |
+|---|---|---|---|---|---|---|---|
+| qwen3:8b | 18/20 | 10/11 | 6/6 | 2/3 | 4153 | 17.7 | 548 |
+| qwen3:4b-instruct | skipped (not installed) | | | | | | |
+
+The two misses, as recorded: #8 ("Is smoking allowed near the cement and paint storage?") answered without citing the Tagalog rule "Bawal manigarilyo sa bodega". English words did not match the Tagalog title in keyword retrieval, so the rule never reached the model. #16 (Cebuano, "Pwede ba ko mosulod sa site alas sais sa gabii?") hit the 300 s timeout and counts as wrong. Latency is ask-to-answer through both model calls (intent and answer), measured while the Pasa app was also running on the same Mac.
+
+- **Limits.** The badge proves where the answer was made and whether the Mac had an internet route; it does not prove what other apps on the Mac do. Summaries can miss a decision the model did not read; done, open and rules lines are exact. The vision model can misread numbers, so the card says to check them. The benchmark's 20 questions are ours and small; they show the pipeline works in three languages on this Mac, not general quality.
+
 ## Demo
 - Demo video: <link>
 - X / LinkedIn post: <link>
@@ -21,8 +43,8 @@ The people we build for cannot rely on cloud AI: they have no signal, or they ca
 - **Team memory on the Mac** (source of truth): tasks, notes, rules and skills with versions and history, saved as JSON in the app's Application Support folder. Phones keep a read-only copy received over the mesh.
 
 ## What requires internet
-- One-time internet is needed to download Ollama and the model (5.2 GB). After that Pasa is fully offline.
-- Nothing at runtime. The one-time setup is cloning the repo, installing Ollama, and running `ollama pull qwen3:8b`.
+- One-time internet is needed to download Ollama (about 206 MB) and the models (qwen3:8b is 5.2 GB, the optional vision model 3.3 GB). The Mac's "Set up AI" button can do this for you, only after you tap it (see Mac setup: done for you). After that Pasa is fully offline.
+- Nothing at runtime. The manual setup is cloning the repo, installing Ollama, and running `ollama pull qwen3:8b`.
 
 ## How to run it (for judges)
 
@@ -34,7 +56,7 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
 3. Open `Libre.xcodeproj` (or run `xcodegen generate` first if you prefer to regenerate it from `project.yml`).
 4. Pick your Team (a free Apple ID works) under Signing & Capabilities for the `Libre-macOS` and `Libre-iOS` targets. (Targets, schemes, folders and bundle ids keep the working name Libre; the app shows as Pasa on the device.)
 5. Run `Libre-macOS` on your Mac. Run `Libre-iOS` on one or two iPhones (iOS 17+). On each iPhone trust the developer profile in Settings > General > VPN & Device Management, and allow Local Network access.
-6. On first launch each app asks for your name (for example Kyle, Ana) and a room: stay in the open Default room, create a room with a name and a passcode (for example `BOHOL-7` and `tubig sa bohol 77`), join one by typing the same name and passcode (Wi-Fi style), or paste a teammate's join string. That name is what everyone sees. Each device also has a stable device id (shown in Settings). Send a chat, or start a message with `@pasa` to ask the AI.
+6. On first launch each app walks you through a short setup (see First run). It asks for your name (for example Kyle, Ana) and a room: stay in the open Default room, create a room with a name and a passcode (for example `BOHOL-7` and `tubig sa bohol 77`), join one by typing the same name and passcode (Wi-Fi style), or paste a teammate's join string. That name is what everyone sees. Each device also has a stable device id (shown in Settings). Send a chat, or start a message with `@pasa` to ask the AI.
 7. To test offline: put the iPhones in Airplane Mode, then turn Wi-Fi back on without joining a network. Keep the Mac's Wi-Fi on. Messages still flow.
 8. To see a real 2-hop path: on one iPhone, block the Mac in Settings, and on the Mac block that iPhone. Blocking ends any existing direct link, and the chat header shows "Forced relay mode". Its messages now relay through the other iPhone, and the timeline shows the full path (tap the caption under the answer to see `Ask path: Ana -> Kyle -> Site Office, 2 hops`).
 9. Mac only, no iPhones: run the Mac app, type `@pasa` followed by one of the assistant commands below; the Mac answers itself. Only one Mac should be the AI peer on a mesh; turn "Act as AI peer" off on any second Mac.
@@ -49,6 +71,39 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
     - Paste a long meeting transcript (or start with `notes:`) to get decisions and auto-created tasks.
     - Tap the photo button to send a photo, or hold the mic button to record a voice note (up to 30 s) and release to send. On the AI Mac each voice note is transcribed on the device; say "At Pasa, remind Ana to order cement Friday" and it becomes an ask.
 12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`. On macOS it uses CryptoKit and needs no downloads. On Linux it builds with SwiftPM and fetches Apple's swift-crypto once (see Disclosures).
+
+## First run
+New installs see a short onboarding. Code: `Libre/Sources/Views/OnboardingView.swift`, `Libre/Sources/Views/MacSetupView.swift`.
+1. **Welcome:** "Walang signal? Pasa lang." Chat and ask AI with no internet, phone to phone.
+2. **Your name:** teammates see this on your messages.
+3. **Local Network:** a one-line reason first ("so your phone can find teammates"), then Pasa starts looking, so the system prompt appears in context. Pasa does not start the mesh before this step on a new install. If nobody is found after 8 s, or MultipeerConnectivity reports it could not browse or advertise, a card says how to fix it: Settings > Pasa > Local Network (with an Open Settings button on iPhone). iOS does not tell apps directly that this permission was denied, so the card also covers "nobody else has Pasa open yet".
+4. **Join your team:** nearby Listed rooms first, then room name and passcode, a pasted join string, Create, or "Try Default (the open room) for now". QR scanning with the camera is not built.
+5. **Tour (skippable):** three cards: messages hop phone to phone; start with @pasa to ask AI; keep Pasa open to relay.
+6. **The Mac only:** the setup checklist and Set up AI (below). Skippable.
+7. You land in the room with two tappable starters: `@pasa what are our rules?` and `@pasa summary`.
+
+Microphone and photo primers appear on first use only, with a one-line reason, before the system prompt or picker. Existing users (a saved name, or a room besides Default) skip onboarding. Settings > Replay first-run setup shows it again without touching rooms or messages.
+
+## Mac setup: done for you
+The Mac's setup step (also Assistant tab > Set up AI...) shows a checklist that turns green item by item, each with a copyable fix command: Ollama running, chat model installed, vision model (optional), model warmed up, admin devices set, and the internet state. Code: `Libre/Sources/AI/MacSetup.swift` (pure logic, tested), `Libre/Sources/Mesh/MacSetupService.swift`, tests: `Tests/CoreTests/MacSetupTests.swift`.
+
+- **Hardware-aware plan.** Pasa reads physical memory (`ProcessInfo.physicalMemory`), the chip (`hw.optional.arm64`, `machdep.cpu.brand_string`), CPU cores and free disk (`volumeAvailableCapacityForImportantUsage`), and shows its reasoning, for example `16 GB RAM, Apple M3, 40.0 GB free: using qwen3:8b + qwen3-vl:4b-instruct`.
+
+  | This Mac | Chat model | Vision model |
+  |---|---|---|
+  | Apple silicon, under 12 GB | `qwen3:4b-instruct` (2.5 GB) | off by default (`qwen3-vl:2b-instruct`, 1.9 GB, if you turn it on) |
+  | Apple silicon, 12 to 15 GB | `qwen3:8b` (5.2 GB) | `qwen3-vl:2b-instruct` (1.9 GB) |
+  | Apple silicon, 16 to 23 GB | `qwen3:8b` (5.2 GB) | `qwen3-vl:4b-instruct` (3.3 GB) |
+  | Apple silicon, 24 GB and up | `qwen3:14b` (9.3 GB) | `qwen3-vl:8b-instruct` (6.1 GB) |
+  | Intel Mac | `qwen3:4b-instruct` with a warning (Ollama runs on the CPU only) | off by default |
+
+  "Choose models yourself" overrides either model (a pick over half the Mac's memory gets a warning). Sizes are the Ollama library's q4_K_M downloads, checked Oct 9, 2026. The 14B and 8B vision picks for 24 GB Macs follow the tier rule; we have not run them.
+- **Nothing downloads silently.** The plan lists every download and the total, and the button says it, for example "Set up AI (download 8.5 GB)". Models already installed download nothing. Start stays disabled when free disk is below the total plus a 2 GB margin, and when the Mac has no internet route it says "Connect to internet once for setup, then Pasa runs offline."
+- **Ollama.** Pasa looks for `/Applications/Ollama.app`, the `ollama` command line tool (`/usr/local/bin`, `/opt/homebrew/bin`) and a server on 127.0.0.1:11434. If none is there it downloads the official `https://ollama.com/download/Ollama-darwin.zip` (about 206 MB) with a progress bar. It follows redirects only over https and only through ollama.com and GitHub's release hosts, and checks that the file is a zip. It saves the file to your Downloads folder, opens it (Archive Utility unzips it), then opens Ollama.app. macOS shows its usual Gatekeeper prompt and Ollama offers to move itself to Applications. Pasa never bypasses Gatekeeper and never writes to /Applications. Then it waits for the server.
+- **Models.** Pulled through the local server's streaming `/api/pull` with a progress bar per model. Cancel stops at any point; Retry resumes, because Ollama keeps finished layers.
+- **Warm up and self-test.** Pasa loads the chat model, asks one benchmark question through the real answer pipeline, and shows pass or fail with the time. It then uses the planned models, turns this Mac into the AI peer, and the checklist goes green.
+- **Sandbox choice.** The Mac app stays sandboxed. The only new entitlement is the Downloads folder (`com.apple.security.files.downloads.read-write`), used to save the Ollama zip where you can see it. We chose this over turning the sandbox off because opening the download lets macOS show its normal security prompts, and the app never needs to write outside Downloads.
+- **Tested how.** The plan, disk gate, download host check, pull progress parsing and checklist are unit tests. On the test Mac only the read-only detection ran (Ollama and qwen3:8b were already installed). The download, unzip, launch and pull path has not been run end to end.
 
 ## How it works
 - **Link layer:** Apple MultipeerConnectivity on service type `libre-mesh`. It opens encrypted links over peer-to-peer Wi-Fi with no router or internet. We describe this as an offline device-to-device mesh, not a Bluetooth mesh.
@@ -107,16 +162,19 @@ Notes:
 ## Disclosures
 ### Models used
 - Qwen3 8B, tag `qwen3:8b`, digest `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41` (Q4_K_M, 8.2B parameters, 5.2 GB download), served by Ollama 0.35.0 on the MacBook Air M3 16 GB. Read from `ollama list` and `/api/tags` on Oct 9, 2026. Library page: https://ollama.com/library/qwen3. License: Apache 2.0 (https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE).
-- Memory: the default `qwen3:8b` is meant for Macs with 12 GB of memory or more (tested on 16 GB). Its memory use while loaded has not been measured yet (check with `ollama ps`). Macs under 12 GB default to `qwen3:4b-instruct`.
+- Memory: the default `qwen3:8b` is meant for Macs with 12 GB of memory or more (tested on 16 GB). Loaded with an 8,192-token context it takes 6.2 GB (Ollama `/api/ps`, Oct 9, 2026 at 7:43 PM PHT). Macs under 12 GB default to `qwen3:4b-instruct`.
+- Vision (optional, not installed on the test Mac): Qwen3-VL 4B Instruct, tag `qwen3-vl:4b-instruct` (3.3 GB, digest prefix `ee4b975b58c1` in the Ollama library), and Qwen3-VL 2B Instruct `qwen3-vl:2b-instruct` (1.9 GB) as the small fallback. License: Apache 2.0 (https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct). Library page: https://ollama.com/library/qwen3-vl. Pasa never pulls a model unless you tap Set up AI.
+- Larger Macs (24 GB and up) are offered `qwen3:14b` (9.3 GB, Apache 2.0) and `qwen3-vl:8b-instruct` (6.1 GB, Apache 2.0) by Set up AI. Not tested by us.
 - Qwen3 4B (`qwen3:4b`, 2.5 GB, Apache 2.0) as the fallback. Note: in the Ollama library `qwen3:4b` now points to the 2507 thinking build; `qwen3:4b-instruct` (2.5 GB) is the non-thinking build and may be faster for short replies.
 ### Technologies and frameworks
 - Swift, SwiftUI, Apple MultipeerConnectivity, Foundation, CryptoKit (room encryption: HKDF-SHA256 and ChaCha20-Poly1305; Curve25519 signing keys for room admins, beacons and AI status; Curve25519 key agreement to hand out new room keys; SHA-256 media checksums), CommonCrypto (PBKDF2-HMAC-SHA256 room key from the passcode), CoreImage (room QR codes).
-- PhotosUI (PhotosPicker), ImageIO (photo downscaling and JPEG encoding), AVFoundation (AVAudioRecorder and AVAudioPlayer for voice notes), Speech (SFSpeechRecognizer, on-device only, Mac only, voice note transcripts).
+- Network (`NWPathMonitor`, listen-only internet state for the proof badge), AppKit `NSWorkspace` (opens the Ollama download so macOS shows its prompts).
+- PhotosUI (PhotosPicker), ImageIO (photo downscaling and JPEG encoding, also the 896 px copy for the vision model), AVFoundation (AVAudioRecorder and AVAudioPlayer for voice notes), Speech (SFSpeechRecognizer, on-device only, Mac only, voice note transcripts).
 - swift-crypto (https://github.com/apple/swift-crypto, Apache 2.0): Apple's open-source version of the CryptoKit API, used only by the Linux test build (`Package.swift`, fetched by SwiftPM). The app itself does not include it.
 - XcodeGen (project generation from `project.yml`).
 - Ollama (local model runtime, HTTP API on 127.0.0.1:11434). License: MIT (https://github.com/ollama/ollama/blob/main/LICENSE).
 ### APIs and cloud services
-- None at runtime. The only API used is the local Ollama server on the same Mac. Speech recognition is Apple's on-device recognizer with `requiresOnDeviceRecognition = true`, so audio is never sent to Apple's servers; if the Mac has no on-device model for the language, Pasa shows a note instead of a transcript.
+- None at runtime. The only API used is the local Ollama server on the same Mac. One-time setup only, after an explicit tap: the Ollama app from ollama.com (served from GitHub releases) and models through Ollama's own registry. Speech recognition is Apple's on-device recognizer with `requiresOnDeviceRecognition = true`, so audio is never sent to Apple's servers; if the Mac has no on-device model for the language, Pasa shows a note instead of a transcript.
 ### Existing code and assets
 - No pre-existing project code. The app has no third-party packages; the Linux test build uses Apple's swift-crypto (above). All app code was written during the hackathon.
 - Design inspiration only (no code used): the bitchat whitepaper (TTL flooding, dedup cache, store and forward).
@@ -143,7 +201,7 @@ Honest status for this prototype:
 - The Mac must stay awake: lid open, plugged in, Ollama running. Pasa prevents idle sleep while it is the AI peer, but closing the lid still sleeps the Mac and stops the AI. Phones then say "AI Mac asleep" and keep their questions until it wakes (see Mac sleep).
 - Peer-to-peer Wi-Fi must be on (no network needs to be joined). Bluetooth-only behavior is untested.
 - One AI Mac answers every room it has joined, one question at a time, so a busy room makes the others wait (see Multi-room). A second Mac in the same room must turn "Act as AI peer" off. A MultipeerConnectivity session links at most 8 devices (the device plus 7 others) directly; relays extend reach beyond that.
-- Tagalog and Cebuano answer quality of qwen3:8b has not been measured yet; tested in English.
+- Tagalog and Cebuano quality is measured only on our 20-question benchmark (6/6 Tagalog, 2/3 Cebuano with one timeout). Keyword retrieval does not match across languages: an English question can miss a rule titled in Tagalog (benchmark #8).
 - Due dates are free text, with no reminders or notifications.
 - Range is whatever peer-to-peer Wi-Fi reaches between two devices (roughly a room to a building floor); the mesh extends it hop by hop. We will publish measured numbers only.
 - One-way latency compares two device clocks, so it can be off by the clock difference. The app hides one-way times that are negative or implausible. The round trip for an `@pasa` ask is measured on one device and is exact.
@@ -152,7 +210,9 @@ Honest status for this prototype:
 - Joining a new room needs an admin device of that room linked to the mesh, because only an admin can hand out the room key. Create class rooms on the AI Mac so the admin is always there.
 - Photos and voice notes: one file at most 640 KB (photos are shrunk to about 200 KB, voice notes stop at 30 s). Every chunk is broadcast to the whole mesh, so a photo costs every relay about 360 KB of traffic. Chunks are not kept in the outbox; a device that missed them gets them again only from a teammate who has the file and is linked. Unfinished transfers are kept in memory only and give up after 6 retries or 30 minutes. Transfer speeds have not been measured yet.
 - Voice note transcripts need the AI Mac (phones do not transcribe) and an on-device speech model for the chosen language. Filipino (`fil-PH`) may not have one; Pasa then uses English (US) and says so. Transcript quality for Tagalog and Taglish has not been measured.
-- Image captions by a local vision model are not built: no vision model is installed on the test Mac (only `qwen3:8b` and `qwen2.5-coder:7b`), and Pasa does not download models.
+- Photo checks need a vision model; none was installed on the test Mac (only `qwen3:8b` and `qwen2.5-coder:7b`), so they are tested with a fake client only. A photo check holds the single model slot, so asks wait behind it (about the time of one answer).
+- The daily summary needs the AI Mac awake and in the room. If it sleeps through 5:00 PM the summary is sent on wake, marked late; if it stays off until the next day, only the previous day is caught up.
+- The internet badge reflects the Mac's own route only. Phones are not checked.
 - Every device must run this build or newer: older Pasa builds cannot read or relay room packets.
 - Device ids must be unique; they are the mesh addresses. People's display names should be unique too; when two people share a name, task assignment asks which one.
 - Free Apple ID builds expire after 7 days on iPhones.
@@ -236,8 +296,10 @@ Photos and voice notes travel over the same offline mesh. Code: `Libre/Sources/C
 - **Microphone** (iPhone and Mac, `NSMicrophoneUsageDescription`; the Mac sandbox also has the audio input entitlement): only while you hold the mic button.
 - **Photos** (`NSPhotoLibraryUsageDescription`): PhotosPicker shows your library in a system picker and Pasa only gets the photo you choose.
 - **Speech Recognition** (Mac only, `NSSpeechRecognitionUsageDescription`): on-device voice note transcripts.
+- **Downloads folder** (Mac sandbox entitlement `com.apple.security.files.downloads.read-write`): only for saving the Ollama download during Set up AI.
+- Microphone and photos get a one-line Pasa primer on first use, before the system prompt or picker.
 
 ## Roadmap
-- Image captions with a local vision model on the Mac (for example a Qwen2.5-VL or Gemma 3 model in Ollama), only if one is already installed.
+- Measure photo checks on a real vision model and add them to the benchmark.
 - Join by scanning the QR code with the camera; room and device keys in the Keychain.
 - Beacons from co-admins too, and joining without an admin online.

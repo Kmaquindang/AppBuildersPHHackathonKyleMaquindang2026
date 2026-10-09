@@ -15,8 +15,8 @@ struct LocalProofPanel: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 16) {
-                    Label(mesh.internetState.label, systemImage: mesh.internetState == .offline ? "wifi.slash" : "wifi")
-                        .foregroundStyle(mesh.internetState == .offline ? Color.green : Color.secondary)
+                    TintedLabel(text: mesh.internetState.label, symbol: mesh.internetState == .offline ? "wifi.slash" : "wifi",
+                                tint: mesh.internetState == .offline ? .green : .secondary, font: .caption.monospaced())
                     Text("Model: \(mesh.ollamaModel)\(mesh.modelDigest.isEmpty ? "" : " (\(String(mesh.modelDigest.prefix(12))))")")
                     Text("Vision: \(mesh.visionModel ?? "not installed")")
                     Spacer()
@@ -39,8 +39,8 @@ struct LocalProofPanel: View {
                 HStack(spacing: 16) {
                     Text("Last \(items.count) answers: avg \(mesh.proofLog.averageLatencyMs.map { "\($0) ms" } ?? "-"), \(mesh.proofLog.averageTokensPerSecond.map { String(format: "%.1f tok/s", $0) } ?? "-")")
                     if !items.isEmpty {
-                        Text(mesh.proofLog.allOffline ? "all made with no internet" : "internet was connected for some (never used)")
-                            .foregroundStyle(mesh.proofLog.allOffline ? Color.green : Color.secondary)
+                        TintedLabel(text: mesh.proofLog.allOffline ? "all made with no internet" : "internet was connected for some (never used)",
+                                    symbol: mesh.proofLog.allOffline ? "checkmark.seal.fill" : "wifi", tint: mesh.proofLog.allOffline ? .green : .secondary)
                     }
                 }
                 .font(.caption)
@@ -106,9 +106,7 @@ struct LocalAISettingsSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text(VisionModels.notInstalledMessage)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.orange)
+                TintedLabel(text: VisionModels.notInstalledMessage, symbol: "eye.slash", tint: .orange, font: .caption.monospaced())
                     .textSelection(.enabled)
             }
         } header: {

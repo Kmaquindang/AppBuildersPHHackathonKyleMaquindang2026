@@ -38,7 +38,7 @@ struct TasksView: View {
             }
             Section {
                 if open.isEmpty {
-                    Text("No open tasks cached yet.")
+                    Text("No open tasks yet. Tasks for you arrive from the AI Mac. Try \"@pasa remind me to check the generator Friday\" in the chat.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(open) { task in
@@ -74,7 +74,7 @@ struct TaskColumn: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     if tasks.isEmpty {
-                        Text("Nothing here.")
+                        Text(title.hasPrefix("Open") ? "No open tasks. Phones add them with \"@pasa remind Ana to ...\"." : "Nothing done yet.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(tasks) { task in
@@ -106,6 +106,7 @@ struct TaskCard: View {
             HStack(spacing: 6) {
                 Image(systemName: task.status == .done ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(task.status == .done ? Color.green : Color.secondary)
+                    .accessibilityLabel(task.status == .done ? "Done" : "Open")
                 Text(task.title)
                     .font(.body.weight(.medium))
                     .strikethrough(task.status == .done)

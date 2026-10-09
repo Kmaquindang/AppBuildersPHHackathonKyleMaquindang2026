@@ -15,58 +15,71 @@ struct ComposerView: View {
     @State private var preparingPhoto = false
     @State private var pressing = false
     @State private var note: String?
+    @State private var showPicker = false
+    /// "mic" or "photos" primer waiting for Continue.
+    @State private var primer: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Button("What did I miss?") { mesh.quickAsk("what did I miss?") }
-                Button("My tasks") { mesh.quickAsk("my tasks") }
-                Button("More") { mesh.quickAsk("more") }
-                Spacer(minLength: 0)
+            // Quick asks scroll sideways at large text sizes instead of truncating. Each one goes
+            // gray while the same question is still waiting, so it cannot be queued twice.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    quickButton("What did I miss?", ask: "what did I miss?")
+                    quickButton("My tasks", ask: "my tasks")
+                    quickButton("More", ask: "more")
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
 
             if let partial = mentionPartial {
                 Button {
                     insertMention(replacing: partial)
                 } label: {
                     Label("@pasa  ask the AI", systemImage: "sparkles")
-                        .font(.caption.weight(.semibold))
+                        .font(.callout.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
                 .tint(.purple)
-                .controlSize(.small)
+                .frame(minHeight: 44)
+                .accessibilityHint("Starts your message with @pasa")
             }
 
             if recorder.isRecording {
-                Label("Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30. Release to send.", systemImage: "record.circle")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.red)
-            } else if let problem = recorder.problem ?? note {
-                Text(problem).font(.caption).foregroundStyle(.orange)
+                TintedLabel(text: "Recording \(MediaManifest.clock(recorder.elapsed)) / 0:30. Release to send.", symbol: "record.circle", tint: .red, font: .callout.weight(.semibold))
+            } else if let problem = recorder.problem ?? note ?? mesh.composerNote {
+                TintedLabel(text: problem, symbol: "info.circle", tint: .orange, font: .callout)
             }
 
             HStack(spacing: 8) {
-                PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
+                Button {
+                    if mesh.primerNeeded("photos") { primer = "photos" } else { showPicker = true }
+                } label: {
                     if preparingPhoto {
                         ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "photo")
                     }
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .buttonStyle(.bordered)
                 .disabled(preparingPhoto)
-                .accessibilityLabel("Send a photo")
+                .accessibilityLabel("Photo")
+                .accessibilityHint("Pick a photo to send to the room")
 
                 micButton
 
                 TextField("Message the team...", text: $text)
                     .textFieldStyle(.roundedBorder)
+                    .frame(minHeight: 44)
                     .onSubmit(send)
+                    .accessibilityLabel("Message")
+                    .accessibilityHint("Start with @pasa to ask the AI")
                 Button(action: send) {
                     Image(systemName: isAsk ? "sparkles" : "paperplane.fill")
+                        .frame(minWidth: 32, minHeight: 32)
                 }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel(isAsk ? "Ask Pasa" : "Send")
                 .buttonStyle(.borderedProminent)
                 .tint(isAsk ? Color.purple : Color.accentColor)
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -75,17 +88,37 @@ struct ComposerView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .photosPicker(isPresented: $showPicker, selection: $photoItem, matching: .images, photoLibrary: .shared())
+        .alert(primer == "mic" ? "Record a voice note" : "Share a photo", isPresented: Binding(get: { primer != nil }, set: { if !$0 { primer = nil } })) {
+            Button("Continue") {
+                let kind = primer ?? ""
+                mesh.markPrimerShown(kind)
+                primer = nil
+                if kind == "photos" { showPicker = true }
+            }
+            Button("Not now", role: .cancel) { primer = nil }
+        } message: {
+            Text(primer == "mic" ? PermissionPrimer.microphone + " Then hold the mic button to record." : PermissionPrimer.photos)
+        }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             sendPhoto(item)
         }
     }
 
+    private func quickButton(_ title: String, ask: String) -> some View {
+        Button(title) { mesh.quickAsk(ask) }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .disabled(mesh.isAskPending(ask))
+            .accessibilityHint(mesh.isAskPending(ask) ? "Already asked, waiting for the answer" : "Asks the AI Mac")
+    }
+
     /// Hold to record, release to send.
     private var micButton: some View {
         Image(systemName: recorder.isRecording ? "mic.fill" : "mic")
             .foregroundStyle(recorder.isRecording ? Color.white : Color.accentColor)
-            .frame(width: 34, height: 28)
+            .frame(minWidth: 44, minHeight: 44)
             .background(recorder.isRecording ? Color.red : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
             .gesture(
@@ -93,17 +126,24 @@ struct ComposerView: View {
                     .onChanged { _ in
                         guard !pressing else { return }
                         pressing = true
+                        if mesh.primerNeeded("mic") {
+                            primer = "mic"   // explain first; the system prompt comes on the next hold
+                            return
+                        }
                         note = nil
                         recorder.begin()
                     }
                     .onEnded { _ in
                         pressing = false
+                        if primer != nil { return }   // the primer is up; nothing was recorded
                         if let clip = recorder.end() {
                             mesh.sendMedia(clip.data, kind: .audio, mime: "audio/mp4", durationSeconds: clip.seconds)
                         }
                     }
             )
-            .accessibilityLabel("Hold to record a voice note")
+            .accessibilityLabel(recorder.isRecording ? "Recording voice note" : "Voice note")
+            .accessibilityHint("Touch and hold to record, release to send")
+            .accessibilityAddTraits(.isButton)
     }
 
     private func sendPhoto(_ item: PhotosPickerItem) {

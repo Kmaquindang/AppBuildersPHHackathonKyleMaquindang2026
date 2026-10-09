@@ -17,7 +17,8 @@ struct LibreApp: App {
             ContentView()
                 .environmentObject(mesh)
                 .onAppear {
-                    mesh.start()
+                    // First run starts the mesh from onboarding, right after the Local Network primer.
+                    if mesh.onboardingDone { mesh.start() }
                     #if os(iOS)
                     // Keep the screen awake during demos. iOS pauses peer links when the app leaves the foreground.
                     UIApplication.shared.isIdleTimerDisabled = true

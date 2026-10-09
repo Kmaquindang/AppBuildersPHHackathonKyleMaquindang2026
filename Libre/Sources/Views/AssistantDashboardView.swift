@@ -9,6 +9,7 @@ struct AssistantDashboardView: View {
     @EnvironmentObject private var mesh: MeshService
     /// Room filter: "" shows every room the Mac answers in.
     @State private var roomFilter = ""
+    @State private var showSetup = false
 
     private var log: [AssistantLogEntry] {
         Array(mesh.assistantLog.filter { roomFilter.isEmpty || $0.roomID == roomFilter }.reversed())
@@ -35,9 +36,7 @@ struct AssistantDashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(mesh.isAIPeer ? mesh.aiResponderName : "AI peer is off (turn it on in Settings)")
                             .font(.headline)
-                        Text(mesh.ollamaStatus)
-                            .font(.caption)
-                            .foregroundStyle(mesh.modelWarm ? Color.green : Color.orange)
+                        TintedLabel(text: mesh.ollamaStatus, symbol: mesh.modelWarm ? "checkmark.circle.fill" : "exclamationmark.circle", tint: mesh.modelWarm ? .green : .orange)
                             .textSelection(.enabled)
                         if !mesh.modelDigest.isEmpty {
                             Text("Model digest \(String(mesh.modelDigest.prefix(12)))\(mesh.modelDigest == OllamaClient.testedModelDigest ? " (the build we tested)" : " (differs from the tested 500a1f067a9f)"), context \(PromptBudget.contextTokens) tokens")
@@ -47,6 +46,7 @@ struct AssistantDashboardView: View {
                         }
                     }
                     Spacer()
+                    Button("Set up AI...") { showSetup = true }
                     Button("Check Ollama") { mesh.checkOllama() }
                 }
 
@@ -69,9 +69,8 @@ struct AssistantDashboardView: View {
                         }
                     }
                     .frame(maxWidth: 280)
-                    Text(mesh.macAsleep ? "Asleep: asks wait until the Mac wakes" : "Queue: \(mesh.aiQueueDepth) waiting, one model call at a time, rooms take turns")
-                        .font(.caption)
-                        .foregroundStyle(mesh.macAsleep ? Color.orange : Color.secondary)
+                    TintedLabel(text: mesh.macAsleep ? "Asleep: asks wait until the Mac wakes" : "Queue: \(mesh.aiQueueDepth) waiting, one model call at a time, rooms take turns",
+                                symbol: mesh.macAsleep ? "moon.zzz" : "list.number", tint: mesh.macAsleep ? .orange : .secondary)
                     Spacer()
                 }
 
@@ -89,6 +88,17 @@ struct AssistantDashboardView: View {
             }
             .padding()
             .navigationTitle("Assistant")
+            .sheet(isPresented: $showSetup) {
+                ScrollView {
+                    MacSetupView()
+                        .padding(24)
+                }
+                .frame(width: 560, height: 640)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { showSetup = false } }
+                }
+                .environmentObject(mesh)
+            }
         }
     }
 }
@@ -119,7 +129,7 @@ struct AssistantLogRow: View {
             HStack(spacing: 6) {
                 if !entry.roomLabel.isEmpty {
                     Text(entry.roomLabel)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(Color.green.opacity(0.2), in: Capsule())
@@ -130,7 +140,7 @@ struct AssistantLogRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text(entry.intent)
-                    .font(.system(size: 9, weight: .bold).monospaced())
+                    .font(.caption2.weight(.bold).monospaced())
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.orange.opacity(0.2), in: Capsule())
@@ -144,11 +154,11 @@ struct AssistantLogRow: View {
                 .lineLimit(3)
             Text("A: \(entry.reply)")
                 .font(.callout)
-                .foregroundStyle(entry.error == nil ? Color.primary : Color.red)
+                .foregroundStyle(.primary)
                 .textSelection(.enabled)
             Text(meta)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.purple)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }

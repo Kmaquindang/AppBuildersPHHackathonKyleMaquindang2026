@@ -184,6 +184,14 @@ final class MeshService: ObservableObject {
     @Published private(set) var lastDigest: DailyDigest?
     /// First-run onboarding finished (or skipped) on this device.
     @Published private(set) var onboardingDone: Bool
+    /// MultipeerConnectivity could not browse or advertise (usually Local Network permission is off).
+    @Published private(set) var localNetworkDenied = false
+    /// Starter chips under the chat right after onboarding.
+    @Published private(set) var showStarterChips = false
+    /// One-line note under the composer (for example a coalesced duplicate ask).
+    @Published var composerNote: String?
+    /// Mac: vision model chosen by Set up AI (used first when installed).
+    @Published private(set) var preferredVisionModel: String?
 
     // MARK: Internals
 
@@ -267,6 +275,8 @@ final class MeshService: ObservableObject {
         static let digestHour = "pasa.digestHour"
         static let digestMinute = "pasa.digestMinute"
         static let onboarded = "pasa.onboardingDone"
+        static let visionPref = "pasa.visionModel"
+        static let primers = "pasa.primersShown"
     }
 
     /// Peers that are not linked and have not been seen for this long leave the peer strip.
@@ -363,6 +373,7 @@ final class MeshService: ObservableObject {
         mediaStore = MediaStore(directory: MeshService.storageURL("media"), capBytes: mediaCap)
         speechLocale = store.string(forKey: Keys.speechLocale) ?? "en-US"
         autoDescribePhotos = store.object(forKey: Keys.autoPhotos) as? Bool ?? true
+        preferredVisionModel = store.string(forKey: Keys.visionPref)
         digestSchedule = DigestSchedule(enabled: store.object(forKey: Keys.digestEnabled) as? Bool ?? true,
                                         hour: store.object(forKey: Keys.digestHour) as? Int ?? 17,
                                         minute: store.object(forKey: Keys.digestMinute) as? Int ?? 0)
@@ -1248,7 +1259,7 @@ final class MeshService: ObservableObject {
                 let models = try await client.installedModels()
                 self?.installedModels = models
                 self?.ollamaReachable = true
-                self?.visionModel = VisionModels.pick(installed: models)
+                self?.visionModel = VisionModels.pick(installed: models, preferred: self?.preferredVisionModel)
                 let digests = (try? await client.installedModelDigests()) ?? [:]
                 self?.modelDigest = digests[client.model] ?? digests[client.model + ":latest"] ?? ""
                 let has = models.contains(client.model) || models.contains(client.model + ":latest")
@@ -1353,7 +1364,13 @@ final class MeshService: ObservableObject {
             kind = .ask
             text = question
             if text.isEmpty { return }
+            // The same question is still waiting: do not queue it twice.
+            if AskCoalescer.pendingDuplicate(of: text, from: displayName, in: entries) != nil {
+                composerNote = "You already asked that. It sends once and Pasa answers once."
+                return
+            }
         }
+        composerNote = nil
 
         let destination: MeshDestination? = kind == .ask ? .role(MeshDestination.aiRole) : nil
         var message = engine.makeOutgoing(kind: kind, body: text, destination: destination)
@@ -1386,6 +1403,16 @@ final class MeshService: ObservableObject {
     }
 
     /// Quick actions: "What did I miss?", "My tasks", "More". Sent as "@pasa ..." asks.
+    /// An identical @pasa question from this device is still unanswered (quick buttons go gray).
+    func isAskPending(_ question: String) -> Bool {
+        AskCoalescer.pendingDuplicate(of: question, from: displayName, in: entries) != nil
+    }
+
+    /// This device's own messages in the active room that have not left yet.
+    var queuedMineCount: Int {
+        entries.filter { $0.direction == .sent && $0.sentTo.isEmpty && $0.backfilled != true }.count
+    }
+
     func quickAsk(_ text: String) {
         send("\(AssistantMention.primary) \(text)")
     }
@@ -1777,6 +1804,7 @@ final class MeshService: ObservableObject {
             receive(data, from: from)
         case .problem(let text):
             lastProblem = text
+            if text.contains("Local Network") { localNetworkDenied = true }
         }
     }
 
@@ -2498,10 +2526,43 @@ final class MeshService: ObservableObject {
 
     // MARK: Onboarding
 
+    /// Mic and photo primers show once, on first use.
+    func primerNeeded(_ kind: String) -> Bool {
+        !(defaults.stringArray(forKey: Keys.primers) ?? []).contains(kind)
+    }
+
+    func markPrimerShown(_ kind: String) {
+        var shown = defaults.stringArray(forKey: Keys.primers) ?? []
+        if !shown.contains(kind) { shown.append(kind) }
+        defaults.set(shown, forKey: Keys.primers)
+    }
+
+    /// Local network step: starts the advertiser and browser right after the primer, so the
+    /// iOS permission prompt appears in context. Clears an old denial flag to check again.
+    func startFromOnboarding() {
+        localNetworkDenied = false
+        start()
+    }
+
+    #if os(macOS)
+    /// Set up AI finished: use the planned models and make this Mac the AI peer.
+    func applySetup(chat: String, vision: String?) {
+        updateAssistantSettings(engine: aiEngine, model: chat, fallback: ollamaFallbackModel, rosterText: rosterText)
+        preferredVisionModel = vision
+        if let vision { defaults.set(vision, forKey: Keys.visionPref) } else { defaults.removeObject(forKey: Keys.visionPref) }
+        if !isAIPeer { setAIPeer(true) }
+        checkOllama()
+    }
+    #endif
+
     func finishOnboarding() {
         onboardingDone = true
         defaults.set(true, forKey: Keys.onboarded)
+        showStarterChips = true
+        start()   // no-op when the Local Network step already started the mesh
     }
+
+    func hideStarterChips() { showStarterChips = false }
 
     func replayOnboarding() {
         onboardingDone = false

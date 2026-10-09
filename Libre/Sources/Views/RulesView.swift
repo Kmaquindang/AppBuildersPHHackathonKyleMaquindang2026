@@ -66,7 +66,7 @@ struct RuleRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(rule.kind.label.uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.weight(.bold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color.teal.opacity(0.25), in: Capsule())
@@ -78,6 +78,7 @@ struct RuleRow: View {
                 if rule.locked {
                     Image(systemName: "lock.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityLabel("Locked by an admin")
                 }
                 Spacer()
                 #if os(macOS)

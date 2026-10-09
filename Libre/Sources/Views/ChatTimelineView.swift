@@ -7,23 +7,21 @@ import SwiftUI
 
 struct ChatTimelineView: View {
     @EnvironmentObject private var mesh: MeshService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     if mesh.entries.isEmpty {
-                        Text("No messages yet. Say hi, or start a message with @pasa to ask the AI.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                        ChatEmptyState()
                     }
                     let names = nameMap
+                    let answered = AskCoalescer.answered(mesh.entries)
                     ForEach(mesh.entries) { entry in
                         MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names,
                                    waiting: mesh.waitingAsks.contains(entry.id), waitingNote: mesh.waitingText,
+                                   status: BubbleStatus.of(entry, answered: answered, waiting: mesh.waitingAsks.contains(entry.id)),
                                    myDevice: mesh.displayName, canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
                                    onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") })
                             .id(entry.id)
@@ -32,9 +30,16 @@ struct ChatTimelineView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
+            // Stays pinned to the newest message when the keyboard or composer changes the height.
+            .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: mesh.entries.count) { _, _ in
                 if let last = mesh.entries.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    if reduceMotion {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    } else {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
                 }
             }
             .onAppear {
@@ -60,6 +65,8 @@ struct MessageRow: View {
     var waiting: Bool = false
     /// What to say while waiting (AI Mac asleep, offline, not in this room, or queue depth).
     var waitingNote: String = "Waiting for the AI Mac... It answers when it is in range."
+    /// Delivery state, shown as an icon with a VoiceOver label.
+    var status: BubbleStatus = .received
     /// This device's id (for its own line on a summary card).
     var myDevice: String = ""
     /// Admin devices see "Add task" on photo suggestions (the Mac checks again).
@@ -67,6 +74,7 @@ struct MessageRow: View {
     var onAccept: (String) -> Void = { _ in }
     @State private var showDetails = false
     @State private var accepted: Set<String> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var message: MeshMessage { entry.message }
     private var isMine: Bool { entry.direction == .sent && message.kind != .answer }
@@ -76,8 +84,19 @@ struct MessageRow: View {
         HStack(alignment: .bottom, spacing: 0) {
             if isMine { Spacer(minLength: 48) }
             VStack(alignment: isMine ? .trailing : .leading, spacing: 3) {
-                header
-                bubble
+                if message.kind == .media {
+                    header
+                    bubble
+                } else {
+                    // VoiceOver reads sender, time, text, then status, as one element.
+                    VStack(alignment: isMine ? .trailing : .leading, spacing: 3) {
+                        header
+                        bubble
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(spokenLabel)
+                    .accessibilityHint(hasDetails ? "Double tap the details button below for hop path and timing" : "")
+                }
                 cardExtras
                 proofBadge
                 detailsCaption
@@ -91,18 +110,24 @@ struct MessageRow: View {
     private var header: some View {
         HStack(spacing: 6) {
             if message.kind == .answer {
-                Image(systemName: "sparkles").font(.caption2).foregroundStyle(.purple)
+                Image(systemName: "sparkles").font(.caption).foregroundStyle(.purple)
             }
             Text(isMine ? "You" : sender)
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
             if message.kind == .ask {
-                Text("to Pasa AI").font(.caption2).foregroundStyle(.purple)
+                Text("to Pasa AI").font(.caption).foregroundStyle(.secondary)
             } else if case .peer(let device)? = message.destination, message.kind != .answer {
-                Text("to \(labelFor(device))").font(.caption2).foregroundStyle(.secondary)
+                Text("to \(labelFor(device))").font(.caption).foregroundStyle(.secondary)
             }
             Text(message.createdAt.formatted(date: .omitted, time: .shortened))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
+            if !status.symbol.isEmpty {
+                Image(systemName: status.symbol)
+                    .font(.caption)
+                    .foregroundStyle(status == .queued ? Color.orange : Color.secondary)
+            }
         }
     }
 
@@ -124,9 +149,10 @@ struct MessageRow: View {
         } else if message.kind == .answer, let card = message.card {
             VStack(alignment: .leading, spacing: 4) {
                 Text(card == "summary" ? "DAILY SUMMARY" : "PHOTO CHECK")
-                    .font(.system(size: 9, weight: .bold))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
                     .background(Color.purple.opacity(0.25), in: Capsule())
                 Text(bodyText)
                     .font(.callout)
@@ -142,7 +168,7 @@ struct MessageRow: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .foregroundStyle(isMine ? Color.white : Color.primary)
+                .foregroundStyle(isMine || message.kind == .ask ? Color.white : Color.primary)
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 16))
         }
     }
@@ -169,7 +195,9 @@ struct MessageRow: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
                     .disabled(accepted.contains(title))
+                    .accessibilityHint("Asks the AI Mac to add this task")
                 }
             }
         }
@@ -179,38 +207,59 @@ struct MessageRow: View {
     @ViewBuilder
     private var proofBadge: some View {
         if message.kind == .answer, let proof = message.proof {
-            Label(proof.badge, systemImage: proof.internet == .offline ? "wifi.slash" : "cpu")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(proof.internet == .offline ? Color.green : Color.secondary)
-                .lineLimit(2)
-                .textSelection(.enabled)
+            Label {
+                Text(proof.badge)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } icon: {
+                Image(systemName: proof.internet == .offline ? "wifi.slash" : "cpu")
+                    .font(.caption2)
+                    .foregroundStyle(proof.internet == .offline ? Color.green : Color.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(proof.badge.replacingOccurrences(of: " · ", with: ", "))
         }
     }
 
     private var detailsCaption: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
             if waiting && message.kind == .ask {
-                Label(waitingText, systemImage: "hourglass")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() }
-            } label: {
-                HStack(spacing: 3) {
-                    Text(summaryLine)
-                    Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                Label {
+                    Text(waitingText).font(.caption).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "hourglass").foregroundStyle(.orange)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
             }
-            .buttonStyle(.plain)
+            if hasDetails {
+                Button {
+                    if reduceMotion { showDetails.toggle() } else { withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() } }
+                } label: {
+                    HStack(spacing: 3) {
+                        if !summaryLine.isEmpty { Text(summaryLine) }
+                        Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44, alignment: isMine ? .trailing : .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -8)   // keeps the 44 pt target without a tall gap between bubbles
+                .accessibilityLabel(showDetails ? "Hide details" : "Details\(summaryLine.isEmpty ? "" : ": \(summaryLine)")")
+                .accessibilityHint("Hop path and timing")
+            } else {
+                Color.clear.frame(height: 6)
+            }
             if showDetails {
                 ForEach(detailLines, id: \.self) { line in
                     Text(line)
-                        .font(.caption2.monospaced())
+                        .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(isMine ? .trailing : .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -237,13 +286,29 @@ struct MessageRow: View {
         return AttributedString(MarkdownLite.plain(raw))
     }
 
-    /// Short caption: "2 hops, 522 ms" or "Round trip 6664 ms".
+    /// What VoiceOver reads for the bubble: sender, time, text, status.
+    private var spokenLabel: String {
+        var parts = [isMine ? "You" : sender]
+        if message.kind == .ask { parts[0] += ", to Pasa AI" }
+        if message.kind == .answer { parts[0] = "Pasa AI answer" }
+        parts.append(message.createdAt.formatted(date: .omitted, time: .shortened))
+        if isCard { parts.append(message.kind == .task ? "Task" : "Rule") }
+        if let card = message.card { parts.append(card == "summary" ? "Daily summary" : "Photo check") }
+        parts.append(String(bodyText.characters))
+        if status != .received { parts.append(status.accessibilityLabel) }
+        return parts.joined(separator: ". ")
+    }
+
+    /// Mine and still queued: the clock icon says it, so no caption.
+    private var hasDetails: Bool {
+        !(entry.direction == .sent && entry.sentTo.isEmpty && entry.backfilled != true) || message.kind == .answer
+    }
+
+    /// Short caption: "2 hops, 522 ms" or "Round trip 6664 ms". Empty for our own sent messages
+    /// (the status icon in the header shows queued, sent or answered).
     private var summaryLine: String {
-        if entry.backfilled == true { return "synced from the AI peer" }
-        if isMine || (entry.direction == .sent && message.kind == .answer) {
-            if entry.sentTo.isEmpty { return "queued, sends when a peer links" }
-            return "sent"
-        }
+        if entry.backfilled == true { return "synced" }
+        if isMine || (entry.direction == .sent && message.kind == .answer) { return "" }
         var parts: [String] = []
         parts.append(message.hopCount == 0 ? "local" : hopWord(message.hopCount))
         if let rtt = entry.roundTripMs {
@@ -293,8 +358,9 @@ struct MessageRow: View {
 
     private var bubbleColor: Color {
         if message.kind == .answer { return Color.purple.opacity(0.15) }
-        if message.kind == .ask { return Color.purple.opacity(0.85) }
-        return isMine ? Color.accentColor : Color.gray.opacity(0.18)
+        // Deep fills so white text stays above 4.5:1 (system blue and purple are about 4.0 and 3.6).
+        if message.kind == .ask { return Color(red: 0.42, green: 0.20, blue: 0.62) }
+        return isMine ? Color(red: 0.0, green: 0.37, blue: 0.80) : Color.gray.opacity(0.18)
     }
 
     private var cardColor: Color {
@@ -315,9 +381,10 @@ struct KindBadge: View {
 
     var body: some View {
         Text(kind.rawValue.uppercased())
-            .font(.system(size: 9, weight: .bold))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
             .background(color.opacity(0.25), in: Capsule())
     }
 
@@ -331,5 +398,31 @@ struct KindBadge: View {
         case .rule: return .teal
         case .task: return .green
         }
+    }
+}
+
+/// Empty chat: what to do next, not just "nothing here".
+struct ChatEmptyState: View {
+    @EnvironmentObject private var mesh: MeshService
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("No messages yet")
+                .font(.headline)
+            Text(mesh.connectedCount == 0
+                 ? "Say hi now: it sends when a teammate is in range. Ask a teammate to open Pasa nearby with Wi-Fi on."
+                 : "Say hi to the team, or start a message with @pasa to ask the AI.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.top, 40)
+        .accessibilityElement(children: .combine)
     }
 }
