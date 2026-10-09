@@ -125,11 +125,11 @@ func knowledgeCase() async {
     // Keyword-only comparison (no embedding model) for the semantic question.
     let kw = LibrarySearch.retrieve("How do plants turn light into food?", in: index, isAdmin: false)
     let qv = try? await embedder.embed([LibrarySearch.queryPrefix + "How do plants turn light into food?"]).first
-    let hy = LibrarySearch.retrieve("How do plants turn light into food?", in: index, isAdmin: false, queryVector: qv ?? nil)
+    let hy = LibrarySearch.retrieve("How do plants turn light into food?", in: index, isAdmin: false, queryVector: qv)
     line("  keyword-only top: \(kw.map { "\($0.ref.chipLabel) bm25=\(String(format: "%.2f", $0.bm25))" })")
     line("  hybrid top: \(hy.map { "\($0.ref.chipLabel) cos=\($0.cosine.map { String(format: "%.3f", $0) } ?? "-")" })")
     let off = try? await embedder.embed([LibrarySearch.queryPrefix + "When is the field trip and how much is the permit fee?"]).first
-    if let o1 = off, let off = o1 {
+    if let off {
         let best = index.chunks.compactMap { c in c.embedding.map { LibrarySearch.cosine(off, $0) } }.max() ?? 0
         line("  unrelated question best cosine: \(String(format: "%.3f", best)) (floor \(LibrarySearch.cosineFloor))")
     }
