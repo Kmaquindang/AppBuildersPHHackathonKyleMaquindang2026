@@ -45,6 +45,7 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     static let minRestartGap: TimeInterval = 5
     static let bothSidesInviteAfter = 3                // after this many failures, either side may invite
     static let passiveSideWaits: TimeInterval = 15     // or once a peer has sat unlinked this long
+    static let minSessionResetGap: TimeInterval = 30   // forced relay: restart the session at most this often
 
     let displayName: String
 
@@ -66,6 +67,7 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     private var connectingSince: [String: Date] = [:]
     private var unlinkedSince: [String: Date] = [:]    // first seen nearby without a link
     private var lastRestart = Date.distantPast
+    private var lastSessionReset = Date.distantPast
     private var watchdog: DispatchSourceTimer?
     private let watchdogQueue = DispatchQueue(label: "pasa.mesh.watchdog")
 
@@ -156,15 +158,45 @@ final class MeshTransport: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Forced relay: blocking refuses invites both ways, rejects the connection handshake (which
+    /// also covers MultipeerConnectivity joining two peers of the same session on its own), drops
+    /// packets, and now also ends an existing direct link with a newly blocked peer.
     func setBlocked(_ names: Set<String>) {
         lock.lock()
         let newlyUnblocked = blocked.subtracting(names)
+        let newlyBlocked = names.subtracting(blocked)
         blocked = names
         let toInvite = newlyUnblocked.compactMap { discovered[$0] }
         lock.unlock()
         // Reconnect to peers that were just unblocked.
         for peer in toInvite where shouldInvite(peer) {
             invite(peer)
+        }
+        if !newlyBlocked.isEmpty { dropDirectLinks(to: newlyBlocked) }
+    }
+
+    /// Ends direct links with blocked peers. MultipeerConnectivity has no per-peer disconnect, so
+    /// first ask it to cancel that peer; if the link is still up a moment later, restart the
+    /// whole session once (other peers re-link within seconds, blocked peers are refused).
+    private func dropDirectLinks(to names: Set<String>) {
+        let linked = session.connectedPeers.filter { names.contains($0.displayName) }
+        guard !linked.isEmpty else { return }
+        for peer in linked { session.cancelConnectPeer(peer) }
+        watchdogQueue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            let blockedNow = self.currentBlocked()
+            let stillLinked = self.session.connectedPeers.contains { blockedNow.contains($0.displayName) }
+            guard stillLinked else { return }
+            self.lock.lock()
+            let running = self.running
+            let now = Date()
+            let allowed = now.timeIntervalSince(self.lastSessionReset) >= MeshTransport.minSessionResetGap
+            if allowed { self.lastSessionReset = now }
+            self.lock.unlock()
+            guard running, allowed else { return }
+            self.session.disconnect()
+            self.onEvent(.problem("Forced relay: restarted links so the blocked device is no longer linked directly."))
+            self.restartDiscovery(force: true)
         }
     }
 
@@ -382,6 +414,17 @@ extension MeshTransport: MCSessionDelegate {
             // Find the peer again; the watchdog re-invites it once its backoff expires.
             restartDiscovery()
         }
+        if linkState == .connected && isBlocked(name) {
+            // A blocked peer got linked anyway (for example joined through another member of the session).
+            dropDirectLinks(to: [name])
+        }
+    }
+
+    /// Called for every incoming connection, including ones MultipeerConnectivity sets up between
+    /// members of the same session without an invite. Refusing here keeps forced relay airtight.
+    /// (No certificates are used: links are encrypted but devices are not authenticated.)
+    nonisolated func session(_ session: MCSession, didReceiveCertificate certificate: [Any]?, fromPeer peerID: MCPeerID, certificateHandler: @escaping (Bool) -> Void) {
+        certificateHandler(!isBlocked(peerID.displayName))
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {

@@ -39,13 +39,6 @@ public enum PeopleDirectory {
         if let name = directory[device], !name.isEmpty { return name }
         return device
     }
-
-    /// Devices whose chosen name is in `names` (case-insensitive). Used so an admin listed by
-    /// name ("Kyle") also covers the device Kyle uses.
-    public static func devices(named names: [String], directory: [String: String]) -> Set<String> {
-        let keys = Set(names.map { NameMatcher.normalize($0) }.filter { !$0.isEmpty })
-        return Set(directory.filter { keys.contains(NameMatcher.normalize($0.value)) }.map { $0.key })
-    }
 }
 
 /// Light Markdown cleanup for AI replies before SwiftUI renders them with

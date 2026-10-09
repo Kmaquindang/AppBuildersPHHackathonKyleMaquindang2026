@@ -41,6 +41,10 @@ public final class ExecutiveAssistant {
     /// Device id -> chosen display name ("iPhone 12" -> "Ana"), learned from messages.
     public var directory: [String: String] = [:]
     public var chatContextLimit = 30
+    /// Most lines a "since you were away" catch-up reads.
+    public var sinceContextLimit = 60
+    /// The Mac cleared the team timeline at this time: catch-ups never include older chat.
+    public var clearedAt: Date?
 
     private var pendingMore: [String: String] = [:]
 
@@ -86,7 +90,9 @@ public final class ExecutiveAssistant {
 
     // MARK: Entry point
 
-    public func handle(_ rawText: String, from asker: String) async -> AssistantOutcome {
+    /// - Parameter since: the asker was away from this time on (sent by the phone with the ask).
+    ///   "What did I miss" then summarizes only chat after it. nil means a plain recap.
+    public func handle(_ rawText: String, from asker: String, since: Date? = nil) async -> AssistantOutcome {
         let started = Date()
         var tracker = CallTracker()
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,9 +213,12 @@ public final class ExecutiveAssistant {
             }
 
         case .summarize:
-            let lines = memory.recentChat(limit: chatContextLimit)
+            let window = CatchUp.window(since: since, clearedAt: clearedAt)
+            let lines = window.since != nil
+                ? memory.recentChat(limit: sinceContextLimit, after: window.floor)
+                : memory.recentChat(limit: chatContextLimit, after: window.floor)
             if lines.isEmpty {
-                reply = "No team chat has reached me yet."
+                reply = window.since.map { "Nothing new in team chat since \(CatchUp.clock($0))." } ?? "No team chat has reached me yet."
             } else {
                 do {
                     let result = try await llm.chat([
@@ -217,7 +226,7 @@ public final class ExecutiveAssistant {
                         .user(AssistantPrompts.summarizeUser(lines: lines, asker: asker))
                     ], json: false)
                     tracker.add(result)
-                    reply = result.text
+                    reply = CatchUp.header(since: window.since, count: lines.count) + "\n" + result.text
                 } catch {
                     return failure(error, intent: .summarize, started: started, tracker: tracker)
                 }
@@ -257,7 +266,9 @@ public final class ExecutiveAssistant {
                     .user(AssistantPrompts.answerUser(question: plan.question ?? text, asker: asker, rules: memory.rules, notes: memory.notes, openTasks: memory.openTasks))
                 ], json: false)
                 tracker.add(result)
-                reply = result.text.isEmpty ? "I do not have an answer for that." : result.text
+                // Never pass on a citation that is not in memory: fix versions, flag the rest.
+                let checked = CitationGuard.validate(result.text, rules: memory.rules, notes: memory.notes)
+                reply = checked.text.isEmpty ? "I do not have an answer for that." : checked.text
             } catch {
                 return failure(error, intent: .answer, started: started, tracker: tracker)
             }
@@ -333,5 +344,32 @@ public final class ExecutiveAssistant {
             ruleUpdates: [],
             error: message
         )
+    }
+}
+
+/// "What did I miss": since the asker was away when the phone says so, otherwise a recap of the
+/// latest lines. A clear-timeline watermark on the Mac always wins.
+public enum CatchUp {
+    public struct Window: Equatable, Sendable {
+        /// The asker's away time, when known (shown in the reply).
+        public var since: Date?
+        /// Read chat strictly after this time.
+        public var floor: Date?
+    }
+
+    public static func window(since: Date?, clearedAt: Date?) -> Window {
+        Window(since: since, floor: CacheSync.latest(since, clearedAt))
+    }
+
+    public static func header(since: Date?, count: Int) -> String {
+        if let since { return "New since \(clock(since)):" }
+        return "Recap of the last \(count) team message\(count == 1 ? "" : "s"):"
+    }
+
+    public static func clock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "h:mm a"
+        return f.string(from: date)
     }
 }

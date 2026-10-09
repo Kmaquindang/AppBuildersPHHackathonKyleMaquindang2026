@@ -189,7 +189,7 @@ func runPeopleTests() {
         check(devices == ["iPhone 1111", "iPhone A8BE"], "ambiguous lists devices")
     } else { check(false, "two people named Ana is ambiguous") }
     check(PeopleDirectory.label(for: "iPhone 7597", directory: dir) == "Kyle" && PeopleDirectory.label(for: "iPhone 9", directory: dir) == "iPhone 9", "labels")
-    check(PeopleDirectory.devices(named: ["kyle"], directory: dir) == ["iPhone 7597"], "admin by name maps to device")
+    check(!AdminPolicy.devices(adminIDs: ["Kyle"], selfID: "MacBook Air").contains("iPhone 7597"), "a display name never makes a device admin")
     check(PeopleDirectory.clean("  Ana  ") == "Ana", "clean trims")
 
     let engine = RelayEngine(selfName: "iPhone A8BE")

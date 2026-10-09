@@ -103,7 +103,8 @@ public final class RelayEngine {
             createdAt: now,
             replyTo: replyTo,
             replyPath: replyPath,
-            senderName: senderName
+            senderName: senderName,
+            v: MeshMessage.protocolVersion
         )
         markSeen(message.id, now: now)
         return message

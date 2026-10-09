@@ -35,6 +35,10 @@ public enum MeshDestination: Codable, Hashable, Sendable {
 /// The unit that travels over the mesh. Encoded as JSON for milestone 1.
 public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public static let defaultTTL = 7
+    /// Wire format version this build reads and writes. Messages without `v` are version 1
+    /// (builds before Oct 9, 2026 evening). A device that meets a newer version relays the raw
+    /// bytes untouched (see MeshCodec.decodeLenient) instead of dropping them.
+    public static let protocolVersion = 1
 
     public var id: UUID
     /// Display name of the device that created the message.
@@ -62,6 +66,14 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var tokensPerSecond: Double?
     /// Display name the sender chose ("Kyle", "Ana"). The UI shows it instead of the device id.
     public var senderName: String?
+    /// Wire format version (nil means 1, from builds before the field existed).
+    public var v: Int?
+    /// Rule and task updates sent by the Mac when a device links: update the cache only, never
+    /// add a card to the timeline.
+    public var silent: Bool?
+    /// For asks: the asker was away (app in the background or no links) since this time, so
+    /// "what did I miss" can summarize only what came after it.
+    public var since: Date?
 
     public init(
         id: UUID = UUID(),
@@ -78,7 +90,10 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         model: String? = nil,
         latencyMs: Int? = nil,
         tokensPerSecond: Double? = nil,
-        senderName: String? = nil
+        senderName: String? = nil,
+        v: Int? = nil,
+        silent: Bool? = nil,
+        since: Date? = nil
     ) {
         self.id = id
         self.origin = origin
@@ -95,7 +110,13 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         self.latencyMs = latencyMs
         self.tokensPerSecond = tokensPerSecond
         self.senderName = senderName
+        self.v = v
+        self.silent = silent
+        self.since = since
     }
+
+    /// Version this message was written with (1 when the field is missing).
+    public var wireVersion: Int { v ?? 1 }
 
     /// Number of device-to-device hops travelled so far.
     public var hopCount: Int { max(0, hops.count - 1) }
@@ -105,6 +126,42 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
 
     /// True when the message is a broadcast (no destination).
     public var isBroadcast: Bool { destination == nil }
+}
+
+/// What a received packet turned out to be.
+public enum DecodedPacket {
+    /// A message this build understands.
+    case message(MeshMessage)
+    /// A packet from a newer (or unknown) format: routing fields are readable, the rest is not.
+    /// Relay it untouched; never show or act on it.
+    case opaque(OpaquePacket)
+    /// Not a Pasa packet at all.
+    case unreadable
+}
+
+/// A packet this build cannot fully read. Keeps the raw JSON so every unknown field survives
+/// the relay, and only rewrites the two fields relays must change (ttl and hops).
+public struct OpaquePacket {
+    /// Routing fields only (id, origin, destination, ttl, hops). Kind and body are placeholders.
+    public var envelope: MeshMessage
+    public var version: Int
+    public var kindName: String?
+    private var raw: [String: Any]
+
+    init(envelope: MeshMessage, version: Int, kindName: String?, raw: [String: Any]) {
+        self.envelope = envelope
+        self.version = version
+        self.kindName = kindName
+        self.raw = raw
+    }
+
+    /// Raw bytes with only ttl and hops replaced, ready to forward.
+    public func rewritten(ttl: Int, hops: [String]) -> Data? {
+        var copy = raw
+        copy["ttl"] = ttl
+        copy["hops"] = hops
+        return try? JSONSerialization.data(withJSONObject: copy, options: [])
+    }
 }
 
 /// JSON wire format. Kept in one place so a compact binary format can replace it later.
@@ -119,5 +176,32 @@ public enum MeshCodec {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         return try decoder.decode(MeshMessage.self, from: data)
+    }
+
+    /// Routing fields every version must keep readable so older devices can still relay.
+    private struct Envelope: Decodable {
+        var id: UUID
+        var origin: String
+        var destination: MeshDestination?
+        var ttl: Int
+        var hops: [String]
+        var v: Int?
+        var kind: String?
+    }
+
+    /// Full decode when this build understands the packet; otherwise the routing envelope plus
+    /// the raw JSON so the packet can be relayed untouched (newer version or unknown kind).
+    public static func decodeLenient(_ data: Data) -> DecodedPacket {
+        if let message = try? decode(data), message.wireVersion <= MeshMessage.protocolVersion {
+            return .message(message)
+        }
+        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: data),
+              let raw = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .unreadable
+        }
+        let stub = MeshMessage(id: envelope.id, origin: envelope.origin, destination: envelope.destination,
+                               kind: .ack, body: "", ttl: envelope.ttl, hops: envelope.hops,
+                               createdAt: Date(timeIntervalSince1970: 0), v: envelope.v)
+        return .opaque(OpaquePacket(envelope: stub, version: envelope.v ?? 1, kindName: envelope.kind, raw: raw))
     }
 }

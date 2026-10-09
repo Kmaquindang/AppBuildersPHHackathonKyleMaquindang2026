@@ -22,7 +22,8 @@ struct ChatTimelineView: View {
                     }
                     let names = nameMap
                     ForEach(mesh.entries) { entry in
-                        MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names)
+                        MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names,
+                                   waiting: mesh.waitingAsks.contains(entry.id))
                             .id(entry.id)
                     }
                 }
@@ -53,6 +54,8 @@ struct MessageRow: View {
     let sender: String
     /// Device id -> chosen display name.
     let names: [String: String]
+    /// An ask of ours with no answer after 20 s.
+    var waiting: Bool = false
     @State private var showDetails = false
 
     private var message: MeshMessage { entry.message }
@@ -117,6 +120,11 @@ struct MessageRow: View {
 
     private var detailsCaption: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
+            if waiting && message.kind == .ask {
+                Label(waitingText, systemImage: "hourglass")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() }
             } label: {
@@ -140,6 +148,13 @@ struct MessageRow: View {
     }
 
     // MARK: Text
+
+    /// On the AI Mac itself the ask is local, so it is the model that is slow, not the mesh.
+    private var waitingText: String {
+        entry.sentTo == ["this Mac (AI peer)"]
+            ? "Pasa is still thinking..."
+            : "Waiting for the AI Mac... It answers when it is in range."
+    }
 
     /// AI replies render bold, italics, inline code and bullets. Anything that does not parse
     /// shows as plain text.

@@ -12,7 +12,6 @@ struct SettingsView: View {
     @State private var engineDraft: AIEngine = .assistant
     @State private var modelDraft = ""
     @State private var fallbackDraft = ""
-    @State private var adminsDraft = ""
     @State private var rosterDraft = ""
     @State private var confirmReset = false
 
@@ -42,7 +41,7 @@ struct SettingsView: View {
                 } header: {
                     Text("This device")
                 } footer: {
-                    Text("The mesh address of this device. It must be unique, and it stays the same unless you change it here. Saving restarts the mesh link. Admin devices can be listed by device id or by name.")
+                    Text("The mesh address of this device. It must be unique, and it stays the same unless you change it here. Saving restarts the mesh link. Admin rights belong to the device id, never to a name.")
                 }
 
                 #if os(macOS)
@@ -58,7 +57,6 @@ struct SettingsView: View {
                     }
                     TextField("Ollama model", text: $modelDraft)
                     TextField("Fallback model (if the first is not installed)", text: $fallbackDraft)
-                    TextField("Admins (device ids or names), comma separated", text: $adminsDraft)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Roster override, optional (one per line: Ana = iPhone 12). Names people pick on their phones work without it.")
                             .font(.caption)
@@ -69,7 +67,7 @@ struct SettingsView: View {
                     }
                     HStack {
                         Button("Save AI settings") {
-                            mesh.updateAssistantSettings(engine: engineDraft, model: modelDraft, fallback: fallbackDraft, admins: adminsDraft, rosterText: rosterDraft)
+                            mesh.updateAssistantSettings(engine: engineDraft, model: modelDraft, fallback: fallbackDraft, rosterText: rosterDraft)
                         }
                         Button("Check Ollama") { mesh.checkOllama() }
                     }
@@ -83,7 +81,25 @@ struct SettingsView: View {
                 } header: {
                     Text("AI peer")
                 } footer: {
-                    Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). This Mac is always an admin.")
+                    Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). While this Mac is the AI peer it does not idle-sleep and keeps the model warm; keep the lid open and the charger in.")
+                }
+
+                Section {
+                    LabeledContent("This Mac (\(mesh.label(for: mesh.displayName)))", value: "always admin")
+                    if mesh.adminCandidates.isEmpty {
+                        Text("No other devices seen yet. Open Pasa on a phone nearby, then come back here.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(mesh.adminCandidates, id: \.self) { device in
+                        Toggle(adminLabel(device), isOn: Binding(
+                            get: { mesh.adminDevices.contains(device) },
+                            set: { mesh.setAdmin(device, $0) }
+                        ))
+                    }
+                } header: {
+                    Text("Admins")
+                } footer: {
+                    Text("Admins can edit, lock, unlock and delete rules. Tick devices, not names: anyone can change their display name, so a name never grants admin.")
                 }
                 #endif
 
@@ -109,18 +125,20 @@ struct SettingsView: View {
                 } header: {
                     Text("Forced relay demo")
                 } footer: {
-                    Text("A blocked peer cannot link to this device directly, so messages must hop through another device. Example: on iPhone 12 block MacBook Air, then the path becomes iPhone 12 -> iPhone 14 Pro Max -> MacBook Air. Unblocking a peer that is already linked takes effect right away; blocking one that is already linked stops all traffic with it, and the link fully drops the next time it reconnects.")
+                    Text("A blocked peer cannot link to this device directly, so messages must hop through another device. Example: on Ana's phone block Site Office (and on Site Office block Ana's phone), then the path becomes Ana -> Kyle -> Site Office. Blocking a peer that is already linked ends that link (if it lingers, all links restart once and re-form in a few seconds). The chat header shows \"Forced relay mode\" while any block is on.")
                 }
 
                 Section {
                     LabeledContent("Linked peers", value: "\(mesh.connectedCount)")
                     LabeledContent("Messages relayed", value: "\(mesh.relayedCount)")
                     LabeledContent("Queued in outbox", value: "\(mesh.outboxCount)")
-                    Button("Clear timeline", role: .destructive) {
+                    Button(clearLabel, role: .destructive) {
                         mesh.clearTimeline()
                     }
                 } header: {
                     Text("Stats")
+                } footer: {
+                    Text(clearFooter)
                 }
             }
             .formStyle(.grouped)
@@ -136,7 +154,6 @@ struct SettingsView: View {
                 engineDraft = mesh.aiEngine
                 modelDraft = mesh.ollamaModel
                 fallbackDraft = mesh.ollamaFallbackModel
-                adminsDraft = mesh.adminNames.joined(separator: ", ")
                 rosterDraft = mesh.rosterText
             }
             #if os(macOS)
@@ -152,5 +169,21 @@ struct SettingsView: View {
 
     private var knownPeers: [String] {
         mesh.peers.map { $0.name }
+    }
+
+    private func adminLabel(_ device: String) -> String {
+        let name = mesh.label(for: device)
+        return name == device ? device : "\(name) (\(device))"
+    }
+
+    private var clearLabel: String {
+        mesh.isAIPeer ? "Clear timeline for the whole team" : "Clear timeline"
+    }
+
+    private var clearFooter: String {
+        if mesh.isAIPeer {
+            return "Clears the chat on this Mac and on every phone (linked phones now, the rest when they next link). Old messages do not come back, and \"what did I miss\" ignores them."
+        }
+        return "Clears the chat on this device. Old messages do not come back from the AI Mac."
     }
 }

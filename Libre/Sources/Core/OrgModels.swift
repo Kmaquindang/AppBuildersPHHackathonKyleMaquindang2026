@@ -185,11 +185,14 @@ public struct ChatLogLine: Codable, Hashable, Sendable {
     public var from: String
     public var text: String
     public var at: Date
+    /// Device id of the sender, when known (optional so older files still decode).
+    public var device: String?
 
-    public init(from: String, text: String, at: Date) {
+    public init(from: String, text: String, at: Date, device: String? = nil) {
         self.from = from
         self.text = text
         self.at = at
+        self.device = device
     }
 }
 
@@ -200,6 +203,9 @@ public struct OrgSnapshot: Codable, Hashable, Sendable {
     public var tasks: [TaskItem] = []
     public var notes: [Note] = []
     public var chatLog: [ChatLogLine] = []
+    /// When the Mac's team memory was last reset. Phones learn it on the next link and drop
+    /// cached rules and tasks the Mac no longer has.
+    public var resetAt: Date? = nil
 
     public init() {}
 

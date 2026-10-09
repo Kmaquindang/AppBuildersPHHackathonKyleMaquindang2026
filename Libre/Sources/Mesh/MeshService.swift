@@ -9,6 +9,9 @@
 //
 // Persistence: the timeline and outbox are saved to Application Support (timeline.json) and
 // reloaded on launch. Phones ask the AI Mac to backfill what they missed whenever a link comes up.
+//
+// Admins are device ids ticked in the Mac's Settings (plus the Mac itself). A display name never
+// grants admin, because anyone can type any name.
 
 import Foundation
 import SwiftUI
@@ -65,6 +68,10 @@ final class MeshService: ObservableObject {
     @Published private(set) var directory: [String: String]
     @Published private(set) var relayedCount = 0
     @Published private(set) var lastProblem: String?
+    /// Asks this device sent that have had no answer for 20 s or more.
+    @Published private(set) var waitingAsks: Set<UUID> = []
+    /// "Clear timeline" watermark: nothing older comes back through backfill or catch-ups.
+    @Published private(set) var clearedAt: Date?
 
     /// Team memory: source of truth on the AI Mac, read-only cache on phones.
     @Published private(set) var org: OrgSnapshot
@@ -73,7 +80,8 @@ final class MeshService: ObservableObject {
     @Published private(set) var aiEngine: AIEngine
     @Published private(set) var ollamaModel: String
     @Published private(set) var ollamaFallbackModel: String
-    @Published private(set) var adminNames: [String]
+    /// Admin device ids chosen on the Mac (the Mac itself is always an admin too).
+    @Published private(set) var adminDevices: [String]
     @Published private(set) var roster: [String: String]
     @Published private(set) var assistantLog: [AssistantLogEntry] = []
     @Published private(set) var ollamaStatus = "Not checked yet"
@@ -88,6 +96,10 @@ final class MeshService: ObservableObject {
     private var housekeeping: Timer?
     private var savePending = false
     private var lastBackfillRequest = Date.distantPast
+    /// Phones: when this device last went away (app in the background or every link lost).
+    /// Sent with asks so "what did I miss" covers only what came after.
+    private var awaySince: Date?
+    private var isAway = false
     private let timelineURL: URL?
     private let timelineLimit: Int
     private let saveQueue = DispatchQueue(label: "pasa.timeline.save", qos: .utility)
@@ -95,6 +107,11 @@ final class MeshService: ObservableObject {
     private let memory: OrgMemory
     #if os(macOS)
     private let assistant: ExecutiveAssistant
+    /// Keeps the Mac from idle-sleeping and App Nap from throttling timers while it is the AI peer.
+    private var awakeActivity: NSObjectProtocol?
+    private var ollamaTimer: Timer?
+    private var ollamaBusy = false
+    private var lastWarm: Date?
     #endif
 
     private enum Keys {
@@ -105,7 +122,10 @@ final class MeshService: ObservableObject {
         static let engine = "libre.aiEngine"
         static let model = "libre.ollamaModel"
         static let fallback = "libre.ollamaFallbackModel"
-        static let admins = "libre.adminNames"
+        static let legacyAdmins = "libre.adminNames"   // old "device ids or names" text field
+        static let admins = "pasa.adminDevices"        // device ids only
+        static let clearedAt = "pasa.clearedAt"
+        static let awaySince = "pasa.awaySince"
         static let roster = "libre.roster"
         static let personName = "pasa.personName"
         static let directory = "pasa.directory"
@@ -113,8 +133,6 @@ final class MeshService: ObservableObject {
 
     /// Peers that are not linked and have not been seen for this long leave the peer strip.
     static let stalePeerAfter: TimeInterval = 60
-
-    static let defaultAdmins = ["iPhone 14 Pro Max"]
 
     init() {
         let store = UserDefaults.standard
@@ -130,11 +148,20 @@ final class MeshService: ObservableObject {
         let engineChoice = AIEngine(rawValue: store.string(forKey: Keys.engine) ?? "") ?? .assistant
         let model = store.string(forKey: Keys.model) ?? OllamaClient.defaultModel
         let fallback = store.string(forKey: Keys.fallback) ?? OllamaClient.defaultFallbackModel
-        let admins = store.stringArray(forKey: Keys.admins) ?? MeshService.defaultAdmins
         let rosterMap = (store.dictionary(forKey: Keys.roster) as? [String: String]) ?? [:]
         let person = PeopleDirectory.clean(store.string(forKey: Keys.personName) ?? "")
         var dir = (store.dictionary(forKey: Keys.directory) as? [String: String]) ?? [:]
         if !person.isEmpty { dir[name] = person }
+        let admins: [String]
+        if let stored = store.stringArray(forKey: Keys.admins) {
+            admins = stored
+        } else {
+            // One-time migration: keep old entries only if they are a known device id.
+            admins = AdminPolicy.migrate(legacy: store.stringArray(forKey: Keys.legacyAdmins) ?? [], knownDevices: Set(dir.keys))
+            store.set(admins, forKey: Keys.admins)
+        }
+        let cleared = store.object(forKey: Keys.clearedAt) as? Date
+        let away = store.object(forKey: Keys.awaySince) as? Date
 
         #if os(macOS)
         let fileName = "org-memory.json"   // source of truth
@@ -153,7 +180,7 @@ final class MeshService: ObservableObject {
                 dir[entry.message.origin] = sender
             }
         }
-        let mem = OrgMemory(fileURL: MeshService.storageURL(fileName), admins: MeshService.adminDevices(admins, selfName: name, directory: dir))
+        let mem = OrgMemory(fileURL: MeshService.storageURL(fileName), admins: AdminPolicy.devices(adminIDs: admins, selfID: name))
         let relay = RelayEngine(selfName: name, roles: ai ? [MeshDestination.aiRole] : [])
         relay.senderName = person.isEmpty ? nil : person
         relay.restoreOutbox(saved.outbox)
@@ -165,7 +192,9 @@ final class MeshService: ObservableObject {
         aiEngine = engineChoice
         ollamaModel = model
         ollamaFallbackModel = fallback
-        adminNames = admins
+        adminDevices = admins
+        clearedAt = cleared
+        awaySince = away
         roster = rosterMap
         memory = mem
         org = mem.snapshot
@@ -174,7 +203,7 @@ final class MeshService: ObservableObject {
         directory = dir
         timelineURL = url
         timelineLimit = limit
-        entries = saved.entries
+        entries = TimelineStore.dropping(saved.entries, before: cleared)
         outboxCount = relay.outbox.count
 
         #if os(macOS)
@@ -186,13 +215,9 @@ final class MeshService: ObservableObject {
             knownDevices: Array(Set(rosterMap.values).union(dir.keys)).sorted()
         )
         brain.directory = dir
+        brain.clearedAt = cleared
         assistant = brain
         #endif
-    }
-
-    /// Admin device ids: listed devices, devices whose chosen name is listed, and this device.
-    static func adminDevices(_ admins: [String], selfName: String, directory: [String: String]) -> Set<String> {
-        Set(admins).union([selfName]).union(PeopleDirectory.devices(named: admins, directory: directory))
     }
 
     static func defaultDeviceName() -> String {
@@ -255,6 +280,20 @@ final class MeshService: ObservableObject {
 
     var rosterText: String { Roster.format(roster) }
 
+    /// "Forced relay mode: no direct link to Site Office" while any block is active.
+    var forcedRelayBadge: String? {
+        ForcedRelayStatus.badge(blocked: blocked.map { label(for: $0) })
+    }
+
+    /// Devices the Mac can tick as admins: every device it has seen, labelled by name in the UI.
+    var adminCandidates: [String] {
+        AdminPolicy.candidates(seen: Array(peerStates.keys), directory: directory, admins: adminDevices, selfID: displayName)
+    }
+
+    func isAdminDevice(_ device: String) -> Bool {
+        device == displayName || adminDevices.contains(device)
+    }
+
     // MARK: Lifecycle
 
     func start() {
@@ -272,6 +311,8 @@ final class MeshService: ObservableObject {
         newTransport.start()
         startHousekeeping()
         #if os(macOS)
+        updateAwakeActivity()
+        startOllamaWatch()
         checkOllama()
         #endif
     }
@@ -282,6 +323,11 @@ final class MeshService: ObservableObject {
         peerStates.removeAll()
         housekeeping?.invalidate()
         housekeeping = nil
+        #if os(macOS)
+        ollamaTimer?.invalidate()
+        ollamaTimer = nil
+        endAwakeActivity()
+        #endif
     }
 
     /// App came back to the foreground: restart discovery, send what is queued, catch up.
@@ -290,7 +336,20 @@ final class MeshService: ObservableObject {
         if connectedCount > 0 {
             flushOutbox()
             requestBackfill()
+            isAway = false
         }
+    }
+
+    /// App left the foreground (iOS suspends it and drops links): remember when, for catch-ups.
+    func appWentToBackground() {
+        markAway()
+    }
+
+    private func markAway(at now: Date = Date()) {
+        guard !isAway, !isAIPeer else { return }
+        isAway = true
+        awaySince = now
+        defaults.set(now, forKey: Keys.awaySince)
     }
 
     /// Every 5 s: drop stale peers from the strip and retry the outbox if a link is up.
@@ -312,6 +371,13 @@ final class MeshService: ObservableObject {
         }.map { $0.key }
         for name in stale { peerStates.removeValue(forKey: name) }
         if !engine.outbox.isEmpty && connectedCount > 0 { flushOutbox() }
+        refreshWaitingAsks(now: now)
+    }
+
+    private func refreshWaitingAsks(now: Date = Date()) {
+        sentAsks = AskWatch.pruned(sentAsks, now: now)
+        let waiting = AskWatch.waiting(sentAsks, now: now)
+        if waiting != waitingAsks { waitingAsks = waiting }
     }
 
     // MARK: Persistence
@@ -354,7 +420,7 @@ final class MeshService: ObservableObject {
         guard let name = name.map(PeopleDirectory.clean), !name.isEmpty, directory[device] != name else { return }
         directory[device] = name
         defaults.set(directory, forKey: Keys.directory)
-        memory.admins = MeshService.adminDevices(adminNames, selfName: displayName, directory: directory)
+        // Admin rights do not change here: they follow device ids, never names.
         #if os(macOS)
         assistant.directory = directory
         refreshKnownDevices()
@@ -375,7 +441,7 @@ final class MeshService: ObservableObject {
             directory[clean] = personName
             defaults.set(directory, forKey: Keys.directory)
         }
-        memory.admins = MeshService.adminDevices(adminNames, selfName: clean, directory: directory)
+        memory.admins = AdminPolicy.devices(adminIDs: adminDevices, selfID: clean)
         #if os(macOS)
         assistant.selfName = clean
         assistant.directory = directory
@@ -388,12 +454,33 @@ final class MeshService: ObservableObject {
         guard !clean.isEmpty, clean != displayName else { return }
         if isBlocked { blocked.insert(clean) } else { blocked.remove(clean) }
         defaults.set(Array(blocked).sorted(), forKey: Keys.blocked)
+        // The transport also drops an existing direct link with a newly blocked peer.
         transport?.setBlocked(blocked)
     }
 
+    /// Clears this device's timeline and records a watermark so backfill and catch-ups never
+    /// bring the old messages back. On the AI Mac this clears the whole team's timeline: linked
+    /// phones drop older messages now, the rest on their next link.
     func clearTimeline() {
+        let now = Date()
         entries.removeAll()
         sentAsks.removeAll()
+        waitingAsks.removeAll()
+        clearedAt = now
+        defaults.set(now, forKey: Keys.clearedAt)
+        #if os(macOS)
+        assistant.clearedAt = now
+        if isAIPeer { pushManifestToLinkedPeers() }
+        #endif
+    }
+
+    /// Phone side: adopt the AI Mac's team-wide clear (only ever moves the watermark forward).
+    private func adoptClear(_ macClearedAt: Date?) {
+        guard let macClearedAt, macClearedAt > (clearedAt ?? .distantPast) else { return }
+        clearedAt = macClearedAt
+        defaults.set(macClearedAt, forKey: Keys.clearedAt)
+        let kept = TimelineStore.dropping(entries, before: macClearedAt)
+        if kept.count != entries.count { entries = kept }
     }
 
     /// Delete (retire) a rule from the Rules tab. On the AI Mac this happens right away (the Mac
@@ -411,28 +498,113 @@ final class MeshService: ObservableObject {
         send("\(AssistantMention.primary) delete rule: \(rule.title)")
     }
 
+    /// Lock or unlock a rule. On the AI Mac this happens right away; on a phone it becomes
+    /// "@pasa lock rule: <title>" and the Mac checks that the phone is an admin device.
+    func setRuleLocked(_ rule: RuleEntry, locked: Bool) {
+        #if os(macOS)
+        if isAIPeer {
+            if case .updated(let changed) = memory.setLocked(title: rule.title, locked: locked, by: displayName) {
+                broadcastRule(changed)
+            }
+            refreshOrg()
+            return
+        }
+        #endif
+        send("\(AssistantMention.primary) \(locked ? "lock" : "unlock") rule: \(rule.title)")
+    }
+
     #if os(macOS)
     func setAIPeer(_ on: Bool) {
         isAIPeer = on
         defaults.set(on, forKey: Keys.aiPeer)
         engine.roles = on ? [MeshDestination.aiRole] : []
+        updateAwakeActivity()
+        if on { checkOllama() }
     }
 
-    func updateAssistantSettings(engine newEngine: AIEngine, model: String, fallback: String, admins adminText: String, rosterText: String) {
+    /// Ticks or unticks a device id as admin (Mac Settings). Names are never used.
+    func setAdmin(_ device: String, _ on: Bool) {
+        let clean = device.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean != displayName else { return }
+        var ids = adminDevices.filter { $0 != clean }
+        if on { ids.append(clean) }
+        adminDevices = ids.sorted()
+        defaults.set(adminDevices, forKey: Keys.admins)
+        memory.admins = AdminPolicy.devices(adminIDs: adminDevices, selfID: displayName)
+    }
+
+    // MARK: Keep the AI peer awake and warm
+
+    /// While this Mac is the AI peer: no idle sleep and no App Nap (closing the lid still sleeps).
+    private func updateAwakeActivity() {
+        if isAIPeer && transport != nil {
+            guard awakeActivity == nil else { return }
+            awakeActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled],
+                reason: "Pasa is the team's AI peer: answering the mesh and keeping the model warm"
+            )
+        } else {
+            endAwakeActivity()
+        }
+    }
+
+    private func endAwakeActivity() {
+        if let activity = awakeActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            awakeActivity = nil
+        }
+    }
+
+    /// Every 60 s: if Ollama was not ready, check again (and warm up when it appears); if the
+    /// model is loaded, refresh keep_alive every 10 minutes so it stays loaded while Pasa runs.
+    private func startOllamaWatch() {
+        ollamaTimer?.invalidate()
+        ollamaTimer = Timer.scheduledTimer(withTimeInterval: WarmthPolicy.tickEvery, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.ollamaTick()
+                }
+            }
+        }
+    }
+
+    private func ollamaTick() {
+        guard isAIPeer, aiEngine != .echo else { return }
+        switch WarmthPolicy.next(ready: modelWarm, busy: ollamaBusy, lastWarm: lastWarm) {
+        case .check: checkOllama()
+        case .refresh: refreshWarm()
+        case .wait: break
+        }
+    }
+
+    private func refreshWarm() {
+        let client = makeClient()
+        ollamaBusy = true
+        Task { [weak self] in
+            do {
+                _ = try await client.warmUp()
+                self?.lastWarm = Date()
+            } catch {
+                let why = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+                self?.modelWarm = false
+                self?.ollamaStatus = "Model went cold or Ollama stopped: \(why) Checking again every minute."
+            }
+            self?.ollamaBusy = false
+        }
+    }
+
+    func updateAssistantSettings(engine newEngine: AIEngine, model: String, fallback: String, rosterText: String) {
         let cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         aiEngine = newEngine
         ollamaModel = cleanModel.isEmpty ? OllamaClient.defaultModel : cleanModel
         ollamaFallbackModel = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
-        adminNames = adminText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         roster = Roster.parse(rosterText)
 
         defaults.set(newEngine.rawValue, forKey: Keys.engine)
         defaults.set(ollamaModel, forKey: Keys.model)
         defaults.set(ollamaFallbackModel, forKey: Keys.fallback)
-        defaults.set(adminNames, forKey: Keys.admins)
         defaults.set(roster, forKey: Keys.roster)
 
-        memory.admins = MeshService.adminDevices(adminNames, selfName: displayName, directory: directory)
         assistant.llm = makeClient()
         assistant.roster = roster
         refreshKnownDevices()
@@ -450,10 +622,13 @@ final class MeshService: ObservableObject {
     /// Health check: is Ollama up and is the model installed? If so, warm the model up so the
     /// first real question does not pay the ~25 s load (keep_alive keeps it loaded for 30 min).
     func checkOllama() {
+        guard !ollamaBusy else { return }
         let client = makeClient()
         ollamaStatus = "Checking Ollama..."
         modelWarm = false
+        ollamaBusy = true
         Task { [weak self] in
+            defer { self?.ollamaBusy = false }
             var status: String
             var canWarm = false
             do {
@@ -478,8 +653,9 @@ final class MeshService: ObservableObject {
             do {
                 let loaded = try await client.warmUp()
                 let seconds = Date().timeIntervalSince(started)
-                self?.ollamaStatus = "Ready. \(loaded) loaded in \(String(format: "%.1f", seconds)) s and kept warm for \(OllamaClient.keepAlive)."
+                self?.ollamaStatus = "Ready. \(loaded) loaded in \(String(format: "%.1f", seconds)) s. Kept warm while Pasa runs (checked every minute)."
                 self?.modelWarm = true
+                self?.lastWarm = Date()
             } catch {
                 let why = (error as? LLMError)?.errorDescription ?? error.localizedDescription
                 self?.ollamaStatus = status + " Warm-up failed: \(why)"
@@ -495,17 +671,25 @@ final class MeshService: ObservableObject {
         refreshOrg()
     }
 
-    func setRuleLocked(_ rule: RuleEntry, locked: Bool) {
-        if case .updated(let changed) = memory.setLocked(title: rule.title, locked: locked, by: displayName) {
-            broadcastRule(changed)
-        }
-        refreshOrg()
-    }
-
+    /// Erases team memory on the Mac. Linked phones drop their cached rules and tasks now (the
+    /// manifest lists nothing), the rest on their next link.
     func resetMemory() {
         memory.reset()
         assistantLog.removeAll()
         refreshOrg()
+        pushManifestToLinkedPeers()
+    }
+
+    private func pushManifestToLinkedPeers() {
+        guard isAIPeer else { return }
+        for (name, state) in peerStates where state == .connected && !blocked.contains(name) {
+            sendManifest(to: name)
+        }
+    }
+
+    private func sendManifest(to device: String) {
+        guard let body = SyncPayload(manifest: memory.manifest(clearedAt: clearedAt)).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), excluding: [])
     }
     #endif
 
@@ -529,14 +713,18 @@ final class MeshService: ObservableObject {
         }
 
         let destination: MeshDestination? = kind == .ask ? .role(MeshDestination.aiRole) : nil
-        let message = engine.makeOutgoing(kind: kind, body: text, destination: destination)
-        if kind == .ask { sentAsks[message.id] = Date() }
+        var message = engine.makeOutgoing(kind: kind, body: text, destination: destination)
+        if kind == .ask {
+            sentAsks[message.id] = Date()
+            // Phones tell the Mac since when they were away (or cleared), for "what did I miss".
+            if !isAIPeer { message.since = CacheSync.latest(awaySince, clearedAt) }
+        }
 
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
 
         #if os(macOS)
         if kind == .chat {
-            memory.recordChat(from: label(for: displayName), text: text, at: message.createdAt)
+            memory.recordChat(from: label(for: displayName), text: text, at: message.createdAt, device: displayName)
         }
         if kind == .ask && isAIPeer {
             // This Mac is the AI peer: answer locally, no mesh needed (Mac-only path for judges).
@@ -599,14 +787,14 @@ final class MeshService: ObservableObject {
     private func requestBackfill() {
         guard !isAIPeer, Date().timeIntervalSince(lastBackfillRequest) > 10 else { return }
         lastBackfillRequest = Date()
-        guard let body = SyncPayload(request: Backfill.request(from: entries)).encoded() else { return }
+        guard let body = SyncPayload(request: Backfill.request(from: entries, clearedAt: clearedAt)).encoded() else { return }
         let message = engine.makeOutgoing(kind: .sync, body: body, destination: .role(MeshDestination.aiRole))
         transmit(message, excluding: [])
     }
 
     /// AI Mac side: send the phone what it missed, at most 200 messages, in small chunks.
     private func serveBackfill(to device: String, request: SyncRequest) {
-        let missing = Backfill.select(from: entries, for: device, request: request)
+        let missing = Backfill.select(from: entries, for: device, request: request, macClearedAt: clearedAt)
         guard !missing.isEmpty else { return }
         let chunks = Backfill.chunk(missing)
         for (index, chunk) in chunks.enumerated() {
@@ -617,19 +805,21 @@ final class MeshService: ObservableObject {
     }
 
     /// Phone side: merge a backfill chunk (dedupe by id, keep time order, update caches).
+    /// Messages older than the clear-timeline watermark are skipped. Rule and task cards only
+    /// show when they changed the cache (the Mac's sync-on-link usually got there first).
     private func applyBackfill(_ batch: SyncBatch) {
         let now = Date()
         var incoming: [ChatEntry] = []
         for m in batch.messages {
             engine.markSeen(m.id, now: now)
+            if let clearedAt, m.createdAt < clearedAt { continue }
             if let name = m.senderName, m.origin != displayName { learn(device: m.origin, name: name) }
+            if !isAIPeer && (m.kind == .task || m.kind == .rule) {
+                guard CacheSync.applyCard(m, to: memory).show else { continue }
+            }
             let mine = m.origin == displayName
             incoming.append(ChatEntry(id: m.id, message: m, direction: mine ? .sent : .received, receivedAt: now,
                                       sentTo: mine ? ["synced from the AI peer"] : [], backfilled: true))
-            if !isAIPeer {
-                if m.kind == .task, let task = MeshPayload.decodeTask(m.body) { memory.mergeTask(task) }
-                if m.kind == .rule, let rule = MeshPayload.decodeRule(m.body) { memory.mergeRule(rule) }
-            }
         }
         let merged = TimelineStore.mergeBackfill(entries, incoming)
         if merged.added > 0 { entries = merged.entries }
@@ -650,15 +840,18 @@ final class MeshService: ObservableObject {
                 peerStates.removeValue(forKey: name)
             }
         case .state(let name, let state):
+            let linkedBefore = connectedCount
             peerStates[name] = state
             if state == .connected { lastSeen[name] = Date() }
             if state == .connected && !blocked.contains(name) {
+                isAway = false
                 flushOutbox()
                 requestBackfill()
                 #if os(macOS)
                 syncMemory(to: name)
                 #endif
             }
+            if linkedBefore > 0 && connectedCount == 0 { markAway() }
             #if os(macOS)
             refreshKnownDevices()
             #endif
@@ -672,10 +865,14 @@ final class MeshService: ObservableObject {
 
     private func receive(_ data: Data, from sender: String) {
         let message: MeshMessage
-        do {
-            message = try MeshCodec.decode(data)
-        } catch {
-            lastProblem = "Dropped unreadable packet from \(sender)"
+        switch MeshCodec.decodeLenient(data) {
+        case .message(let decoded):
+            message = decoded
+        case .opaque(let packet):
+            relayOpaque(packet, from: sender)
+            return
+        case .unreadable:
+            lastProblem = "Dropped unreadable packet from \(label(for: sender))"
             return
         }
 
@@ -696,32 +893,39 @@ final class MeshService: ObservableObject {
             // Backfill traffic never shows in the timeline.
             guard let payload = SyncPayload.decode(delivered.body) else { return }
             if let request = payload.request, isAIPeer { serveBackfill(to: delivered.origin, request: request) }
+            if let manifest = payload.manifest, !isAIPeer {
+                // The Mac is the source of truth: drop cached rules and tasks it no longer has.
+                CacheSync.applyManifest(manifest, to: memory)
+                adoptClear(manifest.clearedAt)
+                refreshOrg()
+            }
             if let batch = payload.batch { applyBackfill(batch) }
             return
         }
         // Already in the timeline (for example restored from disk, or backfilled): do not repeat it.
         if entries.contains(where: { $0.id == delivered.id }) { return }
 
+        // Phones: a rule or task update only becomes a card when it changed the cached copy and
+        // is not a silent sync-on-link update. Reconnects no longer flood the chat.
+        if !isAIPeer && (delivered.kind == .task || delivered.kind == .rule) {
+            let result = CacheSync.applyCard(delivered, to: memory)
+            if result.changed { refreshOrg() }
+            guard result.show else { return }
+        }
+
         var entry = ChatEntry(id: delivered.id, message: delivered, direction: .received, receivedAt: Date())
         if delivered.kind == .answer, let askID = delivered.replyTo, let askedAt = sentAsks.removeValue(forKey: askID) {
             entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
+            refreshWaitingAsks()
         }
         entries.append(entry)
 
         switch delivered.kind {
         case .task, .rule:
-            // Phones cache what the AI peer shares. The AI peer itself is the source of truth.
-            if !isAIPeer {
-                if delivered.kind == .task, let task = MeshPayload.decodeTask(delivered.body) {
-                    memory.mergeTask(task)
-                } else if delivered.kind == .rule, let rule = MeshPayload.decodeRule(delivered.body) {
-                    memory.mergeRule(rule)
-                }
-                refreshOrg()
-            }
+            break   // phones handled above; the AI peer is the source of truth
         case .chat:
             #if os(macOS)
-            memory.recordChat(from: senderLabel(for: delivered), text: delivered.body, at: delivered.createdAt)
+            memory.recordChat(from: senderLabel(for: delivered), text: delivered.body, at: delivered.createdAt, device: delivered.origin)
             #endif
         case .ask:
             #if os(macOS)
@@ -732,6 +936,17 @@ final class MeshService: ObservableObject {
         }
     }
 
+    /// A packet from a newer Pasa (or an unknown kind): pass it on untouched, never show it.
+    private func relayOpaque(_ packet: OpaquePacket, from sender: String) {
+        let decision = engine.handleIncoming(packet.envelope, from: sender)
+        if decision.isDuplicate { return }
+        if let forward = decision.forward, let data = packet.rewritten(ttl: forward.ttl, hops: forward.hops),
+           let transport, !transport.send(data, excluding: decision.forwardExcluding).isEmpty {
+            relayedCount += 1
+        }
+        lastProblem = "\(label(for: packet.envelope.origin)) runs a newer Pasa (format v\(packet.version)). Its messages are passed on but cannot be shown here. Update Pasa on this device."
+    }
+
     // MARK: AI peer (macOS)
 
     #if os(macOS)
@@ -740,7 +955,7 @@ final class MeshService: ObservableObject {
         case .assistant:
             Task { [weak self] in
                 guard let self else { return }
-                let outcome = await self.assistant.handle(ask.body, from: ask.origin)
+                let outcome = await self.assistant.handle(ask.body, from: ask.origin, since: ask.since)
                 let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
                                     latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond)
                 self.sendAnswer(reply, to: ask, intent: outcome.intent.rawValue, error: outcome.error)
@@ -788,6 +1003,7 @@ final class MeshService: ObservableObject {
             entry.direction = .received
             if let askedAt = sentAsks.removeValue(forKey: ask.id) {
                 entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
+                refreshWaitingAsks()
             }
         } else {
             entry.sentTo = transmit(message, excluding: [])
@@ -825,17 +1041,24 @@ final class MeshService: ObservableObject {
         entries.append(entry)
     }
 
-    /// When a device links, send it the rules and its open tasks so its cache catches up.
+    /// When a device links: send the manifest (so stale cached rules and tasks are dropped and a
+    /// team-wide clear sticks), then the rules and its open tasks as silent updates. Silent
+    /// updates refresh the phone's cache without adding cards to its timeline.
     private func syncMemory(to device: String) {
         guard isAIPeer else { return }
+        sendManifest(to: device)
         // allRules includes tombstones, so a phone still caching a deleted rule drops it.
         for rule in memory.allRules.suffix(60) {
             guard let body = MeshPayload.encode(rule.meshSummary) else { continue }
-            transmit(engine.makeOutgoing(kind: .rule, body: body, destination: .peer(device)), excluding: [])
+            var message = engine.makeOutgoing(kind: .rule, body: body, destination: .peer(device))
+            message.silent = true
+            transmit(message, excluding: [])
         }
         for task in memory.tasks(forDevice: device, roster: roster).prefix(30) {
             guard let body = MeshPayload.encode(task) else { continue }
-            transmit(engine.makeOutgoing(kind: .task, body: body, destination: .peer(device)), excluding: [])
+            var message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
+            message.silent = true
+            transmit(message, excluding: [])
         }
     }
     #endif

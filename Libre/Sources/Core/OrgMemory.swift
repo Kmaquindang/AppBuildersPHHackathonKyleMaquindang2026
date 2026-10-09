@@ -340,22 +340,45 @@ public final class OrgMemory {
 
     // MARK: Chat log (what the Mac has seen over the mesh)
 
-    public func recordChat(from: String, text: String, at: Date = Date()) {
-        snapshot.chatLog.append(ChatLogLine(from: from, text: text, at: at))
+    public func recordChat(from: String, text: String, at: Date = Date(), device: String? = nil) {
+        snapshot.chatLog.append(ChatLogLine(from: from, text: text, at: at, device: device))
         if snapshot.chatLog.count > maxChatLog {
             snapshot.chatLog.removeFirst(snapshot.chatLog.count - maxChatLog)
         }
         save()
     }
 
-    public func recentChat(limit: Int) -> [ChatLogLine] {
-        Array(snapshot.chatLog.suffix(limit))
+    public func recentChat(limit: Int, after floor: Date? = nil) -> [ChatLogLine] {
+        let lines = floor.map { cutoff in snapshot.chatLog.filter { $0.at > cutoff } } ?? snapshot.chatLog
+        return Array(lines.suffix(limit))
     }
 
-    /// Wipes everything (used by tests and the Mac "Reset memory" button).
-    public func reset() {
+    /// Wipes everything (used by tests and the Mac "Reset memory" button) and records when, so
+    /// phones drop their cached copy on the next link.
+    public func reset(now: Date = Date()) {
         snapshot = OrgSnapshot()
+        snapshot.resetAt = now
         save()
+    }
+
+    /// What the Mac holds right now, sent to a phone when it links so the phone can drop cached
+    /// rules and tasks the Mac no longer has (after a reset, or a rule re-created under a new id).
+    public func manifest(clearedAt: Date?, maxTasks: Int = 300) -> MemoryManifest {
+        MemoryManifest(ruleIDs: snapshot.rules.map { $0.id },
+                       taskIDs: snapshot.tasks.suffix(maxTasks).map { $0.id },
+                       resetAt: snapshot.resetAt,
+                       clearedAt: clearedAt)
+    }
+
+    /// Phone side: keep only rules and tasks the Mac still has. Returns true when something was dropped.
+    @discardableResult
+    public func prune(keepingRuleIDs ruleIDs: Set<UUID>, taskIDs: Set<UUID>) -> Bool {
+        let before = (snapshot.rules.count, snapshot.tasks.count)
+        snapshot.rules.removeAll { !ruleIDs.contains($0.id) }
+        snapshot.tasks.removeAll { !taskIDs.contains($0.id) }
+        let changed = before != (snapshot.rules.count, snapshot.tasks.count)
+        if changed { save() }
+        return changed
     }
 }
 
