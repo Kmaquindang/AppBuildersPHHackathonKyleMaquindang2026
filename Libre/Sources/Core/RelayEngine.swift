@@ -41,6 +41,8 @@ public final class RelayEngine {
     /// Tag of this device's active room. A sealed packet of another room is never "for" one of
     /// our roles, so an "@ai" ask from room B passes through room A's AI Mac to room B's.
     public var roomID: String?
+    /// Multi-room AI Mac: more rooms whose "@ai" asks this device answers.
+    public var extraRoomIDs: Set<String> = []
     /// Chosen display name stamped on every outgoing message (nil until the person picks one).
     public var senderName: String?
 
@@ -85,7 +87,7 @@ public final class RelayEngine {
         switch destination {
         case .peer(let name): return name == selfName
         case .role(let role):
-            if message.kind == .sealed, let roomID, message.room != roomID { return false }
+            if message.kind == .sealed, let roomID, message.room != roomID, !extraRoomIDs.contains(message.room ?? "") { return false }
             return roles.contains(role)
         }
     }

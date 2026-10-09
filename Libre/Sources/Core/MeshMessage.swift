@@ -19,6 +19,10 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case chunk      // one piece of a media file (MediaChunk); never shown
     case mediaNack  // "send me these chunks again" (MediaNack); never shown
     case transcript // text of a voice note (TranscriptPayload), replyTo = the media message id
+    // Multi-room (Oct 9 night):
+    case roomControl // signed manifest, join request or "send me the manifest" (sealed with the base key)
+    case beacon      // CLEAR: signed "this room exists" for the Nearby rooms list (no key, no passcode)
+    case aiStatus    // CLEAR: signed AI Mac status (awake or asleep, model, queue depth, rooms served)
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.
@@ -86,6 +90,11 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var room: String?
     /// Protocol v2: ChaCha20-Poly1305 box (base64url) holding the real message.
     public var sealed: String?
+    /// Room key epoch the packet is sealed with (nil means 0, the base key). Clear, bound to the box.
+    public var epoch: Int?
+    /// For asks resent after the AI Mac woke up: id of the original ask. The Mac answers each
+    /// original id once and re-delivers the stored answer for repeats.
+    public var retryOf: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -135,6 +144,9 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
 
     /// Human readable path, for example "iPhone 12 -> iPhone 14 Pro Max -> MacBook Air".
     public var pathDescription: String { hops.joined(separator: " -> ") }
+
+    /// Id the AI Mac dedupes asks by.
+    public var askKey: UUID { retryOf ?? id }
 
     /// True when the message is a broadcast (no destination).
     public var isBroadcast: Bool { destination == nil }

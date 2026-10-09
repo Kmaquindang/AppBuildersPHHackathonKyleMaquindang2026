@@ -53,7 +53,10 @@ public final class ExecutiveAssistant {
     /// The Mac cleared the team timeline at this time: catch-ups never include older chat.
     public var clearedAt: Date?
 
+    /// "@pasa more" text, keyed by room and asker so rooms never see each other's leftovers.
     private var pendingMore: [String: String] = [:]
+    /// Room the next handle() call answers in (multi-room AI Mac).
+    public private(set) var roomKey = ""
 
     /// Room switch: ground on the new room's memory only, and forget "more" text from the old one.
     public func switchRoom(memory newMemory: OrgMemory, clearedAt newClearedAt: Date?) {
@@ -61,6 +64,16 @@ public final class ExecutiveAssistant {
         clearedAt = newClearedAt
         pendingMore.removeAll()
     }
+
+    /// Multi-room AI Mac: answer the next ask from this room's memory. Keeps every room's
+    /// pending "more" text (keyed by room and asker).
+    public func serve(room: String, memory newMemory: OrgMemory, clearedAt newClearedAt: Date?) {
+        roomKey = room
+        memory = newMemory
+        clearedAt = newClearedAt
+    }
+
+    private func moreKey(_ asker: String) -> String { roomKey + "|" + asker }
 
     public init(memory: OrgMemory, llm: any LLMClient, selfName: String, roster: [String: String] = [:], knownDevices: [String] = []) {
         self.memory = memory
@@ -137,7 +150,7 @@ public final class ExecutiveAssistant {
 
         switch plan.kind {
         case .more:
-            if let rest = pendingMore.removeValue(forKey: asker) {
+            if let rest = pendingMore.removeValue(forKey: moreKey(asker)) {
                 return finish(rest, intent: .more, started: started, tracker: tracker, asker: asker)
             }
             reply = "Nothing more to show."
@@ -341,9 +354,9 @@ public final class ExecutiveAssistant {
     private func finish(_ text: String, intent: IntentKind, started: Date, tracker: CallTracker, asker: String) -> AssistantOutcome {
         let parts = Compactor.split(text)
         if let rest = parts.rest {
-            pendingMore[asker] = rest
+            pendingMore[moreKey(asker)] = rest
         } else {
-            pendingMore.removeValue(forKey: asker)
+            pendingMore.removeValue(forKey: moreKey(asker))
         }
         return AssistantOutcome(
             intent: intent,

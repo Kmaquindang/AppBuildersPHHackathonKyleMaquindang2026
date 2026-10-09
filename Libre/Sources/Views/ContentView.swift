@@ -79,12 +79,8 @@ struct StatusHeader: View {
                 Text("You are \(mesh.displayName)")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(mesh.activeRoom.isDefault ? "Default room" : "Room \(mesh.activeRoom.label)")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background((mesh.activeRoom.isDefault ? Color.gray : Color.green).opacity(0.2), in: Capsule())
-                    .lineLimit(1)
+                RoomSwitcherChip()
+                AIStatusChip()
                 if mesh.isAIPeer {
                     Text("AI peer")
                         .font(.caption2.weight(.bold))
@@ -101,6 +97,12 @@ struct StatusHeader: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+            }
+            if let blocker = mesh.activeRoom.sendBlocker {
+                Label(blocker, systemImage: "lock")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
             }
             if let badge = mesh.forcedRelayBadge {
                 Label(badge, systemImage: "arrow.triangle.branch")
@@ -121,6 +123,69 @@ struct StatusHeader: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+}
+
+/// Header chip: active room with member count and cap; tap to switch rooms quickly.
+struct RoomSwitcherChip: View {
+    @EnvironmentObject private var mesh: MeshService
+
+    private var title: String {
+        let name = mesh.activeRoom.isDefault ? "Default room" : "Room \(mesh.activeRoom.label)"
+        if let count = mesh.roomCountText { return "\(name) \(count)" }
+        return name
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(mesh.joinedRooms) { room in
+                Button {
+                    mesh.activateRoom(room.id)
+                } label: {
+                    if room.id == mesh.activeRoom.id {
+                        Label(room.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(room.isClosed ? "\(room.displayName) (closed)" : room.displayName)
+                    }
+                }
+            }
+        } label: {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background((mesh.activeRoom.isDefault ? Color.gray : (mesh.activeRoom.canSend ? Color.green : Color.orange)).opacity(0.2), in: Capsule())
+                .lineLimit(1)
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        #endif
+        .fixedSize()
+        .accessibilityLabel("Switch room. Now in \(title)")
+    }
+}
+
+/// Header chip: AI Mac Awake, Asleep, Offline or not in this room.
+struct AIStatusChip: View {
+    @EnvironmentObject private var mesh: MeshService
+
+    private var color: Color {
+        switch mesh.aiAvailability {
+        case .awake: return .green
+        case .asleep: return .orange
+        case .offline, .unknown: return .gray
+        case .notServing: return .yellow
+        }
+    }
+
+    var body: some View {
+        Text("AI \(mesh.aiAvailability.rawValue)")
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.2), in: Capsule())
+            .lineLimit(1)
+            .accessibilityLabel("AI Mac status: \(mesh.aiAvailability.rawValue)")
     }
 }
 
@@ -183,7 +248,17 @@ struct NameOnboardingView: View {
                         return
                     }
                 } else {
-                    guard await mesh.joinRoom(name: roomName, passcode: passcode) != nil else {
+                    if let beacon = mesh.nearbyRooms.first(where: { $0.beacon.label == Room.cleanLabel(roomName) })?.beacon {
+                        switch await mesh.joinNearby(beacon, passcode: passcode) {
+                        case .joined: break
+                        case .wrongPasscode:
+                            roomError = "Wrong passcode for \(beacon.label). Ask the room admin."
+                            return
+                        case .failed:
+                            roomError = "Could not join. Check the room name and passcode."
+                            return
+                        }
+                    } else if await mesh.joinRoom(name: roomName, passcode: passcode) == nil {
                         roomError = "Could not join. Check the room name and passcode."
                         return
                     }
