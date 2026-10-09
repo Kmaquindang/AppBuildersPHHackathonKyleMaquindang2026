@@ -60,8 +60,10 @@ public struct OllamaClient: LLMClient {
     // MARK: Internals
 
     /// Qwen3 and other thinking models answer faster with thinking off.
+    /// Instruct-only variants (for example qwen3:4b-instruct) have no thinking switch, so "think" is not sent.
     static func usesThinking(_ model: String) -> Bool {
         let m = model.lowercased()
+        if m.contains("instruct") { return false }
         return m.hasPrefix("qwen3") || m.contains("deepseek-r1") || m.contains("gpt-oss")
     }
 

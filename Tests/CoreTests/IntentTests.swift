@@ -42,6 +42,7 @@ func runIntentTests() {
 
     // Ollama request shaping.
     check(OllamaClient.usesThinking("qwen3:8b") && !OllamaClient.usesThinking("llama3.2:3b"), "thinking models detected")
+    check(!OllamaClient.usesThinking("qwen3:4b-instruct"), "instruct variant gets no think flag")
     let prepared = OllamaClient.prepare([.system("s"), .user("hi")], model: "qwen3:4b")
     check(prepared[1].content.hasPrefix("/no_think\n") && prepared[0].content == "s", "/no_think added to user turns only")
     check(OllamaClient.prepare([.user("hi")], model: "llama3.2")[0].content == "hi", "non-qwen untouched")

@@ -1,6 +1,6 @@
-# Libre setup (milestone 1: prove the mesh)
+# Libre setup (milestones 1 and 2)
 
-Milestone 1 is a SwiftUI app for iPhone and Mac. Devices find each other with no internet, pass messages through our own multi-hop relay layer, and show the hop path and timing on every message. The Mac can act as the AI peer (an echo stub for now; a local model through Ollama arrives in milestone 2).
+Libre is a SwiftUI app for iPhone and Mac. Devices find each other with no internet, pass messages through our own multi-hop relay layer, and show the hop path and timing on every message (milestone 1). The Mac is the AI peer: a team executive assistant running a local model through Ollama (milestone 2).
 
 You need: a Mac with Xcode 15 or newer, a free Apple ID, and (optionally) one or two iPhones on iOS 17 or newer with a cable.
 
@@ -58,24 +58,53 @@ Use this if XcodeGen is not available.
    - `Round trip ... ms (measured on this device)`
 7. Store and forward: put iPhone 12 out of range (or close the app on the other two), send a message, and see it marked **Queued**. Bring the devices back and it is sent as soon as a peer links.
 
+## Milestone 2: the AI executive assistant (Mac)
+
+### One-time setup (needs internet once)
+1. Install Ollama from https://ollama.com/download and open it (a llama icon appears in the menu bar).
+2. In Terminal run `ollama pull qwen3:8b` (5.2 GB). Optional fallback: `ollama pull qwen3:4b` (2.5 GB). If the 4B model feels slow because it keeps "thinking", use `qwen3:4b-instruct` instead and enter that name in Settings.
+3. Check it works: `ollama run qwen3:8b "say hi"` then type `/bye`.
+
+### In the app
+1. Run Libre on the Mac. Open Settings > AI peer: Engine = Executive assistant, model `qwen3:8b`, fallback `qwen3:4b`. Admin devices default to `iPhone 14 Pro Max` (this Mac is always an admin).
+2. In Team roster add one line per person, for example `Ana = iPhone 12` and `Kyle = iPhone 14 Pro Max`. Tap **Save AI settings**. The status line should say `Ollama running. Using qwen3:8b.`
+3. Open the **Assistant** tab on the Mac to watch every ask, the reply, the model, the latency in ms and the tokens per second.
+4. From iPhone 12 (Ask AI mode, or type `@libre` first):
+   - `save rule: No site visits after 5 PM` gives `Saved [Rule: No site visits after 5 PM v1]`, and the rule appears in every device's Rules tab.
+   - `update rule No site visits after 5 PM: No site visits after 6 PM` from iPhone 12 is refused (not an admin). The same message from iPhone 14 Pro Max creates v2 and keeps v1 in history.
+   - `remind Ana to order cement Friday` creates the task, and it pops up on iPhone 12 (Ana's device) as a green Task row and in its Tasks tab.
+   - `can I visit the site at 6 PM?` answers with a citation such as `[Rule: No site visits after 5 PM v2]`.
+   - Send a few normal chats, then tap **What did I miss?** on another phone for a 3-line catch-up.
+   - `my tasks`, `team tasks`, `the cement is ordered` (marks it done), `more` (rest of a long answer).
+   - Paste a long meeting transcript, or start a message with `notes:`. You get decisions, action items, and tasks created and sent to the right phones.
+5. If Ollama is not running, the reply says `Start Ollama on the Mac ...`. Open the Ollama app and ask again.
+
+### Where the data lives
+- Mac (source of truth): `~/Library/Containers/com.kmaquindang.libre.mac/Data/Library/Application Support/Libre/org-memory.json`
+- Phones: a read-only cache in the app's Application Support folder (`org-cache.json`).
+- Settings > AI peer > Reset team memory erases the Mac copy.
+
 ## Mac-only test (no iPhones)
 
 1. Run **Libre-macOS**. Switch to **Ask AI** and send a question. The Mac answers itself through the local AI path (0 hops), which tests the AI seam.
 2. For a real mesh with only Macs, run the app on two Macs near each other. MultipeerConnectivity works Mac to Mac.
 
-## Run the relay unit tests
+## Run the core unit tests
 
-The relay logic is pure Swift with no Apple frameworks:
+The relay, team memory and assistant logic are pure Swift with no Apple frameworks. The assistant tests use a scripted fake model, so Ollama is not needed:
 
 ```
 ./scripts/test-relay.sh
 ```
 
-It compiles `MeshMessage.swift`, `RelayEngine.swift` and the test runner with `swiftc` and prints `RelayEngine tests: N passed, 0 failed`.
+It compiles `Libre/Sources/Core`, `Libre/Sources/AI` and the test runner with `swiftc` and prints `Libre core tests: N passed, 0 failed`.
 
 ## Troubleshooting
 
 - **Peers never appear:** check Local Network permission on every device, make sure Wi-Fi is on, and that every device has a different name. On the Mac, confirm the App Sandbox network boxes are ticked.
 - **"Advertising failed" or "Browsing failed" in red under the header:** the Bonjour services in Info.plist do not match `_libre-mesh._tcp` and `_libre-mesh._udp`, or Local Network permission was denied.
 - **App will not install on the iPhone after 7 days:** free Personal Team profiles expire after 7 days. Run from Xcode again.
+- **"Start Ollama on the Mac":** open the Ollama app, or run `ollama serve` in Terminal.
+- **"Model qwen3:8b is not installed":** run `ollama pull qwen3:8b`, or set the model to one you have (`ollama list`).
+- **First answer is slow:** the model loads into memory on the first request (it then stays loaded for 30 minutes).
 - **Deprecation warnings about MultipeerConnectivity:** expected on newer Xcode versions. Apple still ships it; a Network framework transport can replace `MeshTransport.swift` later without touching the relay layer.
