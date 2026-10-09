@@ -1,0 +1,51 @@
+# XcodeGen spec for Libre (https://github.com/yonaskolb/XcodeGen)
+# Generate the Xcode project with:  xcodegen generate
+# Then open Libre.xcodeproj, pick your Team under Signing & Capabilities for both targets, and run.
+name: Libre
+options:
+  bundleIdPrefix: com.kmaquindang
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""   # set your Team in Xcode, or put your Team ID here
+    ENABLE_PREVIEWS: YES
+    GENERATE_INFOPLIST_FILE: NO
+
+targets:
+  Libre-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Libre/Sources
+    settings:
+      base:
+        PRODUCT_NAME: Libre
+        PRODUCT_BUNDLE_IDENTIFIER: com.kmaquindang.libre
+        INFOPLIST_FILE: Libre/Resources/Info-iOS.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+    scheme: {}
+
+  Libre-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: Libre/Sources
+    settings:
+      base:
+        PRODUCT_NAME: Libre
+        PRODUCT_BUNDLE_IDENTIFIER: com.kmaquindang.libre.mac
+        INFOPLIST_FILE: Libre/Resources/Info-macOS.plist
+        CODE_SIGN_ENTITLEMENTS: Libre/Resources/Libre-macOS.entitlements
+    scheme: {}
