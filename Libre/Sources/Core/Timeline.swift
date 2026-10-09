@@ -126,6 +126,12 @@ public enum TimelineStore {
         }
         return (result, added)
     }
+
+    /// Drops entries created before a "clear timeline" watermark.
+    public static func dropping(_ entries: [ChatEntry], before watermark: Date?) -> [ChatEntry] {
+        guard let watermark else { return entries }
+        return entries.filter { $0.message.createdAt >= watermark }
+    }
 }
 
 // MARK: - Backfill over the mesh
@@ -135,10 +141,13 @@ public struct SyncRequest: Codable, Equatable, Sendable {
     public var newest: Date?
     /// Ids of the phone's most recent messages, so the Mac does not resend them.
     public var knownIDs: [UUID]
+    /// The phone cleared its timeline at this time: never send anything older.
+    public var clearedAt: Date?
 
-    public init(newest: Date?, knownIDs: [UUID]) {
+    public init(newest: Date?, knownIDs: [UUID], clearedAt: Date? = nil) {
         self.newest = newest
         self.knownIDs = knownIDs
+        self.clearedAt = clearedAt
     }
 }
 
@@ -154,14 +163,17 @@ public struct SyncBatch: Codable, Equatable, Sendable {
     }
 }
 
-/// Body of a `.sync` mesh message: exactly one of request or batch.
+/// Body of a `.sync` mesh message: one of request, batch or manifest.
 public struct SyncPayload: Codable, Equatable, Sendable {
     public var request: SyncRequest?
     public var batch: SyncBatch?
+    /// Mac to phone on link: what the Mac holds, so stale cached rules and tasks are dropped.
+    public var manifest: MemoryManifest?
 
-    public init(request: SyncRequest? = nil, batch: SyncBatch? = nil) {
+    public init(request: SyncRequest? = nil, batch: SyncBatch? = nil, manifest: MemoryManifest? = nil) {
         self.request = request
         self.batch = batch
+        self.manifest = manifest
     }
 
     public func encoded() -> String? { MeshPayload.encode(self) }
@@ -184,18 +196,21 @@ public enum Backfill {
     /// Kinds that belong in a timeline backfill. Asks are private to the asker and the AI.
     public static let kinds: Set<MessageKind> = [.chat, .answer, .rule, .task]
 
-    public static func request(from entries: [ChatEntry]) -> SyncRequest {
+    public static func request(from entries: [ChatEntry], clearedAt: Date? = nil) -> SyncRequest {
         let relevant = entries.filter { kinds.contains($0.message.kind) || $0.message.kind == .ask }
         let newest = relevant.map { $0.message.createdAt }.max()
         let ids = relevant.suffix(knownIDsInRequest).map { $0.id }
-        return SyncRequest(newest: newest, knownIDs: ids)
+        return SyncRequest(newest: newest, knownIDs: ids, clearedAt: clearedAt)
     }
 
     /// Messages from the Mac's timeline that `device` should have but did not list as known.
     /// Broadcasts and messages addressed to that device only, oldest first, newest `cap` kept.
-    public static func select(from entries: [ChatEntry], for device: String, request: SyncRequest, cap: Int = maxPerSync) -> [MeshMessage] {
+    /// Nothing older than the phone's or the Mac's clear-timeline watermark is sent.
+    public static func select(from entries: [ChatEntry], for device: String, request: SyncRequest,
+                              macClearedAt: Date? = nil, cap: Int = maxPerSync) -> [MeshMessage] {
         let known = Set(request.knownIDs)
         let since = request.newest.map { $0.addingTimeInterval(-slack) }
+        let floor = CacheSync.latest(request.clearedAt, macClearedAt)
         var seen = Set<UUID>()
         var picked: [MeshMessage] = []
         for entry in entries {
@@ -207,6 +222,8 @@ public enum Backfill {
             default: continue
             }
             if let since, m.createdAt < since { continue }
+            if let floor, m.createdAt < floor { continue }
+            if m.silent == true { continue }
             picked.append(m)
         }
         picked.sort { $0.createdAt < $1.createdAt }

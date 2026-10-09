@@ -99,7 +99,9 @@ public enum IntentParser {
         if ["more", "more please", "continue", "go on", "the rest"].contains(norm) {
             return AssistantPlan(kind: .more, fromFastPath: true)
         }
-        if norm.contains("what did i miss") || norm.contains("what i missed") || norm.contains("catch me up") || norm == "summary" || norm == "summarize" {
+        if norm.contains("what did i miss") || norm.contains("what i missed") || norm.contains("catch me up")
+            || norm == "summary" || norm == "summarize" || norm == "recap"
+            || norm.contains("na miss ko") || norm.contains("namiss ko") || norm.contains("nangyari habang wala ako") {
             return AssistantPlan(kind: .summarize, fromFastPath: true)
         }
         if ["my tasks", "my task", "my to dos", "my todos", "my todo", "what are my tasks", "list my tasks", "show my tasks"].contains(norm) {

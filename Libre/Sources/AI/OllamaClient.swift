@@ -7,6 +7,29 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// Mac AI peer: what the 60 s Ollama timer should do next. Pure, tested on Linux.
+public enum WarmthPolicy {
+    public enum Action: Equatable, Sendable {
+        /// Ollama was not ready: run the full health check and warm up if it is there now.
+        case check
+        /// Model is loaded: re-send the warm-up so keep_alive never runs out while Pasa runs.
+        case refresh
+        case wait
+    }
+
+    /// How often a loaded model gets its keep_alive refreshed.
+    public static let refreshEvery: TimeInterval = 600
+    /// How often the timer runs.
+    public static let tickEvery: TimeInterval = 60
+
+    public static func next(ready: Bool, busy: Bool, lastWarm: Date?, now: Date = Date()) -> Action {
+        if busy { return .wait }
+        guard ready else { return .check }
+        guard let lastWarm else { return .refresh }
+        return now.timeIntervalSince(lastWarm) >= refreshEvery ? .refresh : .wait
+    }
+}
+
 public struct OllamaClient: LLMClient {
     public static let defaultBaseURL = URL(string: "http://127.0.0.1:11434")!
     public static let defaultModel = "qwen3:8b"
@@ -59,8 +82,10 @@ public struct OllamaClient: LLMClient {
 
     /// Loads the model into memory ahead of the first question (POST /api/generate with an empty
     /// prompt and keep_alive). The first load takes about 25 s on a MacBook Air M3; after that the
-    /// model stays loaded for `keepAlive`. Returns the model that was loaded.
-    public static let keepAlive = "30m"
+    /// model stays loaded for `keepAlive`. While Pasa runs as the AI peer it re-sends this every
+    /// few minutes (see WarmthPolicy), so the model stays loaded as long as the app runs and is
+    /// unloaded by Ollama about an hour after Pasa quits. Returns the model that was loaded.
+    public static let keepAlive = "60m"
 
     @discardableResult
     public func warmUp() async throws -> String {

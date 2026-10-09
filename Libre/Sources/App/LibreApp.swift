@@ -25,7 +25,20 @@ struct LibreApp: App {
                 }
                 .onChange(of: scenePhase) { _, phase in
                     // iOS drops peer links in the background. Coming back: rediscover, flush, catch up.
-                    if phase == .active { mesh.appBecameActive() }
+                    switch phase {
+                    case .active:
+                        #if os(iOS)
+                        UIApplication.shared.isIdleTimerDisabled = true
+                        #endif
+                        mesh.appBecameActive()
+                    case .background:
+                        #if os(iOS)
+                        UIApplication.shared.isIdleTimerDisabled = false   // save battery while away
+                        #endif
+                        mesh.appWentToBackground()
+                    default:
+                        break
+                    }
                 }
         }
         #if os(macOS)

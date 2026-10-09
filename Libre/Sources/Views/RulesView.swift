@@ -29,19 +29,32 @@ struct RulesView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                Button {
+                                    mesh.setRuleLocked(rule, locked: !rule.locked)
+                                } label: {
+                                    Label(rule.locked ? "Unlock" : "Lock", systemImage: rule.locked ? "lock.open" : "lock")
+                                }
+                                .tint(.orange)
                             }
                             #endif
                     }
                 } footer: {
                     #if os(macOS)
-                    Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(mesh.adminNames.joined(separator: ", ")) and this Mac) can edit, lock, unlock or delete. Every change keeps the older version, and a deleted rule is removed from every phone.")
+                    Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(adminList)) can edit, lock, unlock or delete. Pick admins in Settings by device. Every change keeps the older version, and a deleted rule is removed from every phone.")
                     #else
-                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\". Swipe left to delete (admin devices only; the Mac checks).")
+                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\". Swipe left to delete, lock or unlock (admin devices only; the Mac checks and replies in the chat).")
                     #endif
                 }
             }
             .navigationTitle("Rules")
         }
+    }
+
+    private var adminList: String {
+        (["this Mac"] + mesh.adminDevices.map { device in
+            let name = mesh.label(for: device)
+            return name == device ? device : "\(name) (\(device))"
+        }).joined(separator: ", ")
     }
 }
 

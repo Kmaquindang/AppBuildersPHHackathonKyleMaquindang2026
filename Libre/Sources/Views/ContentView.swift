@@ -96,6 +96,16 @@ struct StatusHeader: View {
                         .foregroundStyle(.orange)
                 }
             }
+            if let badge = mesh.forcedRelayBadge {
+                Label(badge, systemImage: "arrow.triangle.branch")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+                    .lineLimit(1)
+                    .accessibilityLabel(badge)
+            }
             if let problem = mesh.lastProblem {
                 Text(problem)
                     .font(.caption2)
