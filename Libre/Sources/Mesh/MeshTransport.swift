@@ -21,7 +21,7 @@
 // several queues raced CFNetService teardown inside MultipeerConnectivity).
 
 import Foundation
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 
 enum PeerLinkState: String, Sendable {
     case discovered   // seen nearby, not connected
