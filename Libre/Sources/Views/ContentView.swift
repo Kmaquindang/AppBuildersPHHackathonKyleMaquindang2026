@@ -124,12 +124,14 @@ struct StatusHeader: View {
     }
 }
 
-/// First launch: ask for the name everyone will see ("Kyle", "Ana").
+/// First launch: ask for the name everyone will see ("Kyle", "Ana") and pick a room.
 struct NameOnboardingView: View {
     @EnvironmentObject private var mesh: MeshService
     @State private var draft = ""
     @State private var roomChoice: RoomOnboardingPicker.Choice = .open
-    @State private var roomLabel = ""
+    @State private var roomName = ""
+    @State private var passcode = ""
+    @State private var confirm = ""
     @State private var joinText = ""
     @State private var roomError: String?
 
@@ -142,15 +144,17 @@ struct NameOnboardingView: View {
                 .foregroundStyle(.secondary)
             TextField("Your name, for example Kyle", text: $draft)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit(save)
-            RoomOnboardingPicker(choice: $roomChoice, label: $roomLabel, joinText: $joinText)
+            RoomOnboardingPicker(choice: $roomChoice, name: $roomName, passcode: $passcode, confirm: $confirm, joinText: $joinText)
             if let roomError {
                 Text(roomError).font(.caption).foregroundStyle(.red)
             }
-            Button("Continue", action: save)
-                .buttonStyle(.borderedProminent)
-                .disabled(PeopleDirectory.clean(draft).isEmpty || (roomChoice == .join && joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            Text("Device id: \(mesh.displayName). You can change your name later in Settings.")
+            Button(action: save) {
+                BusyLabel(title: "Continue", busy: mesh.roomBusy)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(mesh.roomBusy || PeopleDirectory.clean(draft).isEmpty
+                      || !RoomOnboardingPicker.isReady(choice: roomChoice, name: roomName, passcode: passcode, confirm: confirm, joinText: joinText))
+            Text("Device id: \(mesh.displayName). You can change your name and room later in Settings.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -161,18 +165,31 @@ struct NameOnboardingView: View {
     }
 
     private func save() {
-        guard !PeopleDirectory.clean(draft).isEmpty else { return }
-        switch roomChoice {
-        case .open:
-            break
-        case .create:
-            mesh.createRoom(label: roomLabel)
-        case .join:
-            guard mesh.joinRoom(joinText) else {
-                roomError = "That is not a Pasa room join string. Copy the whole PASA1... text."
-                return
+        guard !PeopleDirectory.clean(draft).isEmpty, !mesh.roomBusy else { return }
+        roomError = nil
+        Task {
+            switch roomChoice {
+            case .open:
+                break
+            case .create:
+                guard await mesh.createRoom(name: roomName, passcode: passcode) != nil else {
+                    roomError = "Could not create the room. Use a name and a passcode of at least \(RoomPasscode.minLength) characters."
+                    return
+                }
+            case .join:
+                if !joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    guard mesh.joinRoom(joinText) else {
+                        roomError = "That is not a Pasa room join string. Copy the whole PASA1... text."
+                        return
+                    }
+                } else {
+                    guard await mesh.joinRoom(name: roomName, passcode: passcode) != nil else {
+                        roomError = "Could not join. Check the room name and passcode."
+                        return
+                    }
+                }
             }
+            mesh.setPersonName(draft)
         }
-        mesh.setPersonName(draft)
     }
 }

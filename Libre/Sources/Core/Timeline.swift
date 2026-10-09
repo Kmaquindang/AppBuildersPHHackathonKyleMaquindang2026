@@ -24,6 +24,8 @@ public struct ChatEntry: Identifiable, Equatable, Codable, Sendable {
     public var roundTripMs: Int?
     /// True when the Mac filled this message in after the device missed it.
     public var backfilled: Bool?
+    /// Voice notes: the transcript made on the Mac (or a note why there is none).
+    public var transcript: String?
 
     public init(id: UUID, message: MeshMessage, direction: Direction, receivedAt: Date,
                 sentTo: [String] = [], roundTripMs: Int? = nil, backfilled: Bool? = nil) {
@@ -194,7 +196,7 @@ public enum Backfill {
     /// Target size of one sync packet (JSON bytes of the messages it carries).
     public static let maxChunkBytes = 12_000
     /// Kinds that belong in a timeline backfill. Asks are private to the asker and the AI.
-    public static let kinds: Set<MessageKind> = [.chat, .answer, .rule, .task]
+    public static let kinds: Set<MessageKind> = [.chat, .answer, .rule, .task, .media, .transcript]
 
     public static func request(from entries: [ChatEntry], clearedAt: Date? = nil) -> SyncRequest {
         let relevant = entries.filter { kinds.contains($0.message.kind) || $0.message.kind == .ask }

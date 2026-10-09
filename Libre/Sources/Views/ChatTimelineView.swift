@@ -96,7 +96,9 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var bubble: some View {
-        if isCard {
+        if message.kind == .media {
+            MediaBubble(entry: entry, isMine: isMine)
+        } else if isCard {
             VStack(alignment: .leading, spacing: 4) {
                 KindBadge(kind: message.kind)
                 Text(MeshPayload.displayText(for: message))
@@ -257,7 +259,8 @@ struct KindBadge: View {
         case .chat: return .blue
         case .ask: return .orange
         case .answer: return .purple
-        case .ack, .sync, .sealed: return .gray
+        case .ack, .sync, .sealed, .chunk, .mediaNack, .transcript: return .gray
+        case .media: return .blue
         case .rule: return .teal
         case .task: return .green
         }

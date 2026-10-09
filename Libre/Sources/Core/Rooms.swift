@@ -1,8 +1,11 @@
 // Rooms.swift
 // Pasa: rooms let unrelated teams share one physical mesh. Pure Swift, tested on Linux.
 //
-// - A room has a human label people can say out loud ("BOHOL-7") and a random 256-bit key. The
-//   label is NOT the secret: the key is, and it travels only in the QR code / join string.
+// - A room has a NAME people can say out loud ("BOHOL-7") and a 256-bit key. Rooms made since
+//   Oct 9 evening derive the key from a PASSCODE (PBKDF2-HMAC-SHA256, salted by the name, see
+//   RoomKDF.swift), so people join Wi-Fi style by typing the name and the passcode. Older rooms
+//   have a random key and stay joinable with their QR code / join string. The name is NOT the
+//   secret. The QR code and join string carry the derived key, never the passcode.
 // - Every packet keeps a clear routing header (version, id, room tag, origin, destination, ttl,
 //   hops) so any device can dedupe and relay it. Everything else is sealed with
 //   ChaCha20-Poly1305 under a key derived from the room key (HKDF-SHA256). The room tag is also
@@ -34,15 +37,28 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     public var admins: [String]
     /// "Clear timeline" watermark for this room.
     public var clearedAt: Date?
+    /// How the key was made. nil means a random key (rooms from before passcodes).
+    public var keySource: KeySource?
 
-    public init(label: String, key: Data, creator: String, createdAt: Date = Date(), admins: [String] = [], clearedAt: Date? = nil) {
+    public enum KeySource: String, Codable, Sendable { case random, passcode }
+
+    public init(label: String, key: Data, creator: String, createdAt: Date = Date(), admins: [String] = [], clearedAt: Date? = nil,
+                keySource: KeySource? = nil) {
         self.label = label
         self.key = key
         self.creator = creator
         self.createdAt = createdAt
         self.admins = admins
         self.clearedAt = clearedAt
+        self.keySource = keySource
     }
+
+    /// True when people can join by typing the name and passcode.
+    public var usesPasscode: Bool { keySource == .passcode }
+
+    /// Short code teammates can compare out loud to confirm they typed the same name and passcode
+    /// ("check code 3FA9"). It is the start of the room tag, which is already on the wire.
+    public var checkCode: String { String(id.prefix(4)).uppercased() }
 
     /// Room tag: first 8 bytes of HKDF(key), hex. Same on every member device. Also the folder name.
     public var id: String { RoomCrypto.tag(for: key) }
@@ -54,31 +70,37 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
         AdminPolicy.devices(adminIDs: admins + (creator.isEmpty ? [] : [creator]), selfID: selfID)
     }
 
-    // MARK: Join string ("PASA1.<label>.<creator>.<key>", base64url parts)
+    // MARK: Join string ("PASA1.<label>.<creator>.<key>[.p]", base64url parts)
+    // The key is the derived room key, never the passcode. ".p" marks a passcode room.
 
     public static let joinPrefix = "PASA1"
 
     public var joinString: String {
-        [Room.joinPrefix, label, RoomCrypto.base64url(Data(creator.utf8)), RoomCrypto.base64url(key)].joined(separator: ".")
+        var parts = [Room.joinPrefix, label, RoomCrypto.base64url(Data(creator.utf8)), RoomCrypto.base64url(key)]
+        if usesPasscode { parts.append("p") }
+        return parts.joined(separator: ".")
     }
 
     /// Parses a pasted or scanned join string. nil when it is not a valid Pasa room code.
     public static func parse(joinString raw: String, now: Date = Date()) -> Room? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = text.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 4, parts[0] == joinPrefix else { return nil }
+        guard parts.count == 4 || (parts.count == 5 && parts[4] == "p"), parts[0] == joinPrefix else { return nil }
         let label = Room.cleanLabel(parts[1])
         guard !label.isEmpty,
               let creatorData = RoomCrypto.fromBase64url(parts[2]),
               let key = RoomCrypto.fromBase64url(parts[3]), key.count == 32 else { return nil }
-        return Room(label: label, key: key, creator: String(decoding: creatorData, as: UTF8.self), createdAt: now)
+        return Room(label: label, key: key, creator: String(decoding: creatorData, as: UTF8.self), createdAt: now,
+                    keySource: parts.count == 5 ? .passcode : nil)
     }
 
-    /// Labels are short and easy to say: A-Z, 0-9 and "-", at most 16 characters.
+    /// Names are short and easy to say: A-Z, 0-9 and "-", at most 24 characters.
     public static func cleanLabel(_ raw: String) -> String {
-        let upper = raw.uppercased().replacingOccurrences(of: " ", with: "-")
+        // Trim, then each run of spaces becomes one "-" ("  bohol  7 " -> "BOHOL-7").
+        let words = raw.uppercased().split(whereSeparator: { $0.isWhitespace })
+        let upper = words.joined(separator: "-")
         let kept = upper.unicodeScalars.filter { CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-").contains($0) }
-        return String(String.UnicodeScalarView(kept).prefix(16))
+        return String(String.UnicodeScalarView(kept).prefix(24))
     }
 
     /// A new room with a fresh random key. Empty label gets "ROOM-" plus 4 random characters.
@@ -89,6 +111,17 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
             label = "ROOM-" + String((0..<4).map { _ in alphabet.randomElement()! })
         }
         return Room(label: label, key: RoomCrypto.randomKey(), creator: creator, createdAt: now, admins: [])
+    }
+
+    /// A room whose key comes from a name and passcode (Wi-Fi style). Slow (PBKDF2): call off the
+    /// main thread. `creator` is this device when it creates the room, empty when it joins.
+    /// Returns nil for an empty name or a passcode shorter than 6 characters.
+    public static func fromPasscode(name raw: String, passcode: String, creator: String, now: Date = Date(),
+                                    rounds: Int = RoomPasscode.rounds) -> Room? {
+        let label = cleanLabel(raw)
+        guard !label.isEmpty, RoomPasscode.isAcceptable(passcode), label != "DEFAULT" else { return nil }
+        let key = RoomPasscode.deriveKey(name: label, passcode: passcode, rounds: rounds)
+        return Room(label: label, key: key, creator: creator, createdAt: now, admins: [], keySource: .passcode)
     }
 
     /// The open room every device starts in (and where data from before rooms is migrated).
@@ -238,6 +271,10 @@ public final class RoomStore {
     @discardableResult
     public func join(_ room: Room) -> Room {
         if let index = rooms.firstIndex(where: { $0.id == room.id }) {
+            // Same key joined again (for example typed, then scanned): learn the pinned creator
+            // if this copy did not know it, never replace a known one.
+            if rooms[index].creator.isEmpty && !room.creator.isEmpty { rooms[index].creator = room.creator }
+            if rooms[index].keySource == nil, room.keySource != nil { rooms[index].keySource = room.keySource }
             activeID = rooms[index].id
         } else {
             rooms.append(room)

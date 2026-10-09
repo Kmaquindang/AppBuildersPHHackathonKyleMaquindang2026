@@ -99,6 +99,14 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                    Picker("Voice note transcripts", selection: Binding(get: { mesh.speechLocale }, set: { mesh.setSpeechLocale($0) })) {
+                        ForEach(VoiceTranscriber.choices, id: \.id) { choice in
+                            Text(choice.label).tag(choice.id)
+                        }
+                    }
+                    Text("Transcripts use Apple's on-device speech recognition only (audio never leaves this Mac). If Filipino has no on-device model here, English (US) is used and the transcript says so.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     HStack {
                         Button("Export \(mesh.activeRoom.label) memory...") {
                             do {

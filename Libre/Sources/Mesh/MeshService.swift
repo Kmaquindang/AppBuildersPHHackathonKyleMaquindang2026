@@ -98,6 +98,18 @@ final class MeshService: ObservableObject {
     /// Digest (sha256) of the model Ollama serves, for pinning. Empty until checked.
     @Published private(set) var modelDigest = ""
 
+    // Rooms and media.
+    /// True while a room key is being derived from a passcode (slow on purpose).
+    @Published private(set) var roomBusy = false
+    /// Media id -> fraction of chunks received (incoming) or sent (outgoing), while in flight.
+    @Published private(set) var mediaProgress: [UUID: Double] = [:]
+    /// Bumped whenever a media file lands in the cache, so bubbles reload.
+    @Published private(set) var mediaVersion = 0
+    /// Voice notes the Mac is transcribing right now.
+    @Published private(set) var transcribing: Set<UUID> = []
+    /// Mac: language for voice note transcripts ("en-US" or "fil-PH").
+    @Published private(set) var speechLocale: String
+
     // MARK: Internals
 
     private let engine: RelayEngine
@@ -117,6 +129,13 @@ final class MeshService: ObservableObject {
     private let saveQueue = DispatchQueue(label: "pasa.timeline.save", qos: .utility)
     private let defaults = UserDefaults.standard
     private var memory: OrgMemory
+    private let mediaStore: MediaStore
+    private let assembler = MediaAssembler()
+    /// "<media id>|<requester>" -> when this device last answered that NACK (throttle).
+    private var nackAnswered: [String: Date] = [:]
+    private struct ChunkJob { var message: MeshMessage; var mediaId: UUID; var index: Int; var count: Int; var outgoing: Bool }
+    private var chunkQueue: [ChunkJob] = []
+    private var chunkPump: Task<Void, Never>?
     #if os(macOS)
     private let assistant: ExecutiveAssistant
     /// Keeps the Mac from idle-sleeping and App Nap from throttling timers while it is the AI peer.
@@ -141,6 +160,7 @@ final class MeshService: ObservableObject {
         static let roster = "libre.roster"
         static let personName = "pasa.personName"
         static let directory = "pasa.directory"
+        static let speechLocale = "pasa.speechLocale"
     }
 
     /// Peers that are not linked and have not been seen for this long leave the peer strip.
@@ -186,8 +206,10 @@ final class MeshService: ObservableObject {
         let fileName = MeshService.memoryFileName
         #if os(macOS)
         let limit = TimelineStore.macLimit   // the Mac keeps the long history (source of truth for backfill)
+        let mediaCap = MediaLimits.macCacheBytes
         #else
         let limit = TimelineStore.phoneLimit
+        let mediaCap = MediaLimits.phoneCacheBytes
         #endif
         let url = roomStore.fileURL("timeline.json")
         let saved = url.map { TimelineStore.load(from: $0, limit: limit) } ?? PersistedTimeline()
@@ -223,6 +245,8 @@ final class MeshService: ObservableObject {
         directory = dir
         timelineURL = url
         timelineLimit = limit
+        mediaStore = MediaStore(directory: MeshService.storageURL("media"), capBytes: mediaCap)
+        speechLocale = store.string(forKey: Keys.speechLocale) ?? "en-US"
         entries = TimelineStore.dropping(saved.entries, before: cleared)
         outboxCount = relay.outbox.count
 
@@ -322,10 +346,31 @@ final class MeshService: ObservableObject {
 
     // MARK: Rooms
 
-    /// Creates a room with a fresh 256-bit key and switches to it. This device is its pinned admin.
-    func createRoom(label: String) {
-        let room = Room.create(label: label, creator: displayName)
+    /// Creates a room from a name and passcode (Wi-Fi style) and switches to it. This device is
+    /// its pinned admin. The key derivation (PBKDF2, 600,000 rounds) runs off the main thread.
+    /// The passcode is never stored. Returns the room, or nil for a bad name or passcode.
+    @discardableResult
+    func createRoom(name: String, passcode: String) async -> Room? {
+        await passcodeRoom(name: name, passcode: passcode, creator: displayName)
+    }
+
+    /// Joins a room by typing its name and passcode. A typo lands in a different, empty room, so
+    /// the UI shows the room's check code for teammates to compare.
+    @discardableResult
+    func joinRoom(name: String, passcode: String) async -> Room? {
+        await passcodeRoom(name: name, passcode: passcode, creator: "")
+    }
+
+    private func passcodeRoom(name: String, passcode: String, creator: String) async -> Room? {
+        guard !roomBusy else { return nil }
+        roomBusy = true
+        defer { roomBusy = false }
+        let made = await Task.detached(priority: .userInitiated) {
+            Room.fromPasscode(name: name, passcode: passcode, creator: creator)
+        }.value
+        guard let room = made else { return nil }
         switchRoom { rooms.join(room) }
+        return activeRoom
     }
 
     /// Joins a room from a pasted or scanned join string. False when the string is not valid.
@@ -369,6 +414,8 @@ final class MeshService: ObservableObject {
         memory = OrgMemory(fileURL: rooms.fileURL(MeshService.memoryFileName), admins: room.adminDevices(selfID: displayName))
         sentAsks.removeAll()
         waitingAsks.removeAll()
+        chunkQueue.removeAll()
+        mediaProgress.removeAll()
         entries = TimelineStore.dropping(saved.entries, before: clearedAt)
         for entry in entries.suffix(300) { engine.markSeen(entry.id) }
         refreshOrg()
@@ -379,6 +426,7 @@ final class MeshService: ObservableObject {
         #endif
         lastBackfillRequest = .distantPast
         if connectedCount > 0 { requestBackfill() }
+        expectMissingMedia(in: entries)
     }
 
     // MARK: Lifecycle
@@ -459,6 +507,8 @@ final class MeshService: ObservableObject {
         for name in stale { peerStates.removeValue(forKey: name) }
         if !engine.outbox.isEmpty && connectedCount > 0 { flushOutbox() }
         refreshWaitingAsks(now: now)
+        sendDueNacks()
+        nackAnswered = nackAnswered.filter { now.timeIntervalSince($0.value) < 60 }
     }
 
     private func refreshWaitingAsks(now: Date = Date()) {
@@ -854,8 +904,10 @@ final class MeshService: ObservableObject {
     /// Everything this device writes is sealed for the active room here, before it is sent or
     /// queued, so the outbox never holds plaintext. Already sealed packets (relayed ones, or
     /// outbox items) pass through untouched. `foreign` marks another room's packet (capped).
+    /// `queueIfUnsent: false` is for media chunks and NACKs: they are never parked in the outbox
+    /// (whoever holds the file serves it again when asked).
     @discardableResult
-    private func transmit(_ plain: MeshMessage, excluding: Set<String>, foreign: Bool = false) -> [String] {
+    private func transmit(_ plain: MeshMessage, excluding: Set<String>, foreign: Bool = false, queueIfUnsent: Bool = true) -> [String] {
         let message: MeshMessage
         if plain.kind == .sealed {
             message = plain
@@ -868,6 +920,7 @@ final class MeshService: ObservableObject {
             }
         }
         guard let transport else {
+            guard queueIfUnsent else { return [] }
             engine.enqueue(message, excluding: excluding, foreign: foreign)
             outboxCount = engine.outbox.count
             return []
@@ -880,7 +933,7 @@ final class MeshService: ObservableObject {
             return []
         }
         let sentTo = transport.send(data, excluding: excluding)
-        if sentTo.isEmpty {
+        if sentTo.isEmpty && queueIfUnsent {
             engine.enqueue(message, excluding: excluding, foreign: foreign)
             scheduleSave()
         }
@@ -901,6 +954,165 @@ final class MeshService: ObservableObject {
         scheduleSave()
     }
 
+    // MARK: Media (photos and voice notes)
+
+    /// True when the file is in this device's media cache.
+    func hasMedia(_ id: UUID) -> Bool { mediaStore.has(id) }
+
+    /// Bytes of a cached media file (marks it recently used).
+    func mediaData(_ id: UUID) -> Data? { mediaStore.data(id) }
+
+    /// Sends a photo or voice note: saves it in the cache, sends the manifest as a timeline
+    /// message (queued like chat when nobody is linked), then the chunks, paced.
+    func sendMedia(_ data: Data, kind: MediaKind, mime: String, durationSeconds: Double? = nil, width: Int? = nil, height: Int? = nil) {
+        guard !data.isEmpty, data.count <= MediaLimits.maxBytes else {
+            lastProblem = "That \(kind == .image ? "photo" : "voice note") is too large to send (\(data.count / 1024) KB, limit \(MediaLimits.maxBytes / 1024) KB)."
+            return
+        }
+        let manifest = MediaChunker.manifest(for: data, kind: kind, mime: mime, durationSeconds: durationSeconds, width: width, height: height)
+        guard mediaStore.put(manifest.mediaId, data: data, ext: manifest.fileExtension), let body = manifest.encoded() else {
+            lastProblem = "Could not save the \(kind == .image ? "photo" : "voice note") on this device."
+            return
+        }
+        mediaVersion += 1
+        let message = engine.makeOutgoing(kind: .media, body: body, destination: nil)
+        var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
+        entry.sentTo = transmit(message, excluding: [])
+        entries.append(entry)
+        queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true)
+        #if os(macOS)
+        if kind == .audio { transcribeIfNeeded(manifest.mediaId) }
+        #endif
+    }
+
+    private func queueChunks(of data: Data, manifest: MediaManifest, indexes: [Int], outgoing: Bool) {
+        for i in indexes {
+            guard let chunk = MediaChunker.chunk(of: data, manifest: manifest, index: i), let body = chunk.encoded() else { continue }
+            let message = engine.makeOutgoing(kind: .chunk, body: body, destination: nil)
+            chunkQueue.append(ChunkJob(message: message, mediaId: manifest.mediaId, index: i, count: manifest.chunkCount, outgoing: outgoing))
+        }
+        startChunkPump()
+    }
+
+    /// Sends queued chunks one at a time with a short pause, so a photo does not flood the links
+    /// and chat keeps flowing in between.
+    private func startChunkPump() {
+        guard chunkPump == nil, !chunkQueue.isEmpty else { return }
+        chunkPump = Task { [weak self] in
+            while true {
+                guard let service = self, !service.chunkQueue.isEmpty else { break }
+                let job = service.chunkQueue.removeFirst()
+                service.transmit(job.message, excluding: [], queueIfUnsent: false)
+                if job.outgoing {
+                    if job.index + 1 >= job.count {
+                        service.mediaProgress.removeValue(forKey: job.mediaId)
+                    } else {
+                        service.mediaProgress[job.mediaId] = Double(job.index + 1) / Double(job.count)
+                    }
+                }
+                try? await Task.sleep(nanoseconds: UInt64(MediaLimits.paceSeconds * 1_000_000_000))
+            }
+            self?.chunkPump = nil
+        }
+    }
+
+    /// Manifest of a media message in this room's timeline.
+    private func manifest(for mediaId: UUID) -> MediaManifest? {
+        for entry in entries.reversed() where entry.message.kind == .media {
+            if let m = MediaManifest.decode(entry.message.body), m.mediaId == mediaId { return m }
+        }
+        return nil
+    }
+
+    /// Registers media messages whose file is not here yet, so missing chunks get asked for.
+    private func expectMissingMedia(in list: [ChatEntry]) {
+        for entry in list where entry.message.kind == .media {
+            guard let m = MediaManifest.decode(entry.message.body), !mediaStore.has(m.mediaId) else { continue }
+            assembler.expect(m)
+            mediaProgress[m.mediaId] = assembler.progress(m.mediaId) ?? 0
+        }
+    }
+
+    private func receiveChunk(_ message: MeshMessage) {
+        guard let chunk = MediaChunk.decode(message.body), !mediaStore.has(chunk.mediaId) else { return }
+        let known = assembler.manifest(chunk.mediaId) ?? manifest(for: chunk.mediaId)
+        switch assembler.add(chunk) {
+        case .ignored:
+            break
+        case .progress(let fraction):
+            mediaProgress[chunk.mediaId] = fraction
+        case .complete(let data):
+            mediaProgress.removeValue(forKey: chunk.mediaId)
+            if mediaStore.put(chunk.mediaId, data: data, ext: known?.fileExtension ?? "bin") {
+                mediaVersion += 1
+                #if os(macOS)
+                if known?.kind == .audio { transcribeIfNeeded(chunk.mediaId) }
+                #endif
+            } else {
+                lastProblem = "Could not save a received photo or voice note (cache full or disk error)."
+            }
+        case .corrupt:
+            mediaProgress[chunk.mediaId] = 0
+            lastProblem = "A photo or voice note arrived damaged (checksum mismatch). Asking for it again."
+        }
+    }
+
+    /// Someone is missing chunks: send the ones this device has (from the cache, or from its own
+    /// unfinished copy). At most once every 4 s per file and requester.
+    private func answerNack(_ message: MeshMessage) {
+        guard let nack = MediaNack.decode(message.body) else { return }
+        let key = "\(nack.mediaId.uuidString)|\(message.origin)"
+        let now = Date()
+        if let last = nackAnswered[key], now.timeIntervalSince(last) < 4 { return }
+        if let data = mediaStore.data(nack.mediaId) {
+            nackAnswered[key] = now
+            // Chunk layout only depends on size, chunk size and hash, so any holder rebuilds it.
+            let layout = MediaChunker.manifest(for: data, kind: .image, mime: "application/octet-stream", mediaId: nack.mediaId)
+            queueChunks(of: data, manifest: layout, indexes: nack.missing, outgoing: false)
+            return
+        }
+        let parts = nack.missing.compactMap { assembler.part(nack.mediaId, index: $0) }
+        guard !parts.isEmpty else { return }
+        nackAnswered[key] = now
+        for chunk in parts {
+            guard let body = chunk.encoded() else { continue }
+            let m = engine.makeOutgoing(kind: .chunk, body: body, destination: nil)
+            chunkQueue.append(ChunkJob(message: m, mediaId: chunk.mediaId, index: chunk.index, count: chunk.count, outgoing: false))
+        }
+        startChunkPump()
+    }
+
+    /// Asks the room for chunks of stalled transfers (or all unfinished ones when a link came up).
+    private func sendDueNacks(force: Bool = false) {
+        assembler.prune()
+        guard connectedCount > 0 else { return }
+        for nack in assembler.dueForNack(force: force) {
+            guard let body = nack.encoded() else { continue }
+            let m = engine.makeOutgoing(kind: .mediaNack, body: body, destination: nil, ttl: 4)
+            transmit(m, excluding: [], queueIfUnsent: false)
+        }
+    }
+
+    /// Chunks can finish before the manifest arrives (saved as .bin): rename with the real type.
+    private func fixMediaExtension(_ media: MeshMessage) {
+        guard let m = MediaManifest.decode(media.body), mediaStore.url(m.mediaId)?.pathExtension == "bin",
+              let data = mediaStore.data(m.mediaId) else { return }
+        mediaStore.remove(m.mediaId)
+        mediaStore.put(m.mediaId, data: data, ext: m.fileExtension)
+        #if os(macOS)
+        if m.kind == .audio { transcribeIfNeeded(m.mediaId) }
+        #endif
+    }
+
+    /// A voice note transcript from the Mac: shown under the voice note bubble.
+    private func applyTranscript(_ message: MeshMessage) {
+        guard let target = message.replyTo, let payload = TranscriptPayload.decode(message.body),
+              let index = entries.lastIndex(where: { $0.id == target }) else { return }
+        let line = payload.displayLine
+        guard !line.isEmpty, entries[index].transcript != line else { return }
+        entries[index].transcript = line
+    }
+
     // MARK: Backfill
 
     /// Phone side: ask the AI Mac for messages this device missed (throttled).
@@ -914,8 +1126,16 @@ final class MeshService: ObservableObject {
 
     /// AI Mac side: send the phone what it missed, at most 200 messages, in small chunks.
     private func serveBackfill(to device: String, request: SyncRequest) {
-        let missing = Backfill.select(from: entries, for: device, request: request, macClearedAt: clearedAt)
+        var missing = Backfill.select(from: entries, for: device, request: request, macClearedAt: clearedAt)
         guard !missing.isEmpty else { return }
+        // Voice note transcripts ride along as small .transcript messages.
+        for m in missing where m.kind == .media {
+            guard let text = entries.last(where: { $0.id == m.id })?.transcript, !text.isEmpty else { continue }
+            var t = engine.makeOutgoing(kind: .transcript, body: TranscriptPayload(text: text, locale: "").encoded() ?? "",
+                                        destination: .peer(device), replyTo: m.id)
+            t.createdAt = m.createdAt
+            missing.append(t)
+        }
         let chunks = Backfill.chunk(missing)
         for (index, chunk) in chunks.enumerated() {
             let batch = SyncBatch(messages: chunk, part: index + 1, parts: chunks.count)
@@ -930,9 +1150,11 @@ final class MeshService: ObservableObject {
     private func applyBackfill(_ batch: SyncBatch) {
         let now = Date()
         var incoming: [ChatEntry] = []
+        var transcripts: [MeshMessage] = []
         for m in batch.messages {
             engine.markSeen(m.id, now: now)
             if let clearedAt, m.createdAt < clearedAt { continue }
+            if m.kind == .transcript { transcripts.append(m); continue }
             if let name = m.senderName, m.origin != displayName { learn(device: m.origin, name: name) }
             if !isAIPeer && (m.kind == .task || m.kind == .rule) {
                 guard CacheSync.applyCard(m, to: memory).show else { continue }
@@ -943,6 +1165,8 @@ final class MeshService: ObservableObject {
         }
         let merged = TimelineStore.mergeBackfill(entries, incoming)
         if merged.added > 0 { entries = merged.entries }
+        for t in transcripts { applyTranscript(t) }
+        expectMissingMedia(in: incoming)
         refreshOrg()
     }
 
@@ -967,6 +1191,7 @@ final class MeshService: ObservableObject {
                 isAway = false
                 flushOutbox()
                 requestBackfill()
+                sendDueNacks(force: true)
                 #if os(macOS)
                 syncMemory(to: name)
                 #endif
@@ -1000,8 +1225,13 @@ final class MeshService: ObservableObject {
         if decision.isDuplicate { return }
 
         let foreign = message.kind == .sealed && message.room != activeRoom.id
+        // Open our room's packets before forwarding, so media chunks and NACKs that cannot be
+        // passed on right now are dropped instead of filling the outbox.
+        var opened: MeshMessage?
+        if let d = decision.deliver, d.kind == .sealed, !foreign { opened = RoomEnvelope.open(d, in: activeRoom) }
+        let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack } ?? false
         if let forward = decision.forward {
-            transmit(forward, excluding: decision.forwardExcluding, foreign: foreign)
+            transmit(forward, excluding: decision.forwardExcluding, foreign: foreign, queueIfUnsent: !transient)
             relayedCount += 1
             if foreign { foreignRelayedCount += 1 }
         }
@@ -1010,7 +1240,7 @@ final class MeshService: ObservableObject {
         if delivered.kind == .sealed {
             // Another room's packet (or one that fails authentication): relayed above, never
             // shown or stored here.
-            guard !foreign, let opened = RoomEnvelope.open(delivered, in: activeRoom) else { return }
+            guard !foreign, let opened else { return }
             delivered = opened
             if delivered.kind == .sealed { return }
         } else if !activeRoom.isDefault {
@@ -1019,6 +1249,13 @@ final class MeshService: ObservableObject {
         }
         if let name = delivered.senderName, delivered.origin != displayName {
             learn(device: delivered.origin, name: name)
+        }
+
+        switch delivered.kind {
+        case .chunk: receiveChunk(delivered); return
+        case .mediaNack: answerNack(delivered); return
+        case .transcript: applyTranscript(delivered); return
+        default: break
         }
 
         if delivered.kind == .sync {
@@ -1063,7 +1300,13 @@ final class MeshService: ObservableObject {
             #if os(macOS)
             if isAIPeer { answer(delivered) }
             #endif
-        case .answer, .ack, .sync, .sealed:
+        case .media:
+            expectMissingMedia(in: [entry])
+            fixMediaExtension(delivered)
+            #if os(macOS)
+            if let m = MediaManifest.decode(delivered.body), m.kind == .audio { transcribeIfNeeded(m.mediaId) }
+            #endif
+        case .answer, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript:
             break
         }
     }
@@ -1082,6 +1325,50 @@ final class MeshService: ObservableObject {
     // MARK: AI peer (macOS)
 
     #if os(macOS)
+    // MARK: Voice note transcripts (Mac, on-device speech recognition)
+
+    func setSpeechLocale(_ id: String) {
+        speechLocale = id
+        defaults.set(id, forKey: Keys.speechLocale)
+    }
+
+    /// The AI Mac transcribes each voice note once, on the device (never a server), shows the
+    /// text under the bubble, sends it to the room, and treats "@pasa ..." / "Pasa, ..." as an ask.
+    private func transcribeIfNeeded(_ mediaId: UUID) {
+        guard isAIPeer, !transcribing.contains(mediaId), let url = mediaStore.url(mediaId),
+              let index = entries.lastIndex(where: { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }),
+              entries[index].transcript == nil else { return }
+        let media = entries[index].message
+        let locale = speechLocale
+        transcribing.insert(mediaId)
+        Task { [weak self] in
+            let payload = await VoiceTranscriber.transcribe(url: url, localeID: locale)
+            self?.finishTranscript(payload, mediaId: mediaId, media: media)
+        }
+    }
+
+    private func finishTranscript(_ payload: TranscriptPayload, mediaId: UUID, media: MeshMessage) {
+        transcribing.remove(mediaId)
+        if let index = entries.lastIndex(where: { $0.id == media.id }) {
+            entries[index].transcript = payload.displayLine
+        }
+        if let body = payload.encoded() {
+            transmit(engine.makeOutgoing(kind: .transcript, body: body, destination: nil, replyTo: media.id), excluding: [])
+        }
+        let text = payload.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        memory.recordChat(from: senderLabel(for: media), text: "(voice note) \(text)", at: media.createdAt, device: media.origin)
+        if let question = VoiceAsk.extract(text) {
+            // Same id as the voice note, so the answer's replyTo points at it.
+            var ask = media
+            ask.kind = .ask
+            ask.body = question
+            ask.destination = .role(MeshDestination.aiRole)
+            ask.since = nil
+            answer(ask)
+        }
+    }
+
     private func answer(_ ask: MeshMessage) {
         switch aiEngine {
         case .assistant:

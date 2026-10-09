@@ -23,8 +23,11 @@
 		44A24D1A140D5B4576D00374 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EB20852E75BC8350878E33 /* People.swift */; };
 		394E3839A96D80AE46A4353E /* MeshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F379B52A6BD676489720A926 /* MeshPolicy.swift */; };
 		66FF495C3F5FB0BF02D5233B /* Rooms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C15F19562940628FE094226 /* Rooms.swift */; };
+		0BCE9F1471893FE817BF29D7 /* Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC4FDF8B8A237B5985DDBF8 /* Media.swift */; };
+		DFC00EAC75830B2C32923246 /* RoomKDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623462451D13DCBF40BBB8C7 /* RoomKDF.swift */; };
 		560C9C352B76C7622DAB4BAE /* ChatTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C176FBE8674D50159130528 /* ChatTimelineView.swift */; };
 		598BD456450975849EB3D801 /* AssistantIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */; };
+		6EDD3EABEB135E10201E3CFC /* VoiceAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */; };
 		5A315A6B276143E804C4995A /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
 		5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
 		5C64ED549D285F92BB0D7FE2 /* AssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */; };
@@ -38,14 +41,18 @@
 		6E551BA2F198CE111E650798 /* ExecutiveAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */; };
 		7108DF704DE33B6280376152 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71424B599E943648E0F4282 /* SettingsView.swift */; };
 		576955B86DEFBF14B5A97108 /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E68A9798A776400EC46DDB /* RoomViews.swift */; };
+		DDB3442105860592EC0DBD1D /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */; };
 		75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6999B68CA47A8D0750603820 /* MeshMessage.swift */; };
 		7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5552427112301CCC61834729 /* RulesView.swift */; };
 		81DA6A37B0AFF7E6F8FC441F /* Compactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 030DCA88E0E635C2077D1DAA /* Compactor.swift */; };
 		82F3721960CA072D634F9034 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71424B599E943648E0F4282 /* SettingsView.swift */; };
 		9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E68A9798A776400EC46DDB /* RoomViews.swift */; };
+		136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */; };
 		964249A70E25CF0FFC45A78C /* MeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3C46472A4C8518C4C814A3 /* MeshService.swift */; };
+		0A16656FEC634DC667EC083D /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */; };
 		9886BB428215ABD8165DE5A9 /* PeerStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */; };
 		A2EF234C2D9F2922EF9987A8 /* AssistantIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */; };
+		480A3429CAF806F6571EABCF /* VoiceAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */; };
 		A6576C652F51E68A02794362 /* NameMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */; };
 		A6595F049D3E2969F231024D /* LibreApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E755E8C81B55112D72A2D008 /* LibreApp.swift */; };
 		A808B018F066255B3BD6FE15 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E2EE12B11E0880B96E1265 /* ContentView.swift */; };
@@ -57,11 +64,14 @@
 		C09DB26CD2F6ABD903F6ABDC /* MeshPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F146780F3C887A53042E80 /* MeshPayload.swift */; };
 		C1F5594115CCD59706B4BDA6 /* NameMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */; };
 		CA4EC827054E09E1D9E9E8D4 /* MeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3C46472A4C8518C4C814A3 /* MeshService.swift */; };
+		93ACD6103DD5DE20C401B6D4 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */; };
 		CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */; };
 		D05A67DA3238A52419071E1B /* MeshTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */; };
 		D4DCCE15241436706548CB37 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EB20852E75BC8350878E33 /* People.swift */; };
 		FA7A94B96EACF7E155C7200E /* MeshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F379B52A6BD676489720A926 /* MeshPolicy.swift */; };
 		ABBFCA312BA6ADE68ADF4F4C /* Rooms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C15F19562940628FE094226 /* Rooms.swift */; };
+		AC4447733E6A4CC6ADF44754 /* Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC4FDF8B8A237B5985DDBF8 /* Media.swift */; };
+		8230A9767A518B38A41E3398 /* RoomKDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623462451D13DCBF40BBB8C7 /* RoomKDF.swift */; };
 		D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5552427112301CCC61834729 /* RulesView.swift */; };
 		DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */; };
 		E026911E7F1970D6B7261EC7 /* AIResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE00B82803B5BC7E8189CB /* AIResponder.swift */; };
@@ -78,12 +88,14 @@
 		F07A500F48269B909767508F /* Retrieval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Retrieval.swift; sourceTree = "<group>"; };
 		79D512A643AFFFF7957CC39D /* CitationGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationGuard.swift; sourceTree = "<group>"; };
 		13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantIntent.swift; sourceTree = "<group>"; };
+		96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAsk.swift; sourceTree = "<group>"; };
 		16F146780F3C887A53042E80 /* MeshPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPayload.swift; sourceTree = "<group>"; };
 		1C176FBE8674D50159130528 /* ChatTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineView.swift; sourceTree = "<group>"; };
 		1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayEngine.swift; sourceTree = "<group>"; };
 		2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameMatcher.swift; sourceTree = "<group>"; };
 		30AE14CEF94F6031C7ECF593 /* Libre-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Libre-macOS.entitlements"; sourceTree = "<group>"; };
 		3E3C46472A4C8518C4C814A3 /* MeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshService.swift; sourceTree = "<group>"; };
+		EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		4C632BFB760E3187EF396C9B /* Timeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Timeline.swift; sourceTree = "<group>"; };
 		5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStripView.swift; sourceTree = "<group>"; };
 		5552427112301CCC61834729 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
@@ -94,6 +106,8 @@
 		68EB20852E75BC8350878E33 /* People.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = People.swift; sourceTree = "<group>"; };
 		F379B52A6BD676489720A926 /* MeshPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPolicy.swift; sourceTree = "<group>"; };
 		4C15F19562940628FE094226 /* Rooms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rooms.swift; sourceTree = "<group>"; };
+		9CC4FDF8B8A237B5985DDBF8 /* Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Media.swift; sourceTree = "<group>"; };
+		623462451D13DCBF40BBB8C7 /* RoomKDF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomKDF.swift; sourceTree = "<group>"; };
 		6999B68CA47A8D0750603820 /* MeshMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshMessage.swift; sourceTree = "<group>"; };
 		6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantDashboardView.swift; sourceTree = "<group>"; };
 		737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutiveAssistant.swift; sourceTree = "<group>"; };
@@ -110,6 +124,7 @@
 		D6FEB7041148C8E7236CCACB /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		E71424B599E943648E0F4282 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D3E68A9798A776400EC46DDB /* RoomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomViews.swift; sourceTree = "<group>"; };
+		CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViews.swift; sourceTree = "<group>"; };
 		E755E8C81B55112D72A2D008 /* LibreApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibreApp.swift; sourceTree = "<group>"; };
 		FB350FB658F2EBFC27F077E5 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -137,6 +152,7 @@
 			isa = PBXGroup;
 			children = (
 				3E3C46472A4C8518C4C814A3 /* MeshService.swift */,
+				EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */,
 				A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */,
 			);
 			path = Mesh;
@@ -181,6 +197,7 @@
 				5552427112301CCC61834729 /* RulesView.swift */,
 				E71424B599E943648E0F4282 /* SettingsView.swift */,
 				D3E68A9798A776400EC46DDB /* RoomViews.swift */,
+				CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */,
 				FB350FB658F2EBFC27F077E5 /* TasksView.swift */,
 			);
 			path = Views;
@@ -198,6 +215,8 @@
 				68EB20852E75BC8350878E33 /* People.swift */,
 				F379B52A6BD676489720A926 /* MeshPolicy.swift */,
 				4C15F19562940628FE094226 /* Rooms.swift */,
+				9CC4FDF8B8A237B5985DDBF8 /* Media.swift */,
+				623462451D13DCBF40BBB8C7 /* RoomKDF.swift */,
 				1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */,
 				4C632BFB760E3187EF396C9B /* Timeline.swift */,
 			);
@@ -218,6 +237,7 @@
 			children = (
 				5AFE00B82803B5BC7E8189CB /* AIResponder.swift */,
 				13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */,
+				96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */,
 				A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */,
 				737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */,
 				0DC96BD9DD0057AE8C8DBAE2 /* LLMClient.swift */,
@@ -327,6 +347,7 @@
 				ED0FC68D57F361B66B8E2B01 /* AIResponder.swift in Sources */,
 				5C64ED549D285F92BB0D7FE2 /* AssistantDashboardView.swift in Sources */,
 				A2EF234C2D9F2922EF9987A8 /* AssistantIntent.swift in Sources */,
+				480A3429CAF806F6571EABCF /* VoiceAsk.swift in Sources */,
 				373691461211877260B9AC9B /* AssistantPrompts.swift in Sources */,
 				6A9957C96BB1B601873D1443 /* ChatTimelineView.swift in Sources */,
 				81DA6A37B0AFF7E6F8FC441F /* Compactor.swift in Sources */,
@@ -340,6 +361,7 @@
 				75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */,
 				C09DB26CD2F6ABD903F6ABDC /* MeshPayload.swift in Sources */,
 				964249A70E25CF0FFC45A78C /* MeshService.swift in Sources */,
+				0A16656FEC634DC667EC083D /* VoiceTranscriber.swift in Sources */,
 				A838AE099437F0066F6C2076 /* MeshTransport.swift in Sources */,
 				C1F5594115CCD59706B4BDA6 /* NameMatcher.swift in Sources */,
 				613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */,
@@ -349,10 +371,13 @@
 				D4DCCE15241436706548CB37 /* People.swift in Sources */,
 				FA7A94B96EACF7E155C7200E /* MeshPolicy.swift in Sources */,
 				ABBFCA312BA6ADE68ADF4F4C /* Rooms.swift in Sources */,
+				AC4447733E6A4CC6ADF44754 /* Media.swift in Sources */,
+				8230A9767A518B38A41E3398 /* RoomKDF.swift in Sources */,
 				AD88362011456A08E76CC228 /* RelayEngine.swift in Sources */,
 				7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */,
 				82F3721960CA072D634F9034 /* SettingsView.swift in Sources */,
 				9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */,
+				136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */,
 				EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */,
 				069737D7669061806B9C5A4D /* Timeline.swift in Sources */,
 			);
@@ -365,6 +390,7 @@
 				E026911E7F1970D6B7261EC7 /* AIResponder.swift in Sources */,
 				0588FD9683C894AB7F6787F3 /* AssistantDashboardView.swift in Sources */,
 				598BD456450975849EB3D801 /* AssistantIntent.swift in Sources */,
+				6EDD3EABEB135E10201E3CFC /* VoiceAsk.swift in Sources */,
 				B6AC3B8AA94B5FB7A1502FC4 /* AssistantPrompts.swift in Sources */,
 				560C9C352B76C7622DAB4BAE /* ChatTimelineView.swift in Sources */,
 				BA9C97588FBE1DF8D1348AA4 /* Compactor.swift in Sources */,
@@ -378,6 +404,7 @@
 				2FCC55F9835AFA48DB237C6E /* MeshMessage.swift in Sources */,
 				095F6D943987B5B3E62BE86E /* MeshPayload.swift in Sources */,
 				CA4EC827054E09E1D9E9E8D4 /* MeshService.swift in Sources */,
+				93ACD6103DD5DE20C401B6D4 /* VoiceTranscriber.swift in Sources */,
 				D05A67DA3238A52419071E1B /* MeshTransport.swift in Sources */,
 				A6576C652F51E68A02794362 /* NameMatcher.swift in Sources */,
 				DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */,
@@ -387,10 +414,13 @@
 				44A24D1A140D5B4576D00374 /* People.swift in Sources */,
 				394E3839A96D80AE46A4353E /* MeshPolicy.swift in Sources */,
 				66FF495C3F5FB0BF02D5233B /* Rooms.swift in Sources */,
+				0BCE9F1471893FE817BF29D7 /* Media.swift in Sources */,
+				DFC00EAC75830B2C32923246 /* RoomKDF.swift in Sources */,
 				EC1F0F60699E3B51F294312E /* RelayEngine.swift in Sources */,
 				D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */,
 				7108DF704DE33B6280376152 /* SettingsView.swift in Sources */,
 				576955B86DEFBF14B5A97108 /* RoomViews.swift in Sources */,
+				DDB3442105860592EC0DBD1D /* MediaViews.swift in Sources */,
 				5FA6165B0DC52B836D0566C3 /* TasksView.swift in Sources */,
 				64F48D4AA5857840CAD71DDF /* Timeline.swift in Sources */,
 			);

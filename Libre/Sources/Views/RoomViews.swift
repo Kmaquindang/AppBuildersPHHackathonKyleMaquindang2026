@@ -49,19 +49,70 @@ enum Clipboard {
     }
 }
 
+/// Passcode field with confirm and a strength hint (create), or a single field (join).
+struct PasscodeFields: View {
+    @Binding var passcode: String
+    var confirm: Binding<String>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SecureField("Passcode (at least \(RoomPasscode.minLength) characters)", text: $passcode)
+                .textContentType(.password)
+            if let confirm {
+                SecureField("Type the passcode again", text: confirm)
+                    .textContentType(.password)
+                if !passcode.isEmpty {
+                    Text(RoomPasscode.hint(passcode))
+                        .font(.caption)
+                        .foregroundStyle(strengthColor)
+                }
+                if !confirm.wrappedValue.isEmpty && confirm.wrappedValue != passcode {
+                    Text("The two passcodes do not match.").font(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    private var strengthColor: Color {
+        switch RoomPasscode.strength(passcode) {
+        case .tooShort, .weak: return .orange
+        case .fair: return .secondary
+        case .strong: return .green
+        }
+    }
+}
+
+enum RoomFormCheck {
+    static func canCreate(name: String, passcode: String, confirm: String) -> Bool {
+        !Room.cleanLabel(name).isEmpty && RoomPasscode.isAcceptable(passcode) && passcode == confirm
+    }
+
+    static func canJoin(name: String, passcode: String) -> Bool {
+        !Room.cleanLabel(name).isEmpty && RoomPasscode.isAcceptable(passcode)
+    }
+}
+
 /// Settings > Room: the active room, its invite, switching, creating and joining.
 struct RoomSettingsSection: View {
     @EnvironmentObject private var mesh: MeshService
-    @State private var newLabel = ""
+    @State private var createName = ""
+    @State private var createCode = ""
+    @State private var createConfirm = ""
+    @State private var joinName = ""
+    @State private var joinCode = ""
     @State private var joinText = ""
     @State private var message: String?
     @State private var showInvite = false
+    @State private var showCreate = false
+    @State private var showJoin = false
     @State private var confirmLeave = false
 
     var body: some View {
         Section {
             LabeledContent("Active room", value: mesh.activeRoom.displayName)
             if !mesh.activeRoom.isDefault {
+                LabeledContent("Check code", value: mesh.activeRoom.checkCode)
+                LabeledContent("How to join", value: mesh.activeRoom.usesPasscode ? "Name + passcode, or QR" : "QR or join string only")
                 DisclosureGroup("Invite: QR code and join string", isExpanded: $showInvite) {
                     VStack(alignment: .leading, spacing: 8) {
                         RoomQRCode(text: mesh.activeRoom.joinString)
@@ -73,6 +124,8 @@ struct RoomSettingsSection: View {
                             Clipboard.copy(mesh.activeRoom.joinString)
                             message = "Join string copied. Share it only with your team."
                         }
+                        Text("The QR code and join string carry the room key, not the passcode. Anyone who has them can read the room.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -91,27 +144,61 @@ struct RoomSettingsSection: View {
                 }
                 Button("Leave \(mesh.activeRoom.displayName)...", role: .destructive) { confirmLeave = true }
             }
-            HStack {
-                TextField("New room label, for example BOHOL-7", text: $newLabel)
-                Button("Create") {
-                    mesh.createRoom(label: newLabel)
-                    message = "Created \(mesh.activeRoom.label). Show its QR code or share the join string with your team."
-                    newLabel = ""
-                    showInvite = true
+
+            DisclosureGroup("Create a room", isExpanded: $showCreate) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Room name, for example BOHOL-7", text: $createName)
+                    PasscodeFields(passcode: $createCode, confirm: $createConfirm)
+                    Button {
+                        Task {
+                            if let room = await mesh.createRoom(name: createName, passcode: createCode) {
+                                message = "Created \(room.label) (check code \(room.checkCode)). Teammates join with the name and passcode, or the QR code. The passcode is not saved anywhere, so remember it."
+                                createName = ""; createCode = ""; createConfirm = ""
+                                showCreate = false
+                            } else {
+                                message = "Could not create the room. Check the name and passcode."
+                            }
+                        }
+                    } label: {
+                        BusyLabel(title: "Create room", busy: mesh.roomBusy)
+                    }
+                    .disabled(mesh.roomBusy || !RoomFormCheck.canCreate(name: createName, passcode: createCode, confirm: createConfirm))
                 }
             }
-            HStack {
-                TextField("Paste a join string (PASA1...)", text: $joinText)
-                    .font(.body.monospaced())
-                Button("Join") {
-                    if mesh.joinRoom(joinText) {
-                        message = "Joined \(mesh.activeRoom.label)."
-                        joinText = ""
-                    } else {
-                        message = "That is not a Pasa room join string. Copy the whole PASA1... text."
+
+            DisclosureGroup("Join a room", isExpanded: $showJoin) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Room name", text: $joinName)
+                    PasscodeFields(passcode: $joinCode, confirm: nil)
+                    Button {
+                        Task {
+                            if let room = await mesh.joinRoom(name: joinName, passcode: joinCode) {
+                                message = "Joined \(room.label). Check code \(room.checkCode): it should match your teammates' screens. If it does not, the name or passcode was typed differently."
+                                joinName = ""; joinCode = ""
+                                showJoin = false
+                            } else {
+                                message = "Could not join. Check the name and passcode."
+                            }
+                        }
+                    } label: {
+                        BusyLabel(title: "Join room", busy: mesh.roomBusy)
+                    }
+                    .disabled(mesh.roomBusy || !RoomFormCheck.canJoin(name: joinName, passcode: joinCode))
+                    HStack {
+                        TextField("Or paste a join string (PASA1...)", text: $joinText)
+                            .font(.body.monospaced())
+                        Button("Join") {
+                            if mesh.joinRoom(joinText) {
+                                message = "Joined \(mesh.activeRoom.label) (check code \(mesh.activeRoom.checkCode))."
+                                joinText = ""
+                                showJoin = false
+                            } else {
+                                message = "That is not a Pasa room join string. Copy the whole PASA1... text."
+                            }
+                        }
+                        .disabled(joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                .disabled(joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let message {
                 Text(message).font(.caption).foregroundStyle(.secondary)
@@ -121,7 +208,7 @@ struct RoomSettingsSection: View {
         } footer: {
             Text(footer)
         }
-        .confirmationDialog("Leave \(mesh.activeRoom.displayName)? Its chat and memory stay on this device; join again with the join string.",
+        .confirmationDialog("Leave \(mesh.activeRoom.displayName)? Its chat and memory stay on this device; join again with the name and passcode or the join string.",
                             isPresented: $confirmLeave) {
             Button("Leave room", role: .destructive) { mesh.leaveRoom(mesh.activeRoom.id) }
         }
@@ -132,11 +219,27 @@ struct RoomSettingsSection: View {
         if mesh.activeRoom.isDefault {
             return "Default is the open room: its key is public, so anyone running Pasa nearby can read it. Create a room for privacy. " + common
         }
-        return "Anyone with this room's QR code or join string can read and write in it, so share it only with your team. The label (\(mesh.activeRoom.label)) is not secret. " + common
+        let pass = mesh.activeRoom.usesPasscode
+            ? "Anyone who knows the room name and passcode, or has the QR code or join string, can read and write in it. The passcode is never shown again or stored. A short passcode can be guessed by someone who records room traffic, so use a long one. "
+            : "This room was made before passcodes: join it with the QR code or join string. "
+        return pass + "The room name (\(mesh.activeRoom.label)) is not secret. " + common
     }
 }
 
-/// First run: stay in Default, create a room, or join one with a join string.
+/// Button label with a spinner while the room key is being derived.
+struct BusyLabel: View {
+    let title: String
+    let busy: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if busy { ProgressView().controlSize(.small) }
+            Text(busy ? "Making the room key..." : title)
+        }
+    }
+}
+
+/// First run: stay in Default, create a room, or join one (name + passcode, or a join string).
 struct RoomOnboardingPicker: View {
     enum Choice: String, CaseIterable, Identifiable {
         case open = "Default", create = "Create", join = "Join"
@@ -144,7 +247,9 @@ struct RoomOnboardingPicker: View {
     }
 
     @Binding var choice: Choice
-    @Binding var label: String
+    @Binding var name: String
+    @Binding var passcode: String
+    @Binding var confirm: String
     @Binding var joinText: String
 
     var body: some View {
@@ -161,17 +266,35 @@ struct RoomOnboardingPicker: View {
                 Text("The open room. Anyone running Pasa nearby can read it. Fine for a demo; create a room for privacy. You can change this later in Settings.")
                     .font(.caption).foregroundStyle(.secondary)
             case .create:
-                TextField("Room label, for example BOHOL-7", text: $label)
+                TextField("Room name, for example BOHOL-7", text: $name)
                     .textFieldStyle(.roundedBorder)
-                Text("Pasa makes a secret key for the room. Invite your team from Settings with the QR code or join string. The label is not secret.")
+                PasscodeFields(passcode: $passcode, confirm: $confirm)
+                    .textFieldStyle(.roundedBorder)
+                Text("Like Wi-Fi: teammates join by typing the same name and passcode. The name is not secret; the passcode is never stored.")
                     .font(.caption).foregroundStyle(.secondary)
             case .join:
-                TextField("Paste the join string (PASA1...)", text: $joinText)
+                TextField("Room name", text: $name)
                     .textFieldStyle(.roundedBorder)
-                    .font(.body.monospaced())
-                Text("Ask a teammate for the join string from their Settings > Room.")
+                PasscodeFields(passcode: $passcode, confirm: nil)
+                    .textFieldStyle(.roundedBorder)
+                Text("Type the name and passcode exactly as your team set them, then compare the check code in Settings > Room.")
                     .font(.caption).foregroundStyle(.secondary)
+                TextField("Or paste a join string (PASA1...)", text: $joinText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption.monospaced())
             }
+        }
+    }
+
+    /// Whether Continue can go ahead with the current inputs. A pasted join string wins over
+    /// the name and passcode fields.
+    static func isReady(choice: Choice, name: String, passcode: String, confirm: String, joinText: String) -> Bool {
+        switch choice {
+        case .open: return true
+        case .create: return RoomFormCheck.canCreate(name: name, passcode: passcode, confirm: confirm)
+        case .join:
+            return !joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || RoomFormCheck.canJoin(name: name, passcode: passcode)
         }
     }
 }
