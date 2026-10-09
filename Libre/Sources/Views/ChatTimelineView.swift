@@ -257,7 +257,7 @@ struct KindBadge: View {
         case .chat: return .blue
         case .ask: return .orange
         case .answer: return .purple
-        case .ack, .sync: return .gray
+        case .ack, .sync, .sealed: return .gray
         case .rule: return .teal
         case .task: return .green
         }
