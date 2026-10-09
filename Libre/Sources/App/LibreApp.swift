@@ -24,6 +24,8 @@ struct LibreApp: App {
                     UIApplication.shared.isIdleTimerDisabled = true
                     #endif
                 }
+                // pasa://join?room=...&code=...&v=1 from a scanned QR code or a tapped link.
+                .onOpenURL { url in mesh.handleJoinURL(url) }
                 .onChange(of: scenePhase) { _, phase in
                     // iOS drops peer links in the background. Coming back: rediscover, flush, catch up.
                     switch phase {
@@ -44,6 +46,12 @@ struct LibreApp: App {
         }
         #if os(macOS)
         .defaultSize(width: 760, height: 640)
+        #endif
+        #if os(macOS)
+        // Projector mode: the room's QR code, name and code full screen.
+        Window("Join room", id: "projector") {
+            ProjectorView().environmentObject(mesh)
+        }
         #endif
     }
 }

@@ -54,8 +54,10 @@
 		598BD456450975849EB3D801 /* AssistantIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13F3FC3FAC5451513CC40194 /* AssistantIntent.swift */; };
 		6EDD3EABEB135E10201E3CFC /* VoiceAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C9B862387877DEC6FCEAB1 /* VoiceAsk.swift */; };
 		5A315A6B276143E804C4995A /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
+		0385A3E9A78D054A751691EA /* JoinCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A22D25E71B22952CC6D5883 /* JoinCode.swift */; };
 		1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58E2D580356DC437F05A0CD /* OrgModels.swift */; };
+		6CFC7E13E2EE15AF299CCBDA /* JoinCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A22D25E71B22952CC6D5883 /* JoinCode.swift */; };
 		D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0610BC65FEE5454D52E807 /* TaskDetails.swift */; };
 		5C64ED549D285F92BB0D7FE2 /* AssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */; };
 		047ED0EDA2C31942002386BF /* MacSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73498396C3CAB6F3F557DCA9 /* MacSetupView.swift */; };
@@ -72,12 +74,14 @@
 		6E551BA2F198CE111E650798 /* ExecutiveAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */; };
 		7108DF704DE33B6280376152 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71424B599E943648E0F4282 /* SettingsView.swift */; };
 		576955B86DEFBF14B5A97108 /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E68A9798A776400EC46DDB /* RoomViews.swift */; };
+		A7849441CC525E17AB9955D1 /* JoinRoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B117661B2AA4C1C62F97F79 /* JoinRoomViews.swift */; };
 		DDB3442105860592EC0DBD1D /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */; };
 		75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6999B68CA47A8D0750603820 /* MeshMessage.swift */; };
 		7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5552427112301CCC61834729 /* RulesView.swift */; };
 		81DA6A37B0AFF7E6F8FC441F /* Compactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 030DCA88E0E635C2077D1DAA /* Compactor.swift */; };
 		82F3721960CA072D634F9034 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71424B599E943648E0F4282 /* SettingsView.swift */; };
 		9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E68A9798A776400EC46DDB /* RoomViews.swift */; };
+		D2628E4A500B3C4499F6582C /* JoinRoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B117661B2AA4C1C62F97F79 /* JoinRoomViews.swift */; };
 		136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */; };
 		964249A70E25CF0FFC45A78C /* MeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3C46472A4C8518C4C814A3 /* MeshService.swift */; };
 		0A16656FEC634DC667EC083D /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB77EE7FB7027C51B9BEF13 /* VoiceTranscriber.swift */; };
@@ -189,10 +193,12 @@
 		B31305907BF0078F6F24B7ED /* Libre-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Libre-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C591AFAD3C57690844D564A4 /* 2026-10-09_1723_mac_ai_peer.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "2026-10-09_1723_mac_ai_peer.jpg"; sourceTree = "<group>"; };
 		D58E2D580356DC437F05A0CD /* OrgModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgModels.swift; sourceTree = "<group>"; };
+		1A22D25E71B22952CC6D5883 /* JoinCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinCode.swift; sourceTree = "<group>"; };
 		5D0610BC65FEE5454D52E807 /* TaskDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetails.swift; sourceTree = "<group>"; };
 		D6FEB7041148C8E7236CCACB /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		E71424B599E943648E0F4282 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D3E68A9798A776400EC46DDB /* RoomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomViews.swift; sourceTree = "<group>"; };
+		1B117661B2AA4C1C62F97F79 /* JoinRoomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRoomViews.swift; sourceTree = "<group>"; };
 		CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViews.swift; sourceTree = "<group>"; };
 		E755E8C81B55112D72A2D008 /* LibreApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibreApp.swift; sourceTree = "<group>"; };
 		FB350FB658F2EBFC27F077E5 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
@@ -274,6 +280,7 @@
 				5552427112301CCC61834729 /* RulesView.swift */,
 				E71424B599E943648E0F4282 /* SettingsView.swift */,
 				D3E68A9798A776400EC46DDB /* RoomViews.swift */,
+				1B117661B2AA4C1C62F97F79 /* JoinRoomViews.swift */,
 				CC8BC4478F8FA648F6CBB5F8 /* MediaViews.swift */,
 				FB350FB658F2EBFC27F077E5 /* TasksView.swift */,
 			);
@@ -289,6 +296,7 @@
 				2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */,
 				9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */,
 				D58E2D580356DC437F05A0CD /* OrgModels.swift */,
+				1A22D25E71B22952CC6D5883 /* JoinCode.swift */,
 				5D0610BC65FEE5454D52E807 /* TaskDetails.swift */,
 				68EB20852E75BC8350878E33 /* People.swift */,
 				F379B52A6BD676489720A926 /* MeshPolicy.swift */,
@@ -473,6 +481,7 @@
 				613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */,
 				FAC18A04EE738239F7B5CBFA /* OrgMemory.swift in Sources */,
 				5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */,
+				6CFC7E13E2EE15AF299CCBDA /* JoinCode.swift in Sources */,
 				D8D98AEDC15A55B619C7AD8E /* TaskDetails.swift in Sources */,
 				630F9BF63AE308FFE4AB9D7B /* PeerStripView.swift in Sources */,
 				D4DCCE15241436706548CB37 /* People.swift in Sources */,
@@ -490,6 +499,7 @@
 				7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */,
 				82F3721960CA072D634F9034 /* SettingsView.swift in Sources */,
 				9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */,
+				D2628E4A500B3C4499F6582C /* JoinRoomViews.swift in Sources */,
 				136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */,
 				EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */,
 				069737D7669061806B9C5A4D /* Timeline.swift in Sources */,
@@ -539,6 +549,7 @@
 				DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */,
 				CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */,
 				5A315A6B276143E804C4995A /* OrgModels.swift in Sources */,
+				0385A3E9A78D054A751691EA /* JoinCode.swift in Sources */,
 				1BB1BC55AC4B47FCE80391D1 /* TaskDetails.swift in Sources */,
 				9886BB428215ABD8165DE5A9 /* PeerStripView.swift in Sources */,
 				44A24D1A140D5B4576D00374 /* People.swift in Sources */,
@@ -556,6 +567,7 @@
 				D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */,
 				7108DF704DE33B6280376152 /* SettingsView.swift in Sources */,
 				576955B86DEFBF14B5A97108 /* RoomViews.swift in Sources */,
+				A7849441CC525E17AB9955D1 /* JoinRoomViews.swift in Sources */,
 				DDB3442105860592EC0DBD1D /* MediaViews.swift in Sources */,
 				5FA6165B0DC52B836D0566C3 /* TasksView.swift in Sources */,
 				64F48D4AA5857840CAD71DDF /* Timeline.swift in Sources */,

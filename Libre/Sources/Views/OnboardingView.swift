@@ -9,7 +9,7 @@ import UIKit
 #endif
 
 enum OnboardingStep: Int, CaseIterable {
-    case welcome, name, localNetwork, room, tour, macSetup
+    case welcome, name, localNetwork, room, tour, macSetup, createRoom
 }
 
 struct OnboardingFlow: View {
@@ -23,7 +23,7 @@ struct OnboardingFlow: View {
                 ProgressView(value: Double(step.rawValue + 1), total: Double(lastStep.rawValue + 1))
                     .frame(maxWidth: 220)
                 Spacer()
-                if step == .tour || step == .macSetup {
+                if step == .tour || step == .macSetup || step == .createRoom {
                     Button("Skip") { advance() }
                 }
             }
@@ -43,7 +43,7 @@ struct OnboardingFlow: View {
 
     private var lastStep: OnboardingStep {
         #if os(macOS)
-        return .macSetup
+        return .createRoom
         #else
         return .tour
         #endif
@@ -63,6 +63,9 @@ struct OnboardingFlow: View {
             #else
             EmptyView()
             #endif
+        case .createRoom:
+            // Mac onboarding ends with "Create your room" (name plus a generated code, QR join screen).
+            CreateCodeRoomView(onDone: { advance() }, showSkip: true)
         }
     }
 
@@ -71,7 +74,12 @@ struct OnboardingFlow: View {
             mesh.finishOnboarding()
             return
         }
-        step = OnboardingStep(rawValue: step.rawValue + 1) ?? lastStep
+        var next = OnboardingStep(rawValue: step.rawValue + 1) ?? lastStep
+        #if os(macOS)
+        // The Mac creates its room at the end instead of joining one early.
+        if next == .room { next = .tour }
+        #endif
+        step = next
     }
 }
 
@@ -201,6 +209,7 @@ private struct RoomStep: View {
     @State private var confirm = ""
     @State private var joinText = ""
     @State private var error: String?
+    @State private var showCodeJoin = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -221,10 +230,17 @@ private struct RoomStep: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(mesh.roomBusy || !RoomOnboardingPicker.isReady(choice: choice, name: name, passcode: passcode, confirm: confirm, joinText: joinText))
+            Button { showCodeJoin = true } label: {
+                Label("Scan QR or type a room code", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
             if choice != .open {
                 Button("Try Default (the open room) for now") { next() }
                     .font(.callout)
             }
+        }
+        .sheet(isPresented: $showCodeJoin, onDismiss: { if !mesh.activeRoom.isDefault { next() } }) {
+            CodeJoinView().environmentObject(mesh)
         }
     }
 }

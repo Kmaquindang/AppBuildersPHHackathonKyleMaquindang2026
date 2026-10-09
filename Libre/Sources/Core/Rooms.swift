@@ -44,7 +44,7 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     /// nil for the Default room and for rooms from before admin keys (until migrated).
     public var gov: RoomGov?
 
-    public enum KeySource: String, Codable, Sendable { case random, passcode }
+    public enum KeySource: String, Codable, Sendable { case random, passcode, code }
 
     public init(label: String, key: Data, creator: String, createdAt: Date = Date(), admins: [String] = [], clearedAt: Date? = nil,
                 keySource: KeySource? = nil, gov: RoomGov? = nil) {
@@ -60,6 +60,8 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
 
     /// True when people can join by typing the name and passcode.
     public var usesPasscode: Bool { keySource == .passcode }
+    /// Name plus short code room (JoinCode.swift): admission by code proof, base key from the name.
+    public var usesCode: Bool { keySource == .code }
 
     /// Short code teammates can compare out loud to confirm they typed the same name and passcode
     /// ("check code 3FA9"). It is the start of the room tag, which is already on the wire.
@@ -139,6 +141,14 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
         guard !label.isEmpty, RoomPasscode.isAcceptable(passcode), label != "DEFAULT" else { return nil }
         let key = RoomPasscode.deriveKey(name: label, passcode: passcode, rounds: rounds)
         return Room(label: label, key: key, creator: creator, createdAt: now, admins: [], keySource: .passcode)
+    }
+
+    /// A code room (JoinCode.swift): the tag and base key come from the name only (fast), the code
+    /// is checked by the admin at admission. nil for an empty or reserved name.
+    public static func fromCode(name raw: String, creator: String, now: Date = Date()) -> Room? {
+        let label = cleanLabel(raw)
+        guard !label.isEmpty, label != "DEFAULT" else { return nil }
+        return Room(label: label, key: CodeRoom.baseKey(name: label), creator: creator, createdAt: now, admins: [], keySource: .code)
     }
 
     /// The open room every device starts in (and where data from before rooms is migrated).

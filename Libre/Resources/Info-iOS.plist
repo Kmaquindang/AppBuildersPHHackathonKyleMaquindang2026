@@ -22,6 +22,19 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.pasa.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pasa</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Pasa uses the camera only to scan a room's QR code so you can join it. Nothing is recorded or sent.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pasa records voice notes for your team only while you hold the mic button.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

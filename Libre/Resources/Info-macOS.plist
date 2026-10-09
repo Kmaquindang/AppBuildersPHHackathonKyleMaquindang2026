@@ -24,6 +24,17 @@
 	<string>public.app-category.social-networking</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.pasa.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pasa</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pasa records voice notes for your team only while you hold the mic button.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

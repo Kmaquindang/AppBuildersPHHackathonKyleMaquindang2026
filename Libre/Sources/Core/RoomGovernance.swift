@@ -91,6 +91,15 @@ public struct RoomManifest: Codable, Equatable, Sendable {
     /// The creator device's signing key (not the room admin key). Set on new rooms and stamped by
     /// the creator on its next admin action for older rooms. Optional so older manifests decode.
     public var creatorKey: Data? = nil
+    /// Code rooms: HMAC(code key, "admin" | admin key), so a joiner pins only an admin who knows
+    /// the code. Changes with every new code.
+    public var codeCheck: Data? = nil
+    /// Code rooms: the current code stops admitting at this time (nil = never).
+    public var codeExpiresAt: Date? = nil
+    /// Code rooms: how many times the code was changed (1 = first code).
+    public var codeEpoch: Int? = nil
+    /// An admin approves each new member by hand (valid code requests wait in a list).
+    public var approval: Bool? = nil
 
     public var isFull: Bool { members.count >= cap }
 
@@ -122,6 +131,8 @@ public struct JoinRequest: Codable, Equatable, Sendable {
     public var signKey: Data
     public var boxKey: Data
     public var at: Date
+    /// Code rooms: HMAC(code key, room | signKey). Optional so older requests decode.
+    public var proof: Data? = nil
 }
 
 /// Body of a `.roomControl` message (always sealed with the base key).
@@ -162,6 +173,11 @@ public struct RoomGov: Codable, Equatable, Sendable {
     public var removed: Bool
     /// When this device accepted the latest rotation (previous epoch still accepted briefly).
     public var rotatedAt: Date?
+    /// Code rooms: key derived from the code (admin: current code; joiner: the code it typed).
+    /// Local only, never sent.
+    public var codeKey: Data? = nil
+    /// Code rooms, creator only: the current code, shown on the join screen. Local only.
+    public var joinCode: String? = nil
 
     public init(adminKey: Data? = nil, adminSecret: Data? = nil, manifest: RoomManifest? = nil, signed: SignedBlob? = nil,
                 epochKeys: [String: Data] = [:], pending: Bool = false, removed: Bool = false, rotatedAt: Date? = nil) {
@@ -237,7 +253,8 @@ public enum RoomGovernor {
     /// the first member, and (rotate: true) a random epoch 1 key. Returns the signed manifest.
     @discardableResult
     public static func setUp(_ room: inout Room, identity: DeviceIdentity, device: String, name: String, now: Date = Date(),
-                             rotate: Bool = true, listed: Bool = true, cap: Int = RoomLimits.defaultCap) -> SignedBlob? {
+                             rotate: Bool = true, listed: Bool = true, cap: Int = RoomLimits.defaultCap,
+                             code: String? = nil, codeKey: Data? = nil, codeExpiresAt: Date? = nil, approval: Bool = false) -> SignedBlob? {
         guard !room.isDefault else { return nil }
         let adminSecret = PasaSign.newSecret()
         guard let adminKey = PasaSign.publicKey(ofSecret: adminSecret) else { return nil }
@@ -246,7 +263,17 @@ public enum RoomGovernor {
                                     epoch: 0, cap: RoomLimits.clampCap(cap), state: .open, listed: listed,
                                     passcode: room.usesPasscode, members: [me], banned: [], boxes: [:], issuedAt: now)
         manifest.creatorKey = identity.signKey
-        let gov = RoomGov(adminKey: adminKey, adminSecret: adminSecret)
+        var gov = RoomGov(adminKey: adminKey, adminSecret: adminSecret)
+        if room.usesCode {
+            guard let codeKey else { return nil }
+            manifest.passcode = true
+            manifest.codeCheck = CodeRoom.check(codeKey: codeKey, adminKey: adminKey)
+            manifest.codeExpiresAt = codeExpiresAt
+            manifest.codeEpoch = 1
+            manifest.approval = approval
+            gov.codeKey = codeKey
+            gov.joinCode = code.flatMap(JoinCode.normalize).map(JoinCode.format)
+        }
         if rotate {
             let fresh = RoomCrypto.randomKey()
             manifest.epoch = 1
@@ -290,6 +317,8 @@ public enum RoomGovernor {
         public var rekeyed = false
         public var closed: Bool? = nil
         public var firstPin = false
+        /// Code rooms: the admin made a new code (members who are not admins must enter it).
+        public var codeChanged = false
     }
 
     public enum Acceptance: Equatable, Sendable {
@@ -312,6 +341,13 @@ public enum RoomGovernor {
             guard m.adminKey == pinned else { return .rejected("admin key does not match the pinned admin") }
         } else {
             guard blob.signer == m.adminKey else { return .rejected("first manifest must be signed by its admin") }
+            if room.usesCode {
+                // Pin only an admin who knows the code this device typed.
+                guard let ck = gov.codeKey, let check = m.codeCheck,
+                      CodeRoom.same(check, CodeRoom.check(codeKey: ck, adminKey: m.adminKey)) else {
+                    return .rejected("the room code does not match")
+                }
+            }
             change.firstPin = true
         }
         let current = gov.manifest
@@ -336,6 +372,7 @@ public enum RoomGovernor {
             change.rekeyed = true
             gov.rotatedAt = now
         }
+        if let current, (m.codeEpoch ?? 0) > (current.codeEpoch ?? 0) { change.codeChanged = true }
         if me == nil {
             if wasMember || m.banned.contains(identity.signKey) {
                 change.removed = !gov.removed
@@ -396,7 +433,16 @@ public enum RoomGovernor {
 
     /// Admin side of a join request: valid and signed by the key it lists, room open, key not
     /// banned, under the cap. Then the member is added and the current epoch key is sealed to it.
-    public static func admit(_ request: SignedBlob, room: inout Room, identity: DeviceIdentity, now: Date = Date()) -> AdmitResult {
+    public enum Vetting: Equatable, Sendable {
+        case ok(JoinRequest)
+        case already
+        case refused(String)
+        case invalid
+    }
+
+    /// Checks a join request without changing anything: signature, room, not banned, open, not
+    /// full, and for code rooms a proof made with the current, unexpired code.
+    public static func vet(_ request: SignedBlob, room: Room, identity: DeviceIdentity, now: Date = Date()) -> Vetting {
         guard request.domain == joinDomain, request.isValid, let r = request.decode(JoinRequest.self),
               r.signKey == request.signer, r.room == room.id, r.boxKey.count == 32 else { return .invalid }
         guard let m = room.gov?.manifest, signerSecret(room, identity: identity) != nil else { return .invalid }
@@ -404,6 +450,21 @@ public enum RoomGovernor {
         if m.banned.contains(r.signKey) { return .refused("removed by an admin") }
         if m.state == .closed { return .refused("room closed") }
         if m.isFull { return .refused("room full (\(m.members.count)/\(m.cap))") }
+        if room.usesCode, !CodeRoom.admits(proof: r.proof, codeKey: room.gov?.codeKey, room: room.id, signKey: r.signKey,
+                                           expiresAt: m.codeExpiresAt, now: now) {
+            return .refused("wrong or expired room code")
+        }
+        return .ok(r)
+    }
+
+    public static func admit(_ request: SignedBlob, room: inout Room, identity: DeviceIdentity, now: Date = Date()) -> AdmitResult {
+        let r: JoinRequest
+        switch vet(request, room: room, identity: identity, now: now) {
+        case .ok(let ok): r = ok
+        case .already: return .already
+        case .refused(let why): return .refused(why)
+        case .invalid: return .invalid
+        }
         let key = room.contentKey
         let roomID = room.id
         let blob = issue(&room, identity: identity, now: now) { next in
@@ -472,10 +533,63 @@ public enum RoomGovernor {
         }
     }
 
+    // MARK: Code rooms
+
+    /// "New code": only the creator (it holds the code). Every member who is not an admin is
+    /// removed (not banned) and the content key rotates, so old joins must enter the new code.
+    public static func rotateCode(_ code: String, codeKey: Data, expiresAt: Date?, room: inout Room, identity: DeviceIdentity,
+                                  now: Date = Date()) -> SignedBlob? {
+        guard room.usesCode, isCreatorAdmin(room), let clean = JoinCode.normalize(code) else { return nil }
+        let roomID = room.id
+        let before = room.gov
+        room.gov?.codeKey = codeKey
+        room.gov?.joinCode = JoinCode.format(clean)
+        let blob = issue(&room, identity: identity, now: now) { next in
+            next.codeEpoch = (next.codeEpoch ?? 1) + 1
+            next.codeCheck = CodeRoom.check(codeKey: codeKey, adminKey: next.adminKey)
+            next.codeExpiresAt = expiresAt
+            let keep = Set(([next.creatorKey].compactMap { $0 }) + next.coAdmins + [identity.signKey])
+            next.members.removeAll { !keep.contains($0.signKey) }
+            rotate(&next, room: roomID)
+            return true
+        }
+        if blob == nil { room.gov = before }
+        return blob
+    }
+
+    /// Changes only when the current code stops working (off, 1 hour, 1 day from now).
+    public static func setCodeExpiry(_ expiresAt: Date?, room: inout Room, identity: DeviceIdentity, now: Date = Date()) -> SignedBlob? {
+        guard room.usesCode else { return nil }
+        return issue(&room, identity: identity, now: now) { next in
+            guard next.codeExpiresAt != expiresAt else { return false }
+            next.codeExpiresAt = expiresAt
+            return true
+        }
+    }
+
+    public static func setApproval(_ on: Bool, room: inout Room, identity: DeviceIdentity, now: Date = Date()) -> SignedBlob? {
+        issue(&room, identity: identity, now: now) { next in
+            guard (next.approval ?? false) != on else { return false }
+            next.approval = on
+            return true
+        }
+    }
+
+    /// Joiner side of a code room: remember the typed code's key and ask again, also after a
+    /// "New code" removed this device (removed is cleared unless the key was banned).
+    public static func enterCode(_ codeKey: Data, room: inout Room, identity: DeviceIdentity) {
+        var gov = room.gov ?? RoomGov(pending: true)
+        gov.codeKey = codeKey
+        if gov.manifest.map({ !$0.banned.contains(identity.signKey) }) ?? true { gov.removed = false }
+        if gov.manifest?.member(identity.signKey) == nil { gov.pending = true }
+        room.gov = gov
+    }
+
     // MARK: Joiner side
 
     public static func joinRequest(room: Room, identity: DeviceIdentity, device: String, name: String, now: Date = Date()) -> SignedBlob? {
-        let r = JoinRequest(room: room.id, device: device, name: name, signKey: identity.signKey, boxKey: identity.boxKey, at: now)
+        var r = JoinRequest(room: room.id, device: device, name: name, signKey: identity.signKey, boxKey: identity.boxKey, at: now)
+        if room.usesCode, let ck = room.gov?.codeKey { r.proof = CodeRoom.proof(codeKey: ck, room: room.id, signKey: identity.signKey) }
         return identity.sign((try? PasaJSON.encoder.encode(r)) ?? Data(), domain: joinDomain)
     }
 

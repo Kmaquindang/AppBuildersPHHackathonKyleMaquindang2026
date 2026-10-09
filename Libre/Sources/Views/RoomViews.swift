@@ -106,10 +106,18 @@ struct RoomSettingsSection: View {
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var confirmLeave = false
+    @State private var showShare = false
+    @State private var showCodeCreate = false
+    @State private var showCodeJoin = false
 
     var body: some View {
         Section {
             LabeledContent("Active room", value: mesh.activeRoom.displayName)
+            if mesh.activeJoinLink != nil {
+                Button { showShare = true } label: { Label("Show join screen (QR and code)", systemImage: "qrcode") }
+            }
+            Button { showCodeCreate = true } label: { Label("Create a room with a code", systemImage: "plus.rectangle.on.rectangle") }
+            Button { showCodeJoin = true } label: { Label("Join with QR or room code", systemImage: "qrcode.viewfinder") }
             if !mesh.activeRoom.isDefault {
                 LabeledContent("Check code", value: mesh.activeRoom.checkCode)
                 LabeledContent("How to join", value: mesh.activeRoom.usesPasscode ? "Name + passcode, or QR" : "QR or join string only")
@@ -219,6 +227,31 @@ struct RoomSettingsSection: View {
             Text("Room")
         } footer: {
             Text(footer)
+        }
+        .sheet(isPresented: $showShare) {
+            NavigationStack {
+                ScrollView { RoomShareView().padding() }
+                    .navigationTitle("Join \(mesh.activeRoom.label)")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showShare = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 640)
+            #endif
+        }
+        .sheet(isPresented: $showCodeCreate) {
+            NavigationStack {
+                ScrollView { CreateCodeRoomView(onDone: { showCodeCreate = false }).padding() }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showCodeCreate = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 640)
+            #endif
+        }
+        .sheet(isPresented: $showCodeJoin) {
+            CodeJoinView()
+                #if os(macOS)
+                .frame(minWidth: 460, minHeight: 420)
+                #endif
         }
         .confirmationDialog("Leave \(mesh.activeRoom.displayName)? Its chat and memory stay on this device; join again with the name and passcode or the join string.",
                             isPresented: $confirmLeave) {
