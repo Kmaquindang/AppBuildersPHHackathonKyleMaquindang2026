@@ -105,7 +105,7 @@ final class MacSetupService: NSObject, ObservableObject {
         let plan = self.plan
         if let blocked = plan.blocked { phase = .failed(blocked); return }
         if plan.totalBytes > 0 && internet == .offline {
-            phase = .failed("Connect to internet once for setup, then Pasa runs offline.")
+            phase = .failed("Connect to internet once for setup, then Libre runs offline.")
             return
         }
         job = Task { [weak self] in
@@ -254,7 +254,7 @@ extension MacSetupService: URLSessionDownloadDelegate {
         let moved: Result<URL, Error>
         do {
             guard status == 200, OllamaDownload.isAllowed(finalURL) else {
-                throw NSError(domain: "Pasa", code: status, userInfo: [NSLocalizedDescriptionKey: "Download refused (HTTP \(status) from \(finalURL?.host ?? "unknown host"))."])
+                throw NSError(domain: "Libre", code: status, userInfo: [NSLocalizedDescriptionKey: "Download refused (HTTP \(status) from \(finalURL?.host ?? "unknown host"))."])
             }
             let dest = MainActor.assumeIsolated { downloadDestination } ?? location
             try? FileManager.default.removeItem(at: dest)

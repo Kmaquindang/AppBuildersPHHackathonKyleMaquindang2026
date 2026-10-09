@@ -65,6 +65,23 @@ public enum AnswerStyle {
     /// question]", "[Rule: General knowledge]"). Only rules and notes the model was actually shown
     /// can become chips. When it was shown nothing, invented tags are dropped too: the answer is
     /// already marked noRule, so a warning chip would only be noise.
+    /// Plain "I have no information" wording (English, Tagalog, Cebuano). Narrow on purpose: words
+    /// like "walang" also start real rules ("Walang ... after 5 PM"), so they are not on this list.
+    static let noInfoPhrases = ["don't have", "do not have", "don't know", "do not know", "no information", "no info",
+                                "wala akong", "wala po akong", "hindi ko alam", "wala koy", "dili ko kahibalo"]
+
+    public static func saysNoInfo(_ text: String) -> Bool {
+        let lower = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+        return noInfoPhrases.contains { lower.contains($0) }
+    }
+
+    /// No saved rule matched the question and the reply itself says it has no information: rule
+    /// chips under such a reply would contradict it, so they are dropped (Oct 9, 2026, benchmark #19).
+    public static func dropContradictedCitations(_ styled: StyledAnswer, noRelevantKnowledge: Bool) -> StyledAnswer {
+        guard noRelevantKnowledge, !styled.rulesUsed.isEmpty || !styled.unverifiedRules.isEmpty, saysNoInfo(styled.text) else { return styled }
+        return restrict(styled, shown: [])
+    }
+
     public static func restrict(_ styled: StyledAnswer, shown titles: [String]) -> StyledAnswer {
         let allowed = Set(titles.map { NameMatcher.normalize($0) })
         var out = styled

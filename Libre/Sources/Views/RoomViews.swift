@@ -287,7 +287,7 @@ struct RoomAdvancedSection: View {
                                 joinText = ""
                                 showJoin = false
                             } else {
-                                message = "That is not a Pasa room join string. Copy the whole PASA1... text."
+                                message = "That is not a Libre room join string. Copy the whole PASA1... text."
                             }
                         }
                         .disabled(joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -312,7 +312,7 @@ struct RoomAdvancedSection: View {
             ? "As the AI peer, this Mac answers in every room it has joined (one question at a time, rooms take turns). It still relays other rooms' messages without being able to read them."
             : "This device reads and writes one room at a time (switch from the room chip in the header). It still relays other rooms' messages without being able to read them."
         if mesh.activeRoom.isDefault {
-            return "Town Square is open to everyone nearby, no code needed: its key is public, so anyone running Pasa nearby can read it. Create a room for privacy. " + common
+            return "Town Square is open to everyone nearby, no code needed: its key is public, so anyone running Libre nearby can read it. Create a room for privacy. " + common
         }
         let pass = mesh.activeRoom.usesPasscode
             ? "Anyone who knows the room name and passcode, or has the QR code or join string, can read and write in it. The passcode is never shown again or stored. A short passcode can be guessed by someone who records room traffic, so use a long one. "
@@ -359,7 +359,7 @@ struct RoomOnboardingPicker: View {
             switch choice {
             case .open:
                 RoomSubtitle(text: Room.townSquareSubtitle)
-                Text("Anyone running Pasa nearby can read it. Fine for a demo; create a room for privacy. You can change this later in Settings.")
+                Text("Anyone running Libre nearby can read it. Fine for a demo; create a room for privacy. You can change this later in Settings.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             case .create:
@@ -407,7 +407,7 @@ struct NearbyRoomsList: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Nearby rooms").font(.subheadline.weight(.semibold))
             if mesh.nearbyRooms.isEmpty {
-                Text("None heard yet. Listed rooms show here when their admin device is nearby with Pasa open. Hidden rooms never show: type the name.")
+                Text("None heard yet. Listed rooms show here when their admin device is nearby with Libre open. Hidden rooms never show: type the name.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             ForEach(mesh.nearbyRooms, id: \.beacon.room) { heard in
@@ -435,7 +435,7 @@ struct NearbyRoomsList: View {
                 .buttonStyle(.plain)
                 .disabled(b.isClosed || b.isFull)
             }
-            Text("Listed room names and member counts are visible to anyone nearby running Pasa.")
+            Text("Listed room names and member counts are visible to anyone nearby running Libre.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -512,7 +512,7 @@ struct RoomAdminSection: View {
         } footer: {
             Text("Kick makes a new room key and hands it to everyone else, so the removed device cannot read new messages. Messages it already received stay on it. The removed device's key is banned, but a changed copy of the app could make a new key and ask to join again with the passcode: to fully lock someone out, make a new room with a new passcode. Joining needs an admin device nearby. The cap limits who is let in.\(room.epoch == 0 ? " This room still uses the passcode key (it was made before admin keys), so anyone with the passcode can read it until the first kick." : "")")
         }
-        .confirmationDialog(kickTarget.map { "Kick \($0.name)? Pasa makes a new room key for everyone else." } ?? "",
+        .confirmationDialog(kickTarget.map { "Kick \($0.name)? Libre makes a new room key for everyone else." } ?? "",
                             isPresented: Binding(get: { kickTarget != nil }, set: { if !$0 { kickTarget = nil } })) {
             Button("Kick and change the room key", role: .destructive) {
                 if let target = kickTarget, mesh.kick(target) { note = "\(target.name) removed. New room key sent to the others." }

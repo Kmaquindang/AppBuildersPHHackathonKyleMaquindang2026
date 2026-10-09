@@ -16,7 +16,7 @@ func runNoAIHostTests() {
     let tracker = AIStatusTracker()
     let status = AIStatus(device: "MAC", state: .awake, model: "qwen3:8b", queue: 3, rooms: ["r1"], at: t0)
     _ = tracker.ingest(AIStatusTracker.make(status, identity: mac)!, now: t0)
-    let slowAsk = myAsk("@pasa long question", at: t0, sentTo: ["MAC"])
+    let slowAsk = myAsk("@libre long question", at: t0, sentTo: ["MAC"])
     var beat = status; beat.at = t0.addingTimeInterval(30)
     _ = tracker.ingest(AIStatusTracker.make(beat, identity: mac)!, now: t0.addingTimeInterval(30))
     let slow = tracker.availability(room: "r1", now: t0.addingTimeInterval(60))
@@ -33,7 +33,7 @@ func runNoAIHostTests() {
     check(TypingState.of(pending: 0, isAIPeer: false, ai: .offline, waiting: 0) == .none, "no AI: nothing waiting, no line")
 
     // An ask sent with nobody nearby (no recipients yet) still counts as waiting.
-    let lonely = myAsk("@pasa when is the quiz?", at: t0)
+    let lonely = myAsk("@libre when is the quiz?", at: t0)
     check(ChatLayout.pendingAsks([lonely], device: "PHONE_A", now: t0.addingTimeInterval(5)).isEmpty, "no AI: outboxed ask is not 'typing'")
     check(ChatLayout.unansweredAsks([lonely], device: "PHONE_A", now: t0.addingTimeInterval(5)).count == 1, "no AI: outboxed ask is waiting")
     check(ChatLayout.unansweredAsks([lonely], device: "PHONE_A", now: t0.addingTimeInterval(NoAIHost.window + 1)).isEmpty, "no AI: line ends after a day")

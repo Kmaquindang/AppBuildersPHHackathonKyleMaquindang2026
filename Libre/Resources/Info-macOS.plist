@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Pasa</string>
+	<string>Libre</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Pasa</string>
+	<string>Libre</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -28,21 +28,22 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>app.pasa.join</string>
+			<string>app.libre.join</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>libre</string>
 				<string>pasa</string>
 			</array>
 		</dict>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Pasa records voice notes for your team only while you hold the mic button.</string>
+	<string>Libre records voice notes for your team only while you hold the mic button.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Pasa sends a photo you pick to your team over the offline mesh. It is shrunk first and location data is removed.</string>
+	<string>Libre sends a photo you pick to your team over the offline mesh. It is shrunk first and location data is removed.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Pasa turns team voice notes into text on this Mac with on-device speech recognition. Audio is never sent to a server.</string>
+	<string>Libre turns team voice notes into text on this Mac with on-device speech recognition. Audio is never sent to a server.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Pasa connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.</string>
+	<string>Libre connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

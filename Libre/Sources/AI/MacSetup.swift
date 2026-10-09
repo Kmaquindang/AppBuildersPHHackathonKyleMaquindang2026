@@ -294,7 +294,7 @@ public enum SetupChecklist {
             SetupItem(id: "admins", title: "Admin devices set", ok: adminCount > 0, optional: true,
                       detail: adminCount > 0 ? "\(adminCount) admin device\(adminCount == 1 ? "" : "s") besides this Mac" : "Only this Mac can edit rules. Tick phones in Settings > Admins.", fix: nil),
             SetupItem(id: "internet", title: "Internet state", ok: true, optional: true,
-                      detail: internet == .offline ? "Internet: none. Pasa runs fully offline." : (internet == .connected ? "Internet: connected (not used by Pasa answers)" : internet.label), fix: nil),
+                      detail: internet == .offline ? "Internet: none. Libre runs fully offline." : (internet == .connected ? "Internet: connected (not used by Libre answers)" : internet.label), fix: nil),
         ]
     }
 

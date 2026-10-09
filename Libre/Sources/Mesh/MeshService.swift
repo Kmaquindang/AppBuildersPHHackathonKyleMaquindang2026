@@ -494,7 +494,7 @@ final class MeshService: ObservableObject {
 
     /// Name shown on a message: the sender's chosen name, then the directory, then the device id.
     func senderLabel(for message: MeshMessage) -> String {
-        if message.kind == .answer { return "Pasa AI" }
+        if message.kind == .answer { return "Libre AI" }
         if let name = message.senderName, !name.isEmpty { return name }
         return label(for: message.origin)
     }
@@ -1171,7 +1171,7 @@ final class MeshService: ObservableObject {
                 }
                 return
             }
-            lastProblem = "That link is not a Pasa room link."
+            lastProblem = "That link is not a Libre room link."
         case .success(let link):
             if link.isExpired() { lastProblem = "That room code expired. Ask the admin for a new one."; return }
             Task {
@@ -1434,7 +1434,7 @@ final class MeshService: ObservableObject {
             guard awakeActivity == nil else { return }
             awakeActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiated, .idleSystemSleepDisabled],
-                reason: "Pasa is the team's AI peer: answering the mesh and keeping the model warm"
+                reason: "Libre is the team's AI peer: answering the mesh and keeping the model warm"
             )
         } else {
             endAwakeActivity()
@@ -1554,7 +1554,7 @@ final class MeshService: ObservableObject {
             do {
                 let loaded = try await client.warmUp()
                 let seconds = Date().timeIntervalSince(started)
-                self?.ollamaStatus = "Ready. \(loaded) loaded in \(String(format: "%.1f", seconds)) s. Kept warm while Pasa runs (checked every minute)."
+                self?.ollamaStatus = "Ready. \(loaded) loaded in \(String(format: "%.1f", seconds)) s. Kept warm while Libre runs (checked every minute)."
                 self?.modelWarm = true
                 self?.lastWarm = Date()
                 self?.refreshProof()
@@ -1653,7 +1653,7 @@ final class MeshService: ObservableObject {
             // The same question is still waiting: do not queue it twice (a question about new
             // photos is never a repeat).
             if attachments == nil, AskCoalescer.pendingDuplicate(of: text, from: displayName, in: entries) != nil {
-                composerNote = "You already asked that. It sends once and Pasa answers once."
+                composerNote = "You already asked that. It sends once and Libre answers once."
                 return
             }
             // Answered in the last 10 minutes: point at the answer instead of asking again.
@@ -2302,7 +2302,7 @@ final class MeshService: ObservableObject {
            let transport, !transport.send(data, excluding: decision.forwardExcluding).isEmpty {
             relayedCount += 1
         }
-        lastProblem = "\(label(for: packet.envelope.origin)) runs a newer Pasa (format v\(packet.version)). Its messages are passed on but cannot be shown here. Update Pasa on this device."
+        lastProblem = "\(label(for: packet.envelope.origin)) runs a newer Libre (format v\(packet.version)). Its messages are passed on but cannot be shown here. Update Libre on this device."
     }
 
     // MARK: AI peer (macOS)
@@ -2942,7 +2942,7 @@ extension MeshService: GatewayBackend {
     }
 
     func setGateway(_ on: Bool) {
-        NSLog("Pasa browser gateway: %@", on ? "on" : "off")
+        NSLog("Libre browser gateway: %@", on ? "on" : "off")
         defaults.set(on, forKey: Keys.gateway)
         gatewayOn = on
         gatewayProblem = nil
@@ -3058,8 +3058,8 @@ extension MeshService: GatewayBackend {
             }
         }
         let room = rooms.room(withID: session.roomID)
-        let ai = isAIPeer ? (modelWarm ? "Pasa AI is ready on this Mac." : "Pasa AI is on this Mac (first answer may be slow).")
-                          : "This Mac is not running Pasa AI, so @pasa questions will not be answered."
+        let ai = isAIPeer ? (modelWarm ? "Libre AI is ready on this Mac." : "Libre AI is on this Mac (first answer may be slow).")
+                          : "This Mac is not running Libre AI, so @libre questions will not be answered."
         return GatewayState(room: room?.displayName ?? "Room", seq: gatewayNextSeq, messages: out, tasks: tasks, ai: ai)
     }
 
@@ -3070,12 +3070,12 @@ extension MeshService: GatewayBackend {
         case .chat:
             return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: m.body, mine: mine, pasa: false, kind: "chat", at: m.createdAt)
         case .ask where mine:
-            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "@pasa " + m.body, mine: true, pasa: false, kind: "ask", at: m.createdAt)
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "@libre " + m.body, mine: true, pasa: false, kind: "ask", at: m.createdAt)
         case .answer where m.destination == .peer(session.device):
-            return GatewayMessage(id: m.id.uuidString, seq: seq, from: "Pasa AI", text: m.body, mine: false, pasa: true, kind: "answer", at: m.createdAt,
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: "Libre AI", text: m.body, mine: false, pasa: true, kind: "answer", at: m.createdAt,
                                   rules: m.rulesUsed, docs: m.docRefs)
         case .media:
-            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "Shared a photo or voice note. Open the Pasa app to see it.", mine: false, pasa: false, kind: "media", at: m.createdAt)
+            return GatewayMessage(id: m.id.uuidString, seq: seq, from: senderLabel(for: m), text: "Shared a photo or voice note. Open the Libre app to see it.", mine: false, pasa: false, kind: "media", at: m.createdAt)
         default:
             return nil
         }

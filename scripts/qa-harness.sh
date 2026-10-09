@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pasa QA harness (macOS, feature-freeze self-test): real ExecutiveAssistant, compaction, daily
+# Libre QA harness (macOS, feature-freeze self-test): real ExecutiveAssistant, compaction, daily
 # summary, vision and voice code against LOCAL Ollama only. Synthetic data. Never pulls models.
 # Usage: scripts/qa-harness.sh [case ...]        (a..k, m, all)
 #        scripts/qa-harness.sh voice <audio file>

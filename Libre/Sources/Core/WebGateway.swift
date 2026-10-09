@@ -168,13 +168,13 @@ public enum GatewayNet {
         return clean.isEmpty ? nil : clean
     }
 
-    /// "Open in Pasa app" button on the page: room only; the code is typed in the app.
+    /// "Open in Libre app" button on the page: room only; the code is typed in the app.
     public static func appURL(room: String) -> String {
         var c = URLComponents()
         c.scheme = JoinLink.scheme
         c.host = "join"
         c.queryItems = [URLQueryItem(name: "room", value: room), URLQueryItem(name: "v", value: String(JoinLink.version))]
-        return c.string ?? "pasa://join"
+        return c.string ?? "libre://join"
     }
 }
 
@@ -383,12 +383,12 @@ public final class GatewayRouter {
 
     public func handle(_ req: HTTPRequest, from address: String) async -> HTTPResponse {
         guard GatewayNet.isLocal(address) else { return .error(403, "Local network only.") }
-        guard let backend else { return .error(503, "Pasa is not ready.") }
+        guard let backend else { return .error(503, "Libre is not ready.") }
         switch (req.method, req.path) {
         case ("GET", "/"), ("GET", "/join"), ("GET", "/index.html"):
             return HTTPResponse(status: 200, contentType: "text/html; charset=utf-8", body: Data(GatewayPage.html.utf8))
         case ("GET", "/api/ping"):
-            return .json(["ok": "pasa"])
+            return .json(["ok": "libre"])
         case ("POST", "/api/join"):
             if let wait = limiter.allowJoin(from: address, now: now()) {
                 return .error(429, "Too many tries. Wait \(wait) seconds.", retryAfter: wait)

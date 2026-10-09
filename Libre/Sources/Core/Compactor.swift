@@ -5,7 +5,7 @@ import Foundation
 
 public enum Compactor {
     public static let firstPacketLimit = 300
-    public static let moreHint = " (say \"@pasa more\" for the rest)"
+    public static let moreHint = " (say \"@libre more\" for the rest)"
 
     /// Splits `text` into a first packet of at most `limit` characters (hint included) and the remainder.
     public static func split(_ text: String, limit: Int = firstPacketLimit) -> (first: String, rest: String?) {

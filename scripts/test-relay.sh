@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compiles the pure-Swift core of Pasa (code folder Libre/, relay, rooms, memory, assistant logic) with the test runner and runs it.
+# Compiles the pure-Swift core of Libre (relay, rooms, memory, assistant logic) with the test runner and runs it.
 # macOS (Xcode command line tools): swiftc with CryptoKit, no downloads.
 # Linux (swift.org toolchain): SwiftPM with Apple's swift-crypto (fetched once by Package.swift).
 # No Ollama needed: tests use a fake model.

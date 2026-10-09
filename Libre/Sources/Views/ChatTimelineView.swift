@@ -349,7 +349,7 @@ struct MessageRow: View {
 
     /// VoiceOver: sender, text, rules, time, status.
     private var spokenLabel: String {
-        var parts = [isMine ? "You" : (isPasa ? "Pasa" : sender)]
+        var parts = [isMine ? "You" : (isPasa ? "Libre" : sender)]
         if !isPasa, let spoken = role?.spoken { parts.append(spoken) }
         if message.kind == .task { parts.append("Task") }
         if message.kind == .rule { parts.append("Rule") }
@@ -539,7 +539,7 @@ struct TypingBubble: View {
             Spacer(minLength: 40)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Pasa is typing")
+        .accessibilityLabel("Libre is typing")
     }
 
     private func dots(phase: Int) -> some View {
@@ -584,7 +584,7 @@ struct MessageDetailsSheet: View {
         NavigationStack {
             Form {
                 if message.kind == .answer {
-                    Section("Pasa") {
+                    Section("Libre") {
                         if let proof = message.proof {
                             row("Answered on \(proof.mac)", symbol: "laptopcomputer")
                             row(proof.model ?? "No model call needed", symbol: "cpu")
@@ -743,8 +743,8 @@ struct ChatEmptyState: View {
             Text("No messages yet")
                 .font(.headline)
             Text(mesh.connectedCount == 0
-                 ? "Say hi now. It sends by itself when a teammate with \(AppBrand.name) open comes near. No signal or internet needed. Start with @pasa to ask the AI."
-                 : "Say hi to the team, or start a message with @pasa to ask the AI.")
+                 ? "Say hi now. It sends by itself when a teammate with \(AppBrand.name) open comes near. No signal or internet needed. Start with @libre to ask the AI."
+                 : "Say hi to the team, or start a message with @libre to ask the AI.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

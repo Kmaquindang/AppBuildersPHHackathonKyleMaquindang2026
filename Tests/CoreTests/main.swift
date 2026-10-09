@@ -45,5 +45,5 @@ runTownSquareTests()
 runNoAIHostTests()
 await runWebGatewayTests()
 
-print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
+print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

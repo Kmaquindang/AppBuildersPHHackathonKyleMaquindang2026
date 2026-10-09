@@ -25,7 +25,7 @@ func runConversationTests() async {
     _ = await a.handle("and Sunday?", from: "PHONE_K")
     let followUp = fake.received.last?.last?.content ?? ""
     check(followUp.contains("<conversation>") && followUp.contains("Kyle: what are the site hours on Saturday?")
-          && followUp.contains("Pasa: Saturday is 8 AM to 12 noon."), "thread: follow-up prompt carries the prior turn")
+          && followUp.contains("Libre: Saturday is 8 AM to 12 noon."), "thread: follow-up prompt carries the prior turn")
     check(followUp.contains("Question from PHONE_K: and Sunday?") && followUp.contains("[Rule: Saturday site hours v1]"), "thread: rules still retrieved fresh beside the thread")
     check(AssistantPrompts.answerSystem.contains("and Sunday?") && AssistantPrompts.answerSystem.contains("team knowledge wins"), "thread: system prompt explains follow-ups, knowledge wins")
     check(mem.threadTurns.count == 2 && a.contextStats["R1"]?.verbatimTurns == 1, "thread: stats count verbatim turns")

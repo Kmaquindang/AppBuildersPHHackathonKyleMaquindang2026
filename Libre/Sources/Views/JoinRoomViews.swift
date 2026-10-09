@@ -32,7 +32,7 @@ struct CreateCodeRoomView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
             } else {
-                Text("Give the room a name people can say out loud, like CLASS-7B. Pasa makes a short code. Phones join by scanning the QR code or typing the name and code.")
+                Text("Give the room a name people can say out loud, like CLASS-7B. Libre makes a short code. Phones join by scanning the QR code or typing the name and code.")
                     .foregroundStyle(.secondary)
                 TextField("Room name, for example CLASS-7B", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -122,7 +122,7 @@ struct RoomShareView: View {
             }
             Text(browserURL == nil
                  ? "This QR opens the \(AppBrand.name) app on iPhone. Android phones can join in a browser when browser joins are on (Settings, Advanced)."
-                 : "This QR opens a page in any phone browser. iPhones with Pasa can tap Open in Pasa app on that page.")
+                 : "This QR opens a page in any phone browser. iPhones with Libre can tap Open in Libre app on that page.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -173,11 +173,11 @@ struct BrowserGatewayControls: View {
                 } else {
                     Text("Browser members now: \(mesh.gatewayMembers)").font(.callout)
                 }
-                Text("Phones must be on the same Wi-Fi as this Mac. The browser page is plain HTTP: people on the same Wi-Fi could read browser members' messages. The Pasa app stays encrypted.")
+                Text("Phones must be on the same Wi-Fi as this Mac. The browser page is plain HTTP: people on the same Wi-Fi could read browser members' messages. The Libre app stays encrypted.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Off. Only phones with the Pasa app can join.")
+                Text("Off. Only phones with the Libre app can join.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -241,7 +241,7 @@ struct JoinCard: View {
                     .frame(width: qrSize, height: qrSize)
                     .padding(big ? 24 : 8)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityLabel(browserURL == nil ? "QR code to join \(link.room) in the Pasa app" : "QR code to open the join page for \(link.room)")
+                    .accessibilityLabel(browserURL == nil ? "QR code to join \(link.room) in the Libre app" : "QR code to open the join page for \(link.room)")
                 if let browserURL {
                     Text(browserURL).font(big ? .title3 : .caption).textSelection(.enabled).foregroundStyle(.secondary)
                     Text("Scan with the phone camera. Same Wi-Fi as this Mac.").font(big ? .title3 : .caption).foregroundStyle(.secondary)
@@ -313,10 +313,10 @@ struct ProjectorView: View {
             Color(white: 0.06).ignoresSafeArea()
             if let link = mesh.activeJoinLink {
                 VStack(spacing: 24) {
-                    Text("Join with Pasa").font(.largeTitle.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
+                    Text("Join with Libre").font(.largeTitle.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
                     JoinCard(link: link, qrSize: 420, big: true, browserURL: browserURL)
                         .foregroundStyle(.white)
-                    Text(browserURL == nil ? "Open Pasa, tap Scan QR, or type the room name and code."
+                    Text(browserURL == nil ? "Open Libre, tap Scan QR, or type the room name and code."
                                            : "Scan with your phone camera, then type the code. Same Wi-Fi as this Mac.")
                         .font(.title2).foregroundStyle(.white.opacity(0.7))
                 }
@@ -420,7 +420,7 @@ struct CodeJoinView: View {
                             name = room
                             message = "Room \(room) filled in. Type the code shown on the screen."
                         } else {
-                            message = "That QR code is not a Pasa room link."
+                            message = "That QR code is not a Libre room link."
                         }
                     }
                 }
@@ -452,8 +452,8 @@ struct QRScannerSheet: View {
             Group {
                 if denied {
                     VStack(spacing: 12) {
-                        Text("Camera access is off for Pasa.").font(.headline)
-                        Text("Turn it on in Settings > Pasa > Camera, or type the room name and code instead.")
+                        Text("Camera access is off for Libre.").font(.headline)
+                        Text("Turn it on in Settings > Libre > Camera, or type the room name and code instead.")
                             .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
                     .padding()

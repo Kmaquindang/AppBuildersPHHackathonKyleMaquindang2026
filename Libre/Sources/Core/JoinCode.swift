@@ -124,9 +124,16 @@ public enum CodeRoom {
     }
 }
 
-/// pasa://join?room=BOHOL-7&code=K7QM-3XRF&v=1&exp=1791600000
+/// libre://join?room=BOHOL-7&code=K7QM-3XRF&v=1&exp=1791600000
+/// New links use libre://. pasa:// links (made earlier on Oct 9, 2026) still open and parse.
 public struct JoinLink: Equatable, Sendable {
-    public static let scheme = "pasa"
+    public static let scheme = "libre"
+    /// Every scheme the app opens: the primary first, then older ones kept working.
+    public static let schemes = ["libre", "pasa"]
+    static func isOurs(_ c: URLComponents) -> Bool {
+        guard let s = c.scheme?.lowercased() else { return false }
+        return schemes.contains(s) && c.host?.lowercased() == "join"
+    }
     public static let version = 1
 
     public var room: String
@@ -154,7 +161,7 @@ public struct JoinLink: Equatable, Sendable {
 
     public static func parse(_ text: String) -> Result<JoinLink, ParseError> {
         guard let c = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              c.scheme?.lowercased() == scheme, c.host?.lowercased() == "join" else { return .failure(.notPasa) }
+              isOurs(c) else { return .failure(.notPasa) }
         let items = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard let v = items["v"].flatMap(Int.init), v == version else { return .failure(.unsupportedVersion) }
         let room = Room.cleanLabel(items["room"] ?? "")
@@ -164,12 +171,12 @@ public struct JoinLink: Equatable, Sendable {
         return .success(JoinLink(room: room, code: code, expiresAt: exp))
     }
 
-    /// Room-only link from the browser page's "Open in Pasa app" button (pasa://join?room=X&v=1,
+    /// Room-only link from the browser page's "Open in Libre app" button (libre://join?room=X&v=1,
     /// no code): the room name to prefill, or nil when it is not such a link. "Town Square" comes
     /// back as is (the caller switches to the open room).
     public static func roomOnly(_ text: String) -> String? {
         guard let c = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              c.scheme?.lowercased() == scheme, c.host?.lowercased() == "join" else { return nil }
+              isOurs(c) else { return nil }
         let items = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard items["code"] == nil, let v = items["v"].flatMap(Int.init), v == version else { return nil }
         let room = Room.cleanLabel(items["room"] ?? "")

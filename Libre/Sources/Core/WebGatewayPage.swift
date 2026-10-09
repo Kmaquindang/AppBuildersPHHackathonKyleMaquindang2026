@@ -10,7 +10,7 @@ public enum GatewayPage {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pasa room</title>
+<title>Libre room</title>
 <style>
 :root { color-scheme: light dark; --bg:#f6f6f4; --fg:#1b1b1b; --muted:#555; --card:#fff; --accent:#0b5cad; --pasa:#e9f1fb; --mine:#dff3e4; --line:#d0d0d0; --btnfg:#fff; }
 @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f2f2f2; --muted:#bbb; --card:#1d1d1d; --accent:#7fb6ff; --pasa:#13263d; --mine:#163321; --line:#444; --btnfg:#0b1a2e; } }
@@ -50,8 +50,8 @@ a.button { display:inline-block; text-decoration:none; min-height:2.9rem; paddin
 <body>
 <main>
 <section id="joinView" aria-labelledby="joinTitle">
-  <h1 id="joinTitle">Join a Pasa room</h1>
-  <p class="note">Your phone must be on the same Wi-Fi as the Mac running Pasa. No internet needed.</p>
+  <h1 id="joinTitle">Join a Libre room</h1>
+  <p class="note">Your phone must be on the same Wi-Fi as the Mac running Libre. No internet needed.</p>
   <form id="joinForm" autocomplete="off">
     <label for="room">Room name</label>
     <input id="room" name="room" required autocapitalize="characters">
@@ -65,26 +65,26 @@ a.button { display:inline-block; text-decoration:none; min-height:2.9rem; paddin
     <p id="joinError" class="error" role="alert"></p>
     <div class="row">
       <button type="submit" id="joinButton">Join room</button>
-      <a class="button" id="appLink" href="pasa://join">Open in Pasa app</a>
+      <a class="button" id="appLink" href="libre://join">Open in Libre app</a>
     </div>
-    <p class="note">Have the Pasa app on your iPhone? Tap Open in Pasa app and type the code there.</p>
+    <p class="note">Have the Libre app on your iPhone? Tap Open in Libre app and type the code there.</p>
   </form>
-  <div class="warn"><strong>Plain web page.</strong> This page is not encrypted. People on the same Wi-Fi could read what you send here. The Pasa app on iPhone is encrypted.</div>
+  <div class="warn"><strong>Plain web page.</strong> This page is not encrypted. People on the same Wi-Fi could read what you send here. The Libre app on iPhone is encrypted.</div>
 </section>
 
 <section id="chatView" class="hidden" aria-labelledby="roomTitle">
   <h1 id="roomTitle">Room</h1>
   <p class="note"><span id="whoami"></span>. <span id="aiState"></span></p>
-  <p class="note">Type <strong>@pasa</strong> and a question to ask the AI on the Mac.</p>
+  <p class="note">Type <strong>@libre</strong> and a question to ask the AI on the Mac.</p>
   <ul id="log" aria-live="polite" aria-label="Messages"></ul>
   <p id="sendError" class="error" role="alert"></p>
   <form id="composer">
     <label for="text" class="hidden">Message</label>
-    <textarea id="text" rows="1" placeholder="Message, or @pasa question" aria-label="Message"></textarea>
+    <textarea id="text" rows="1" placeholder="Message, or @libre question" aria-label="Message"></textarea>
     <button type="submit">Send</button>
   </form>
   <h2>Tasks</h2>
-  <p class="note">Read only here. Owners mark tasks done in the Pasa app.</p>
+  <p class="note">Read only here. Owners mark tasks done in the Libre app.</p>
   <ul id="tasks" class="tasks"></ul>
   <div class="row"><button class="plain" id="leave" type="button">Leave room</button></div>
   <div class="warn">Plain web page on your local Wi-Fi. Not encrypted.</div>
@@ -99,7 +99,7 @@ a.button { display:inline-block; text-decoration:none; min-height:2.9rem; paddin
   var params = new URLSearchParams(location.search);
   var roomParam = params.get("room") || "";
   $("room").value = roomParam;
-  function appHref(room) { return "pasa://join?room=" + encodeURIComponent(room) + "&v=1"; }
+  function appHref(room) { return "libre://join?room=" + encodeURIComponent(room) + "&v=1"; }
   function syncRoom() {
     var r = $("room").value.trim();
     $("appLink").href = appHref(r);
@@ -117,7 +117,7 @@ a.button { display:inline-block; text-decoration:none; min-height:2.9rem; paddin
   function showChat(room, me) {
     $("joinView").classList.add("hidden"); $("chatView").classList.remove("hidden");
     $("roomTitle").textContent = room; $("whoami").textContent = "You are " + me;
-    document.title = room + " on Pasa";
+    document.title = room + " on Libre";
     poll();
   }
   function showJoin(msg) {

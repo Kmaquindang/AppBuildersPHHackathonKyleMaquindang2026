@@ -1,4 +1,4 @@
-# XcodeGen spec for Pasa (working name Libre; targets, schemes and folders keep the Libre name)
+# XcodeGen spec for Libre
 # Generate the Xcode project with:  xcodegen generate
 # Then open Libre.xcodeproj, pick your Team under Signing & Capabilities for both targets, and run.
 name: Libre

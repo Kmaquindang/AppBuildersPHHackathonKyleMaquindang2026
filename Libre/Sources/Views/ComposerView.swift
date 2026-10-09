@@ -219,7 +219,7 @@ struct ComposerView: View {
                 .padding(.trailing, 4)
                 .onSubmit(send)
                 .accessibilityLabel("Message")
-                .accessibilityHint("Start with @pasa to ask the AI")
+                .accessibilityHint("Start with @libre to ask the AI")
             if !draft.canSend {
                 micButton
             } else {
@@ -232,7 +232,7 @@ struct ComposerView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isAsk ? (draft.photos.isEmpty ? "Ask Pasa" : "Ask Pasa about the photos") : (draft.photos.isEmpty ? "Send" : "Send \(draft.photos.count) photo\(draft.photos.count == 1 ? "" : "s")"))
+                .accessibilityLabel(isAsk ? (draft.photos.isEmpty ? "Ask Libre" : "Ask Libre about the photos") : (draft.photos.isEmpty ? "Send" : "Send \(draft.photos.count) photo\(draft.photos.count == 1 ? "" : "s")"))
                 .keyboardShortcut(.return, modifiers: .command)
             }
         }
@@ -343,7 +343,7 @@ struct ComposerView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Scrolls to Pasa's answer to the same question")
+            .accessibilityHint("Scrolls to Libre's answer to the same question")
             Spacer(minLength: 4)
             Button {
                 let question = hint.question
@@ -352,7 +352,7 @@ struct ComposerView: View {
             } label: {
                 Text("Ask again").font(.footnote.weight(.semibold)).frame(minHeight: 44)
             }
-            .accessibilityHint("Sends the question to Pasa again")
+            .accessibilityHint("Sends the question to Libre again")
             Button {
                 mesh.answeredHint = nil
             } label: {

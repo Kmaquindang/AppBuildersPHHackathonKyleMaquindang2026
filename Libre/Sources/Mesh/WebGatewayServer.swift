@@ -38,7 +38,7 @@ final class WebGatewayServer {
         params.allowLocalEndpointReuse = true
         let l: NWListener
         do { l = try NWListener(using: params, on: port) } catch {
-            NSLog("Pasa browser gateway: could not open port: %@", "\(error)")
+            NSLog("Libre browser gateway: could not open port: %@", "\(error)")
             if fallback { listen(on: .any, fallback: false) } else { onChange?(nil, "Could not open the browser gateway: \(error.localizedDescription)") }
             return
         }
@@ -48,10 +48,10 @@ final class WebGatewayServer {
                 switch state {
                 case .ready:
                     self.port = l.port?.rawValue ?? 0
-                    NSLog("Pasa browser gateway: listening on port %d", Int(self.port))
+                    NSLog("Libre browser gateway: listening on port %d", Int(self.port))
                     self.onChange?(self.port, nil)
                 case .failed(let error):
-                    NSLog("Pasa browser gateway: listener failed: %@", "\(error)")
+                    NSLog("Libre browser gateway: listener failed: %@", "\(error)")
                     l.cancel()
                     self.listener = nil
                     if fallback { self.listen(on: .any, fallback: false) }
@@ -77,7 +77,7 @@ final class WebGatewayServer {
     private func accept(_ conn: NWConnection) {
         guard open < WebGatewayServer.maxConnections, case .hostPort(let host, _) = conn.endpoint else { conn.cancel(); return }
         let address = WebGatewayServer.plain(host)
-        guard GatewayNet.isLocal(address) else { NSLog("Pasa browser gateway: refused %@", address); conn.cancel(); return }
+        guard GatewayNet.isLocal(address) else { NSLog("Libre browser gateway: refused %@", address); conn.cancel(); return }
         open += 1
         conn.stateUpdateHandler = { [weak self] state in
             switch state {

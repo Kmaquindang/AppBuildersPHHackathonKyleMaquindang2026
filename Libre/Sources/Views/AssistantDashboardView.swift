@@ -77,7 +77,7 @@ struct AssistantDashboardView: View {
                 Divider()
 
                 if log.isEmpty {
-                    Text("No asks yet. From a phone, type \"@pasa ...\" in the chat. You can also ask from this Mac's Chat tab.")
+                    Text("No asks yet. From a phone, type \"@libre ...\" in the chat. You can also ask from this Mac's Chat tab.")
                         .foregroundStyle(.secondary)
                     Spacer()
                 } else {

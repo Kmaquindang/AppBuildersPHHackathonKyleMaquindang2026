@@ -22,8 +22,10 @@ func runJoinCodeTests() {
     // Link build and parse.
     let exp = Date(timeIntervalSince1970: 1_791_600_000)
     let link = JoinLink(room: "bohol 7", code: "k7qm3xrf", expiresAt: exp)
-    check(link.url == "pasa://join?room=BOHOL-7&code=K7QM-3XRF&v=1&exp=1791600000", "link: build \(link.url)")
+    check(link.url == "libre://join?room=BOHOL-7&code=K7QM-3XRF&v=1&exp=1791600000", "link: build \(link.url)")
     check((try? JoinLink.parse(link.url).get()) == link, "link: round trip")
+    check((try? JoinLink.parse("pasa://join?room=BOHOL-7&code=K7QM-3XRF&v=1&exp=1791600000").get()) == link, "link: old pasa:// links still parse")
+    check(JoinLink.roomOnly("pasa://join?room=BOHOL-7&v=1") == "BOHOL-7" && JoinLink.roomOnly("libre://join?room=BOHOL-7&v=1") == "BOHOL-7", "link: room-only links in both schemes")
     check((try? JoinLink.parse("pasa://join?room=BOHOL-7&code=K7QM-3XRF&v=1").get())?.expiresAt == nil, "link: expiry is optional")
     check(JoinLink.parse("https://join?room=X&code=K7QM-3XRF&v=1") == .failure(.notPasa), "link: other schemes rejected")
     check(JoinLink.parse("pasa://join?room=X&code=K7QM-3XRF&v=2") == .failure(.unsupportedVersion), "link: unknown version rejected")

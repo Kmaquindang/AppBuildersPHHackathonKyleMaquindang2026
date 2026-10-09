@@ -95,7 +95,7 @@ private struct WelcomeStep: View {
                 .accessibilityHidden(true)
                 .foregroundStyle(.tint)
                 .padding(.top, 30)
-            Text("Walang signal? Pasa lang.")
+            Text("Walang signal? Libre lang.")
                 .font(.largeTitle.weight(.bold))
             Text("Chat and ask AI with no internet, phone to phone.")
                 .font(.title3)
@@ -115,7 +115,7 @@ private struct NameStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your name").font(.title.weight(.bold)).padding(.top, 20)
-            Text("Teammates see this on your messages. \"@pasa remind \(draft.isEmpty ? "Ana" : draft) ...\" sends tasks to you.")
+            Text("Teammates see this on your messages. \"@libre remind \(draft.isEmpty ? "Ana" : draft) ...\" sends tasks to you.")
                 .foregroundStyle(.secondary)
             TextField("Your name, for example Kyle", text: $draft)
                 .textFieldStyle(.roundedBorder)
@@ -184,13 +184,13 @@ struct LocalNetworkFixCard: View {
             TintedLabel(text: denied ? "Local Network looks blocked" : "No teammates found yet", symbol: denied ? "exclamationmark.triangle.fill" : "magnifyingglass",
                         tint: denied ? .orange : .secondary, font: .headline)
             #if os(iOS)
-            Text("Turn it on in Settings > Pasa > Local Network. If nobody else has Pasa open nearby yet, that is fine: you can continue.")
+            Text("Turn it on in Settings > Libre > Local Network. If nobody else has Libre open nearby yet, that is fine: you can continue.")
                 .font(.callout)
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
             }
             #else
-            Text("Turn it on in System Settings > Privacy & Security > Local Network > Pasa. If nobody else has Pasa open nearby yet, that is fine: you can continue.")
+            Text("Turn it on in System Settings > Privacy & Security > Local Network > Libre. If nobody else has Libre open nearby yet, that is fine: you can continue.")
                 .font(.callout)
             #endif
         }
@@ -259,7 +259,7 @@ enum RoomEntry {
             return nil
         case .join:
             if !joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return mesh.joinRoom(joinText) ? nil : "That is not a Pasa room join string. Copy the whole PASA1... text."
+                return mesh.joinRoom(joinText) ? nil : "That is not a Libre room join string. Copy the whole PASA1... text."
             }
             if let beacon = mesh.nearbyRooms.first(where: { $0.beacon.label == Room.cleanLabel(name) })?.beacon {
                 switch await mesh.joinNearby(beacon, passcode: passcode) {
@@ -278,8 +278,8 @@ private struct TourStep: View {
     @State private var page = 0
     private let cards: [(String, String, String)] = [
         ("arrow.triangle.branch", "Messages hop phone to phone", "No signal needed. If a teammate is out of range, your message hops through the phones in between."),
-        ("sparkles", "Start with @pasa to ask AI", "\"@pasa what are our rules?\" The AI runs on the team's Mac, offline, and cites your saved rules."),
-        ("iphone.radiowaves.left.and.right", "Keep Pasa open to relay", "Your phone carries teammates' messages while Pasa is open. In the background, iOS pauses the links."),
+        ("sparkles", "Start with @libre to ask AI", "\"@libre what are our rules?\" The AI runs on the team's Mac, offline, and cites your saved rules."),
+        ("iphone.radiowaves.left.and.right", "Keep Libre open to relay", "Your phone carries teammates' messages while Libre is open. In the background, iOS pauses the links."),
     ]
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -304,7 +304,7 @@ private struct TourStep: View {
 /// After onboarding: tap to send a first question.
 struct StarterChips: View {
     @EnvironmentObject private var mesh: MeshService
-    static let prompts = ["@pasa what are our rules?", "@pasa summary"]
+    static let prompts = ["@libre what are our rules?", "@libre summary"]
     var body: some View {
         if mesh.showStarterChips && mesh.activeRoom.canSend {
             HStack(spacing: 8) {
@@ -334,6 +334,6 @@ struct StarterChips: View {
 
 /// One-line reason before the first microphone or photo use.
 struct PermissionPrimer {
-    static let microphone = "Pasa uses the microphone only while you hold the mic button, to record a voice note for your room."
+    static let microphone = "Libre uses the microphone only while you hold the mic button, to record a voice note for your room."
     static let photos = "Pick a photo to share with your room. Only the photo you pick is sent; the AI Mac can read it locally."
 }

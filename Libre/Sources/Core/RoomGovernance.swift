@@ -237,7 +237,7 @@ extension Room {
         if isClosed { return "\(label) is closed by its admin. Its chat and memory are read-only." }
         if contentKey == nil {
             if let m = gov?.manifest, m.isFull { return "\(label) is full (\(m.members.count)/\(m.cap)). Ask the admin to raise the cap or remove someone." }
-            return "Waiting for a \(label) admin to let you in. An admin device must be nearby with Pasa open."
+            return "Waiting for a \(label) admin to let you in. An admin device must be nearby with Libre open."
         }
         return nil
     }

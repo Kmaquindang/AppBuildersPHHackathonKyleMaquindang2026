@@ -76,14 +76,14 @@ public struct ScrollRequest: Equatable, Sendable {
 
 /// Typing "@" in the composer: an inline list of ready asks (round 2).
 public enum MentionSuggest {
-    public static let items = ["@pasa", "@pasa my tasks", "@pasa what did I miss?", "@pasa summary"]
+    public static let items = ["@libre", "@libre my tasks", "@libre what did I miss?", "@libre summary"]
 
     /// The "@..." word being typed at the end of the text, when it can still become "@pasa"
     /// (including "@pasa" itself, before a space).
     public static func partial(in text: String) -> String? {
         guard let last = text.split(separator: " ", omittingEmptySubsequences: false).last else { return nil }
         let word = String(last).lowercased()
-        guard word.hasPrefix("@"), "@pasa".hasPrefix(word) else { return nil }
+        guard word.hasPrefix("@"), "@libre".hasPrefix(word) || "@pasa".hasPrefix(word) else { return nil }
         return String(last)
     }
 
@@ -92,14 +92,14 @@ public enum MentionSuggest {
     public static func suggestions(for text: String) -> [String] {
         guard let partial = partial(in: text) else { return [] }
         let before = text.dropLast(partial.count).trimmingCharacters(in: .whitespaces)
-        return before.isEmpty ? items : ["@pasa"]
+        return before.isEmpty ? items : ["@libre"]
     }
 
     /// The new composer text after picking `item`. "@pasa" alone leaves a space to keep typing.
     public static func apply(_ item: String, to text: String) -> String {
         guard let partial = partial(in: text) else { return text }
         let head = String(text.dropLast(partial.count))
-        return item == "@pasa" ? head + "@pasa " : head + item
+        return item == "@libre" ? head + "@libre " : head + item
     }
 }
 
@@ -167,7 +167,7 @@ public enum LinkDot: String, Equatable, Sendable {
 
 /// The app's display name in one place (the rename back to Libre changes it here).
 public enum AppBrand {
-    public static let name = "Pasa"
+    public static let name = "Libre"
 }
 
 public enum StatusWords {

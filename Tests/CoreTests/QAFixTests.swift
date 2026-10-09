@@ -42,6 +42,17 @@ func runQAFixTests() async {
         let empty = AnswerStyle.restrict(AnswerStyle.style("[Rule: No site visits after 5 PM v1]", rules: mem.rules, notes: []), shown: [])
         check(empty.text == AnswerStyle.noRuleFallback && empty.noRule, "qa: tag-only reply with nothing shown reads as no rule: \(empty.text)")
     }
+    // 5. Benchmark #19: no rule matched and the reply says it has no info, so rule chips are dropped.
+    do {
+        let base = AnswerStyle.style("Wala akong impormasyon tungkol sa paboritong kulay ng foreman. [Rule: No site visits after 5 PM v1]", rules: mem.rules, notes: [])
+        let shown = AnswerStyle.restrict(base, shown: ["No site visits after 5 PM"])
+        let dropped = AnswerStyle.dropContradictedCitations(shown, noRelevantKnowledge: true)
+        check(dropped.rulesUsed.isEmpty && dropped.unverifiedRules.isEmpty && dropped.noRule, "qa: 'wala akong' reply with no matching rule loses its chips")
+        check(AnswerStyle.dropContradictedCitations(shown, noRelevantKnowledge: false).rulesUsed == shown.rulesUsed, "qa: chips kept when a rule matched the question")
+        let rule = AnswerStyle.restrict(AnswerStyle.style("Walang site visits after 5 PM. [Rule: No site visits after 5 PM v1]", rules: mem.rules, notes: []), shown: ["No site visits after 5 PM"])
+        check(AnswerStyle.dropContradictedCitations(rule, noRelevantKnowledge: true).rulesUsed == rule.rulesUsed, "qa: 'Walang ...' rule answer is not read as no info")
+        check(AnswerStyle.saysNoInfo("I don\u{2019}t have live info offline.") && !AnswerStyle.saysNoInfo("No, visits end at 5 PM."), "qa: no-info wording")
+    }
 
     // 6. Arithmetic is never a follow-up: "10+69" after a rule question borrows nothing.
     do {

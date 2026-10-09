@@ -81,7 +81,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
         problem = nil
         Task {
             guard await VoiceRecorder.microphoneAllowed() else {
-                problem = "Microphone access is off. Allow it for Pasa in Settings to send voice notes."
+                problem = "Microphone access is off. Allow it for Libre in Settings to send voice notes."
                 wanted = false
                 return
             }

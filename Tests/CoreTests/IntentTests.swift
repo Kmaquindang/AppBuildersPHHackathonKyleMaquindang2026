@@ -22,13 +22,16 @@ func runIntentTests() {
     check(IntentParser.fastPath("save rule") == nil, "empty rule is not a fast path")
 
     // Assistant mention: @pasa is primary, @libre still works.
-    check(AssistantMention.strip("@pasa what did I miss?") == "what did I miss?", "@pasa mention")
-    check(AssistantMention.strip("@Libre my tasks") == "my tasks", "@libre alias still works")
+    check(AssistantMention.strip("@libre what did I miss?") == "what did I miss?", "@libre mention")
+    check(AssistantMention.strip("@Libre my tasks") == "my tasks", "@Libre (capital) works")
+    check(AssistantMention.strip("@pasa my tasks") == "my tasks" && AssistantMention.strip("@Pasa: rules") == "rules", "@pasa alias still works")
+    check(AssistantMention.primary == "@libre", "@libre is the primary mention")
+    check(AssistantMention.strip("@libreng kape") == nil && AssistantMention.strip("@pasaway") == nil, "mention needs a word boundary")
     check(AssistantMention.strip("@PASA: save rule: Hard hats") == "save rule: Hard hats", "mention with colon")
-    check(AssistantMention.strip("@pasa") == "", "bare mention")
-    check(AssistantMention.strip("@pasaway ka talaga") == nil, "word boundary")
-    check(AssistantMention.strip("hello @pasa") == nil, "mention must lead")
-    check(Compactor.moreHint.contains("@pasa more"), "more hint uses @pasa")
+    check(AssistantMention.strip("@libre") == "", "bare mention")
+    check(AssistantMention.strip("@libreway ka talaga") == nil, "word boundary")
+    check(AssistantMention.strip("hello @libre") == nil, "mention must lead")
+    check(Compactor.moreHint.contains("@libre more"), "more hint uses @libre")
 
     // Lenient model decoding.
     let fenced = "Sure!\n```json\n{\"intent\": \"add_task\", \"task_title\": \"order cement\", \"assignee\": \"Ana\", \"due\": \"Friday\", \"title\": null}\n```"

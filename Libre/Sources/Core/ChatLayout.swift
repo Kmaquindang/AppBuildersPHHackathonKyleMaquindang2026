@@ -137,7 +137,7 @@ public enum TypingState: Equatable, Sendable {
     /// One small centered system line.
     case note(String)
 
-    public static let asleepLine = "Pasa is asleep. Your question will be answered when the Mac wakes."
+    public static let asleepLine = "Libre is asleep. Your question will be answered when the Mac wakes."
     public static let awayLine = NoAIHost.queuedLine
     public static let notServingLine = "The AI Mac nearby is not in this room. Ask the room admin to add it."
 

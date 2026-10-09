@@ -190,23 +190,23 @@ func runLibraryTests() async {
     ])
     let ai = ExecutiveAssistant(memory: mem, llm: llm, selfName: "MAC")
     ai.library = school
-    let out1 = await ai.handle("@pasa when are quiz retakes?", from: "PHONE_A")
+    let out1 = await ai.handle("@libre when are quiz retakes?", from: "PHONE_A")
     check(out1.rulesUsed.count == 1 && out1.docRefs.map(\.chipLabel) == ["Teacher notes, v1"] && out1.noRule == false, "e2e: rule chip and doc chip")
     check(out1.reply.contains("Tuesday") && !out1.reply.contains("[Doc"), "e2e: tags leave the text")
     let sent1 = llm.received[0]
     check(sent1[0].content.contains(LibraryPrompt.systemLine) && sent1[1].content.contains("<documents>"), "e2e: documents in the prompt")
 
-    let out2 = await ai.handle("@pasa what is the capital of France?", from: "PHONE_A")
+    let out2 = await ai.handle("@libre what is the capital of France?", from: "PHONE_A")
     check(out2.docRefs.isEmpty && out2.noRule == true, "abstain: no passage shown, an echoed [Doc 1] is not a chip")
     let sent2 = llm.received[1]
     check(!sent2[0].content.contains(LibraryPrompt.systemLine) && sent2[1].content.contains(LibraryPrompt.noMatchNote), "abstain: no documents block, no-match note")
 
     ai.library = vindex
     ai.embedder = FakeEmbedder()
-    let out3 = await ai.handle("@pasa how do halaman make food?", from: "PHONE_A")
+    let out3 = await ai.handle("@libre how do halaman make food?", from: "PHONE_A")
     check(out3.docRefs.first?.title == "Photosynthesis basics" && ai.lastLibrarySearch.hybrid, "e2e: hybrid search with the embedder")
     ai.embedder = DeadEmbedder()
-    let out4 = await ai.handle("@pasa which exit for the fire drill?", from: "PHONE_A")
+    let out4 = await ai.handle("@libre which exit for the fire drill?", from: "PHONE_A")
     check(out4.docRefs.first?.title == "Fire drill plan" && !ai.lastLibrarySearch.hybrid, "fallback: embedding model missing, keyword-only still answers")
 
     // Wire format: older messages and manifests decode without the new fields.
