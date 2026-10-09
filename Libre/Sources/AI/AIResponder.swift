@@ -1,38 +1,69 @@
 // AIResponder.swift
-// Libre: seam for the AI peer. Milestone 1 ships a stub echo so the mesh round trip can be
-// tested end to end. Milestone 2 adds an Ollama-backed responder (local model on the Mac,
-// http://localhost:11434/api/chat) that conforms to the same protocol.
+// Libre: simple question -> answer seam for the AI peer.
+// - EchoResponder: milestone 1 stub, no model.
+// - OllamaResponder: plain local-model answers through Ollama (no team memory).
+// The full executive assistant (intents, tasks, rules, notes) lives in ExecutiveAssistant.swift.
 
 import Foundation
 
-/// Anything that can turn a question that arrived over the mesh into a short answer.
-protocol AIResponder: Sendable {
-    /// Human readable name shown in the UI, for example "Echo stub" or "Ollama (model)".
-    var name: String { get }
-    /// - Parameters:
-    ///   - question: the body of the `ask` message.
-    ///   - asker: display name of the device that asked.
-    /// - Returns: the answer text to send back over the mesh. Keep it short; it travels hop by hop.
-    func respond(to question: String, from asker: String) async throws -> String
-}
+/// A reply ready to go back over the mesh.
+public struct AIReply: Sendable {
+    public var text: String
+    /// True when `text` is a shortened first packet.
+    public var compact: Bool
+    public var model: String?
+    public var latencyMs: Int
+    public var tokensPerSecond: Double?
 
-/// Milestone 1 stub: proves the ask -> answer round trip without any model.
-struct EchoResponder: AIResponder {
-    var name: String { "Echo stub (milestone 1)" }
-
-    func respond(to question: String, from asker: String) async throws -> String {
-        "AI peer received: \(question)"
+    public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil) {
+        self.text = text
+        self.compact = compact
+        self.model = model
+        self.latencyMs = latencyMs
+        self.tokensPerSecond = tokensPerSecond
     }
 }
 
-// Milestone 2 sketch (not compiled yet, kept as a comment so milestone 1 has no network code):
-//
-// struct OllamaResponder: AIResponder {
-//     var model: String
-//     var endpoint = URL(string: "http://localhost:11434/api/chat")!
-//     var name: String { "Ollama (\(model))" }
-//     func respond(to question: String, from asker: String) async throws -> String {
-//         // POST {"model": model, "stream": false, "messages": [system, user]}
-//         // decode response.message.content, trim to a mesh-friendly length.
-//     }
-// }
+/// Anything that can turn a question that arrived over the mesh into a short answer.
+public protocol AIResponder: Sendable {
+    /// Human readable name shown in the UI, for example "Echo stub" or "Ollama (qwen3:8b)".
+    var name: String { get }
+    func respond(to question: String, from asker: String) async throws -> AIReply
+}
+
+/// Milestone 1 stub: proves the ask -> answer round trip without any model.
+public struct EchoResponder: AIResponder {
+    public init() {}
+    public var name: String { "Echo stub" }
+
+    public func respond(to question: String, from asker: String) async throws -> AIReply {
+        AIReply(text: "AI peer received: \(question)")
+    }
+}
+
+/// Plain local-model answers, compacted for the mesh.
+public struct OllamaResponder: AIResponder {
+    public var client: OllamaClient
+
+    public init(client: OllamaClient = OllamaClient()) {
+        self.client = client
+    }
+
+    public var name: String { "Ollama (\(client.model))" }
+
+    public func respond(to question: String, from asker: String) async throws -> AIReply {
+        let started = Date()
+        let result = try await client.chat([
+            .system("You are Libre, a helpful assistant running offline on a laptop for people with no internet. Answer in plain text, at most 3 short sentences."),
+            .user(question)
+        ], json: false)
+        let parts = Compactor.split(result.text)
+        return AIReply(
+            text: parts.first,
+            compact: parts.rest != nil,
+            model: result.model,
+            latencyMs: Int(Date().timeIntervalSince(started) * 1000),
+            tokensPerSecond: result.tokensPerSecond
+        )
+    }
+}

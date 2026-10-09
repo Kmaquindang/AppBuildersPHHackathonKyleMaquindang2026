@@ -51,6 +51,14 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var replyTo: UUID?
     /// For answers: the hop path the original ask took to reach the answering device.
     public var replyPath: [String]?
+    /// For answers: true when the body is a shortened first packet ("@libre more" gets the rest).
+    public var compact: Bool?
+    /// For answers: local model that produced the reply, for example "qwen3:8b".
+    public var model: String?
+    /// For answers: time the AI peer spent producing the reply, in milliseconds.
+    public var latencyMs: Int?
+    /// For answers: generation speed reported by Ollama (eval_count / eval_duration).
+    public var tokensPerSecond: Double?
 
     public init(
         id: UUID = UUID(),
@@ -62,7 +70,11 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         hops: [String]? = nil,
         createdAt: Date = Date(),
         replyTo: UUID? = nil,
-        replyPath: [String]? = nil
+        replyPath: [String]? = nil,
+        compact: Bool? = nil,
+        model: String? = nil,
+        latencyMs: Int? = nil,
+        tokensPerSecond: Double? = nil
     ) {
         self.id = id
         self.origin = origin
@@ -74,6 +86,10 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.replyTo = replyTo
         self.replyPath = replyPath
+        self.compact = compact
+        self.model = model
+        self.latencyMs = latencyMs
+        self.tokensPerSecond = tokensPerSecond
     }
 
     /// Number of device-to-device hops travelled so far.
