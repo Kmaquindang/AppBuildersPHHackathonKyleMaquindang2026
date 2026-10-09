@@ -10,6 +10,10 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
 
+fileGroups:
+  - Libre/Resources
+  - docs
+
 settings:
   base:
     SWIFT_VERSION: "5.0"
