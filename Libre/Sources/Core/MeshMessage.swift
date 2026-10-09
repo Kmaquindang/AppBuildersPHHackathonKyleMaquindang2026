@@ -95,6 +95,15 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     /// For asks resent after the AI Mac woke up: id of the original ask. The Mac answers each
     /// original id once and re-delivers the stored answer for repeats.
     public var retryOf: UUID?
+    /// For answers and AI cards: where and how the answer was made (Mac name, model, internet
+    /// state, speed, time). Shown as the "On-device" badge.
+    public var proof: AIProof?
+    /// For AI cards: "summary" (daily digest) or "vision" (photo check). nil for plain answers.
+    public var card: String?
+    /// Summary cards: device id -> that person's own "your open tasks" line.
+    public var personal: [String: String]?
+    /// Photo cards: suggested task titles an admin can accept.
+    public var suggestions: [String]?
 
     public init(
         id: UUID = UUID(),

@@ -178,8 +178,18 @@ struct AIStatusChip: View {
         }
     }
 
+    /// The AI Mac's own internet state from its status beacon ("no internet" proves answers are local).
+    private var internetWord: String {
+        guard mesh.aiAvailability == .awake, let net = mesh.aiDetail?.internet else { return "" }
+        switch net {
+        case .offline: return ", no internet"
+        case .connected: return ", internet not used"
+        case .unknown: return ""
+        }
+    }
+
     var body: some View {
-        Text("AI \(mesh.aiAvailability.rawValue)")
+        Text("AI \(mesh.aiAvailability.rawValue)\(internetWord)")
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

@@ -59,6 +59,8 @@ struct AssistantDashboardView: View {
                     StatTile(label: "Chat lines seen", value: "\(mesh.org.chatLog.count)")
                 }
 
+                LocalProofPanel()
+
                 HStack(spacing: 8) {
                     Picker("Room", selection: $roomFilter) {
                         Text("All rooms (\(mesh.joinedRooms.filter(\.canSend).count))").tag("")

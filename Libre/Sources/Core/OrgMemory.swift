@@ -32,7 +32,7 @@ public final class OrgMemory {
     /// Device names allowed to edit, lock and unlock existing rules.
     public var admins: Set<String>
     public let fileURL: URL?
-    public var maxChatLog = 200
+    public var maxChatLog = 1000
     public private(set) var lastSaveError: String?
 
     public init(fileURL: URL? = nil, admins: Set<String> = []) {

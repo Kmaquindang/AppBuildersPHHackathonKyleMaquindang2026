@@ -23,7 +23,9 @@ struct ChatTimelineView: View {
                     let names = nameMap
                     ForEach(mesh.entries) { entry in
                         MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names,
-                                   waiting: mesh.waitingAsks.contains(entry.id), waitingNote: mesh.waitingText)
+                                   waiting: mesh.waitingAsks.contains(entry.id), waitingNote: mesh.waitingText,
+                                   myDevice: mesh.displayName, canAccept: mesh.isAdminDevice(mesh.displayName) || mesh.isRoomAdmin,
+                                   onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") })
                             .id(entry.id)
                     }
                 }
@@ -58,7 +60,13 @@ struct MessageRow: View {
     var waiting: Bool = false
     /// What to say while waiting (AI Mac asleep, offline, not in this room, or queue depth).
     var waitingNote: String = "Waiting for the AI Mac... It answers when it is in range."
+    /// This device's id (for its own line on a summary card).
+    var myDevice: String = ""
+    /// Admin devices see "Add task" on photo suggestions (the Mac checks again).
+    var canAccept: Bool = false
+    var onAccept: (String) -> Void = { _ in }
     @State private var showDetails = false
+    @State private var accepted: Set<String> = []
 
     private var message: MeshMessage { entry.message }
     private var isMine: Bool { entry.direction == .sent && message.kind != .answer }
@@ -70,6 +78,8 @@ struct MessageRow: View {
             VStack(alignment: isMine ? .trailing : .leading, spacing: 3) {
                 header
                 bubble
+                cardExtras
+                proofBadge
                 detailsCaption
             }
             if !isMine { Spacer(minLength: 48) }
@@ -111,6 +121,21 @@ struct MessageRow: View {
             .frame(maxWidth: 320, alignment: .leading)
             .background(cardColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(cardColor.opacity(0.5), lineWidth: 1))
+        } else if message.kind == .answer, let card = message.card {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card == "summary" ? "DAILY SUMMARY" : "PHOTO CHECK")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.purple.opacity(0.25), in: Capsule())
+                Text(bodyText)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
+            .padding(10)
+            .frame(maxWidth: 340, alignment: .leading)
+            .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.4), lineWidth: 1))
         } else {
             Text(bodyText)
                 .font(.body)
@@ -119,6 +144,46 @@ struct MessageRow: View {
                 .padding(.vertical, 8)
                 .foregroundStyle(isMine ? Color.white : Color.primary)
                 .background(bubbleColor, in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    /// Summary card: this person's own open tasks. Photo card: suggested tasks an admin can add.
+    @ViewBuilder
+    private var cardExtras: some View {
+        if message.kind == .answer, message.card == "summary", let personal = message.personal {
+            Label(personal[myDevice] ?? "You have no open tasks.", systemImage: "person.crop.circle.badge.checkmark")
+                .font(.caption)
+                .padding(8)
+                .frame(maxWidth: 320, alignment: .leading)
+                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        }
+        if message.kind == .answer, message.card == "vision", let suggestions = message.suggestions, !suggestions.isEmpty, canAccept {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(suggestions, id: \.self) { title in
+                    Button {
+                        accepted.insert(title)
+                        onAccept(title)
+                    } label: {
+                        Label(accepted.contains(title) ? "Sent: \(title)" : "Add task: \(title)",
+                              systemImage: accepted.contains(title) ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(accepted.contains(title))
+                }
+            }
+        }
+    }
+
+    /// Always visible under AI answers: where and how it was made.
+    @ViewBuilder
+    private var proofBadge: some View {
+        if message.kind == .answer, let proof = message.proof {
+            Label(proof.badge, systemImage: proof.internet == .offline ? "wifi.slash" : "cpu")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(proof.internet == .offline ? Color.green : Color.secondary)
+                .lineLimit(2)
+                .textSelection(.enabled)
         }
     }
 

@@ -130,6 +130,8 @@ struct SettingsView: View {
                     Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). Macs with less than 12 GB of memory default to \(OllamaClient.lowMemoryModel) (this Mac has \(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB). While this Mac is the AI peer it does not idle-sleep and keeps the model warm; keep the lid open and the charger in.")
                 }
 
+                LocalAISettingsSection()
+
                 Section {
                     LabeledContent("This Mac (\(mesh.label(for: mesh.displayName)))", value: "always admin")
                     if !mesh.activeRoom.creator.isEmpty && mesh.activeRoom.creator != mesh.displayName {
@@ -175,6 +177,17 @@ struct SettingsView: View {
                     Text("Forced relay demo")
                 } footer: {
                     Text("A blocked peer cannot link to this device directly, so messages must hop through another device. Example: on Ana's phone block Site Office (and on Site Office block Ana's phone), then the path becomes Ana -> Kyle -> Site Office. Blocking a peer that is already linked ends that link (if it lingers, all links restart once and re-form in a few seconds). The chat header shows \"Forced relay mode\" while any block is on.")
+                }
+
+                Section {
+                    Button("Replay first-run setup") {
+                        mesh.replayOnboarding()
+                        dismiss()
+                    }
+                } header: {
+                    Text("Welcome tour")
+                } footer: {
+                    Text("Shows the welcome, permission and join steps again. Your rooms and messages stay.")
                 }
 
                 Section {

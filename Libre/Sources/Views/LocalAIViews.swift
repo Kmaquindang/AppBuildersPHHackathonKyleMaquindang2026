@@ -1,0 +1,121 @@
+// LocalAIViews.swift
+// Mac only: the Proof panel (where answers are made), daily summary and photo check settings.
+
+import SwiftUI
+
+#if os(macOS)
+/// Proof that answers are made on this Mac: model, digest, Ollama memory (/api/ps),
+/// the last 20 answers, and whether the internet is even connected.
+struct LocalProofPanel: View {
+    @EnvironmentObject private var mesh: MeshService
+
+    private var items: [ProofLog.Item] { Array(mesh.proofLog.items.reversed()) }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 16) {
+                    Label(mesh.internetState.label, systemImage: mesh.internetState == .offline ? "wifi.slash" : "wifi")
+                        .foregroundStyle(mesh.internetState == .offline ? Color.green : Color.secondary)
+                    Text("Model: \(mesh.ollamaModel)\(mesh.modelDigest.isEmpty ? "" : " (\(String(mesh.modelDigest.prefix(12))))")")
+                    Text("Vision: \(mesh.visionModel ?? "not installed")")
+                    Spacer()
+                    Button("Refresh") {
+                        mesh.checkOllama()
+                        mesh.refreshProof()
+                    }
+                }
+                .font(.caption.monospaced())
+                if mesh.ollamaRunning.isEmpty {
+                    Text("Ollama memory: no model loaded right now (local /api/ps)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(mesh.ollamaRunning, id: \.name) { running in
+                        Text("Loaded: \(running.name), \(RunningModel.gigabytes(running.size)) in memory (local /api/ps)")
+                            .font(.caption.monospaced())
+                    }
+                }
+                HStack(spacing: 16) {
+                    Text("Last \(items.count) answers: avg \(mesh.proofLog.averageLatencyMs.map { "\($0) ms" } ?? "-"), \(mesh.proofLog.averageTokensPerSecond.map { String(format: "%.1f tok/s", $0) } ?? "-")")
+                    if !items.isEmpty {
+                        Text(mesh.proofLog.allOffline ? "all made with no internet" : "internet was connected for some (never used)")
+                            .foregroundStyle(mesh.proofLog.allOffline ? Color.green : Color.secondary)
+                    }
+                }
+                .font(.caption)
+                if !items.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .bottom, spacing: 3) {
+                            ForEach(items.reversed()) { item in
+                                let ms = max(item.proof.latencyMs, 1)
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(item.proof.internet == .offline ? Color.green : Color.blue)
+                                    .frame(width: 10, height: max(4, min(48, CGFloat(ms) / 400)))
+                                    .help("\(item.room) \(item.kind): \(item.proof.badge)")
+                            }
+                        }
+                        .frame(height: 50, alignment: .bottom)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label("Proof: answers are made on this Mac", systemImage: "lock.shield")
+        }
+        .onAppear { mesh.refreshProof() }
+    }
+}
+
+/// Settings: daily summary time and photo checks.
+struct LocalAISettingsSection: View {
+    @EnvironmentObject private var mesh: MeshService
+
+    private var timeBinding: Binding<Date> {
+        Binding(get: {
+            Calendar.current.date(bySettingHour: mesh.digestSchedule.hour, minute: mesh.digestSchedule.minute, second: 0, of: Date()) ?? Date()
+        }, set: { date in
+            var s = mesh.digestSchedule
+            s.hour = Calendar.current.component(.hour, from: date)
+            s.minute = Calendar.current.component(.minute, from: date)
+            mesh.setDigestSchedule(s)
+        })
+    }
+
+    var body: some View {
+        Section {
+            Toggle("Send a daily summary to each room", isOn: Binding(
+                get: { mesh.digestSchedule.enabled },
+                set: { var s = mesh.digestSchedule; s.enabled = $0; mesh.setDigestSchedule(s) }
+            ))
+            DatePicker("Summary time (this Mac's clock)", selection: timeBinding, displayedComponents: .hourAndMinute)
+                .disabled(!mesh.digestSchedule.enabled)
+            Button("Send \(mesh.activeRoom.displayName) summary now") { mesh.sendSummaryNow() }
+                .disabled(!mesh.isAIPeer)
+            if let last = mesh.lastDigest {
+                Text("Last summary: \(last.roomLabel), \(last.day)\(last.late ? " (made late)" : "")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Toggle("Check photos with the vision model when they arrive", isOn: Binding(
+                get: { mesh.autoDescribePhotos },
+                set: { mesh.setAutoDescribePhotos($0) }
+            ))
+            if let vision = mesh.visionModel {
+                Text("Vision model: \(vision). Memory policy: unloads after \(VisionPolicy.keepAlive(physicalMemory: ProcessInfo.processInfo.physicalMemory)) idle.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(VisionModels.notInstalledMessage)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
+        } header: {
+            Text("Daily summary and photos")
+        } footer: {
+            Text("The summary goes to everyone in the room at \(mesh.digestSchedule.clockLabel), once a day. If this Mac was asleep then, it is sent when it wakes. Anyone can also type \"@pasa summary\". Photo checks and summaries run on this Mac only.")
+        }
+    }
+}
+#endif
