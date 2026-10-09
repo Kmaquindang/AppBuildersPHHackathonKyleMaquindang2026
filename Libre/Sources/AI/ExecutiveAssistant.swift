@@ -520,7 +520,7 @@ public final class ExecutiveAssistant {
                 docRefs = cited.refs
                 let styled = AnswerStyle.dropContradictedCitations(
                     AnswerStyle.restrict(AnswerStyle.style(cited.text, rules: memory.rules, notes: memory.notes), shown: selection.checkedTitles),
-                    noRelevantKnowledge: selection.relevantCount == 0 && hits.isEmpty)
+                    noRelevantKnowledge: selection.strongCount == 0 && hits.isEmpty)
                 reply = styled.text
                 if !docRefs.isEmpty, reply == AnswerStyle.noRuleFallback, cited.text.isEmpty { reply = AnswerStyle.emptyFallback }
                 rulesUsed = styled.rulesUsed

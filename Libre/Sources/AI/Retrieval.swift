@@ -49,6 +49,9 @@ public enum KnowledgeRetriever {
         public var relevantCount: Int
         /// Titles of every rule and note the model was shown ("checked").
         public var checkedTitles: [String]
+        /// Shown rules or notes that match strongly: a title word, or at least two different question
+        /// words. A lone body word ("foreman") is a weak match (benchmark #19, Oct 9, 2026).
+        public var strongCount: Int = 0
     }
 
     static let stopwords: Set<String> = [
@@ -118,7 +121,14 @@ public enum KnowledgeRetriever {
         let pickedNotes = notes.indices.filter { noteScores[$0] > 0 }.sorted { noteScores[$0] > noteScores[$1] }.prefix(maxNotes).map { notes[$0] }
 
         let relevantRules = rules.indices.filter { ruleScores[$0] > 0 && picked.contains(rules[$0]) }.count
+        let q = Set(query)
+        func strong(_ doc: ([String], [String])) -> Bool {
+            !q.isDisjoint(with: doc.0) || q.intersection(doc.0 + doc.1).count >= 2
+        }
+        let strongRules = rules.indices.filter { ruleScores[$0] > 0 && picked.contains(rules[$0]) && strong(ruleDocs[$0]) }.count
+        let strongNotes = notes.indices.filter { noteScores[$0] > 0 && pickedNotes.contains(notes[$0]) && strong(noteDocs[$0]) }.count
         return Selection(rules: picked, notes: pickedNotes, relevantCount: relevantRules + pickedNotes.count,
-                         checkedTitles: picked.map { $0.title } + pickedNotes.map { $0.title })
+                         checkedTitles: picked.map { $0.title } + pickedNotes.map { $0.title },
+                         strongCount: strongRules + strongNotes)
     }
 }
