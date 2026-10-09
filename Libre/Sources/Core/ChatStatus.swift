@@ -108,12 +108,13 @@ public enum StarterChipPolicy {
     public static let asks: [(title: String, ask: String)] = [
         ("What did I miss?", "what did I miss?"),
         ("My tasks", "my tasks"),
-        ("Summary", "summary"),
         ("Our rules", "what are our rules?"),
     ]
+    /// At most 3 chips, only in an empty chat (Kyle, Oct 9 11:03 PM: keep the screen minimal).
+    public static let maxChips = 3
 
-    public static func visible(entriesEmpty: Bool, afterOnboarding: Bool, canSend: Bool, typing: Bool) -> Bool {
-        canSend && !typing && (entriesEmpty || afterOnboarding)
+    public static func visible(entriesEmpty: Bool, afterOnboarding: Bool = false, canSend: Bool, typing: Bool) -> Bool {
+        canSend && !typing && entriesEmpty
     }
 }
 
@@ -150,6 +151,23 @@ public enum BubbleStatus: Equatable, Sendable {
         if entry.message.kind == .ask && waiting { return .waiting }
         return .sent
     }
+}
+
+/// Link state behind the header dot: gray searching, amber connecting, green connected.
+public enum LinkDot: String, Equatable, Sendable {
+    case searching, connecting, connected
+    public var spoken: String {
+        switch self {
+        case .searching: return "Looking for nearby devices"
+        case .connecting: return "Connecting"
+        case .connected: return "Connected"
+        }
+    }
+}
+
+/// The app's display name in one place (the rename back to Libre changes it here).
+public enum AppBrand {
+    public static let name = "Pasa"
 }
 
 public enum StatusWords {
@@ -193,6 +211,12 @@ public enum StatusWords {
         if linked == 0 { return nearby > 0 ? "Connecting..." : "No one nearby" }
         if let first = firstPeer, !first.isEmpty { return others(first, linked - 1) }
         return linked == 1 ? "1 device nearby" : "\(linked) devices nearby"
+    }
+
+    /// The one status dot next to the room name: real link state, never green while searching.
+    public static func linkDot(linked: Int, nearby: Int) -> LinkDot {
+        if linked > 0 { return .connected }
+        return nearby > 0 ? .connecting : .searching
     }
 
     /// Green dot next to the room name: Pasa can answer right now.

@@ -23,19 +23,7 @@ struct MemoryBackupDocument: FileDocument {
 struct SettingsView: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.dismiss) private var dismiss
-    @State private var nameDraft = ""
     @State private var personDraft = ""
-    @State private var manualBlock = ""
-    @State private var engineDraft: AIEngine = .assistant
-    @State private var modelDraft = ""
-    @State private var fallbackDraft = ""
-    @State private var rosterDraft = ""
-    @State private var confirmReset = false
-    @State private var exportDoc: MemoryBackupDocument?
-    @State private var showExporter = false
-    @State private var showImporter = false
-    @State private var pendingImport: Data?
-    @State private var backupMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -50,9 +38,63 @@ struct SettingsView: View {
                 } header: {
                     Text("You")
                 } footer: {
-                    Text("Shown on your messages. \"@pasa remind \(mesh.personName.isEmpty ? "Ana" : mesh.personName) ...\" sends tasks to this device. Pick a name nobody else on the team uses.")
+                    Text("Shown on your messages. Pick a name nobody else on the team uses.")
                 }
 
+                RoomSettingsSection()
+
+                Section {
+                    NavigationLink("Advanced") { AdvancedSettingsView() }
+                } footer: {
+                    Text("Device id, AI and models, admins, backups, browser joins, relay test, stats.")
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear { personDraft = mesh.personName }
+        }
+        #if os(macOS)
+        .frame(minWidth: 520, minHeight: 640)
+        #endif
+    }
+
+}
+
+/// Everything that is not needed day to day, in one place (Kyle, Oct 9 11:03 PM): device id, the
+/// AI peer and models, AI activity and proof (the old Assistant tab), daily summary and photo
+/// checks, admins, memory backup, browser joins, the forced relay test, the tour and stats.
+struct AdvancedSettingsView: View {
+    @EnvironmentObject private var mesh: MeshService
+    @Environment(\.dismiss) private var dismiss
+    @State private var nameDraft = ""
+    @State private var manualBlock = ""
+    @State private var engineDraft: AIEngine = .assistant
+    @State private var modelDraft = ""
+    @State private var fallbackDraft = ""
+    @State private var rosterDraft = ""
+    @State private var confirmReset = false
+    @State private var exportDoc: MemoryBackupDocument?
+    @State private var showExporter = false
+    @State private var showImporter = false
+    @State private var pendingImport: Data?
+    @State private var backupMessage: String?
+
+    var body: some View {
+        Form {
+            #if os(macOS)
+            Section {
+                NavigationLink("AI activity and proof") { AssistantDashboardView() }
+                if mesh.gatewayCanJoin(mesh.activeRoom) { BrowserGatewayControls() }
+            } header: {
+                Text("This Mac")
+            }
+            #endif
+            RoomAdvancedSection()
                 Section {
                     TextField("Device id", text: $nameDraft)
                     Button("Save device id") {
@@ -65,8 +107,6 @@ struct SettingsView: View {
                 } footer: {
                     Text("The mesh address of this device. It must be unique, and it stays the same unless you change it here. Saving restarts the mesh link. Admin rights belong to the device id, never to a name.")
                 }
-
-                RoomSettingsSection()
 
                 #if os(macOS)
                 Section {
@@ -202,22 +242,16 @@ struct SettingsView: View {
                 } footer: {
                     Text(clearFooter)
                 }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .onAppear {
-                nameDraft = mesh.displayName
-                personDraft = mesh.personName
-                engineDraft = mesh.aiEngine
-                modelDraft = mesh.ollamaModel
-                fallbackDraft = mesh.ollamaFallbackModel
-                rosterDraft = mesh.rosterText
-            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Advanced")
+        .onAppear {
+            nameDraft = mesh.displayName
+            engineDraft = mesh.aiEngine
+            modelDraft = mesh.ollamaModel
+            fallbackDraft = mesh.ollamaFallbackModel
+            rosterDraft = mesh.rosterText
+        }
             #if os(macOS)
             .confirmationDialog("Erase all tasks, notes, rules and the chat log of \(mesh.activeRoom.displayName) on this Mac?", isPresented: $confirmReset) {
                 Button("Erase team memory", role: .destructive) { mesh.resetMemory() }
@@ -260,10 +294,6 @@ struct SettingsView: View {
                 }
             }
             #endif
-        }
-        #if os(macOS)
-        .frame(minWidth: 520, minHeight: 640)
-        #endif
     }
 
     private var knownPeers: [String] {

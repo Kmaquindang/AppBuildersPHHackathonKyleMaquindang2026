@@ -30,11 +30,11 @@ struct AssistantDashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(mesh.isAIPeer ? mesh.aiResponderName : "AI peer is off (turn it on in Settings)")
+                        Text(mesh.isAIPeer ? mesh.aiResponderName : "AI peer is off (turn it on below in Advanced)")
                             .font(.headline)
                         TintedLabel(text: mesh.ollamaStatus, symbol: mesh.modelWarm ? "checkmark.circle.fill" : "exclamationmark.circle", tint: mesh.modelWarm ? .green : .orange)
                             .textSelection(.enabled)
@@ -87,7 +87,7 @@ struct AssistantDashboardView: View {
                 }
             }
             .padding()
-            .navigationTitle("Assistant")
+            .navigationTitle("AI activity and proof")
             .sheet(isPresented: $showSetup) {
                 ScrollView {
                     MacSetupView()

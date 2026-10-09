@@ -8,48 +8,59 @@ import SwiftUI
 struct RulesView: View {
     @EnvironmentObject private var mesh: MeshService
 
+    var body: some View {
+        NavigationStack {
+            List {
+                RulesSection()
+                #if os(iOS)
+                PhoneKnowledgeSection(listings: mesh.libraryListings)
+                #endif
+            }
+            .navigationTitle("Knowledge")
+        }
+    }
+}
+
+/// The room's rules, shown first in Knowledge (phones read only; the Mac is the source of truth).
+struct RulesSection: View {
+    @EnvironmentObject private var mesh: MeshService
+
     private var rules: [RuleEntry] {
         mesh.org.activeRules.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    if rules.isEmpty {
-                        Text("No rules yet. Try \"@pasa save rule: No site visits after 5 PM\".")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(rules) { rule in
-                        RuleRow(rule: rule)
-                            #if os(iOS)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    mesh.deleteRule(rule)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                Button {
-                                    mesh.setRuleLocked(rule, locked: !rule.locked)
-                                } label: {
-                                    Label(rule.locked ? "Unlock" : "Lock", systemImage: rule.locked ? "lock.open" : "lock")
-                                }
-                                .tint(.orange)
-                            }
-                            #endif
-                    }
-                } footer: {
-                    #if os(macOS)
-                    Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(adminList)) can edit, lock, unlock or delete. Pick admins in Settings by device. Every change keeps the older version, and a deleted rule is removed from every phone.")
-                    #else
-                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\". Swipe left to delete, lock or unlock (admin devices only; the Mac checks and replies in the chat).")
-                    #endif
-                }
-                #if os(iOS)
-                PhoneKnowledgeSection(listings: mesh.libraryListings)
-                #endif
+        Section {
+            if rules.isEmpty {
+                Text("No rules yet. Try \"@pasa save rule: No site visits after 5 PM\".")
+                    .foregroundStyle(.secondary)
             }
-            .navigationTitle("Rules")
+            ForEach(rules) { rule in
+                RuleRow(rule: rule)
+                    #if os(iOS)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            mesh.deleteRule(rule)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        Button {
+                            mesh.setRuleLocked(rule, locked: !rule.locked)
+                        } label: {
+                            Label(rule.locked ? "Unlock" : "Lock", systemImage: rule.locked ? "lock.open" : "lock")
+                        }
+                        .tint(.orange)
+                    }
+                    #endif
+            }
+        } header: {
+            Text("Rules")
+        } footer: {
+            #if os(macOS)
+            Text("Anyone can add a rule. Only admins (\(adminList)) can edit, lock or delete. Older versions are kept.")
+            #else
+            Text("Add one with \"@pasa save rule: ...\". Admins can swipe left to delete, lock or unlock.")
+            #endif
         }
     }
 

@@ -53,11 +53,9 @@ struct KnowledgeView: View {
     var body: some View {
         NavigationStack {
             List {
+                RulesSection()
                 Section {
                     dropZone
-                    Picker("New documents", selection: $newVisibility) {
-                        ForEach(LibraryVisibility.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
                     if let progress = knowledge.progress {
                         VStack(alignment: .leading, spacing: 6) {
                             ProgressView(value: progress.fraction) {
@@ -92,14 +90,24 @@ struct KnowledgeView: View {
                     searchModeFooter
                 }
 
-                Section("Backup") {
-                    Button("Export this room's Knowledge...") {
-                        if let data = try? knowledge.exportData(room: room) { exportDoc = KnowledgeBackupFile(data: data) }
+                Section {
+                    DisclosureGroup("Advanced") {
+                        Picker("New documents", selection: $newVisibility) {
+                            ForEach(LibraryVisibility.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        Button("Re-index all documents") {
+                            let ids = index.documents.map(\.id)
+                            Task { for id in ids { await knowledge.reindex(id, room: room) } }
+                        }
+                        .disabled(!canEdit || index.documents.isEmpty)
+                        Button("Export this room's Knowledge...") {
+                            if let data = try? knowledge.exportData(room: room) { exportDoc = KnowledgeBackupFile(data: data) }
+                        }
+                        Button("Import Knowledge (replaces this room's)...") { showBackupImporter = true }
+                            .disabled(!canEdit)
+                        Text("The backup holds titles, passages and vectors, not the original files.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    Button("Import Knowledge (replaces this room's)...") { showBackupImporter = true }
-                        .disabled(!canEdit)
-                    Text("The backup holds titles, passages and vectors, not the original files.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Knowledge")
@@ -193,8 +201,6 @@ struct KnowledgeView: View {
             Text("\(doc.pages) page\(doc.pages == 1 ? "" : "s"), \(doc.chunkCount) passages, \(LibraryLimits.mb(doc.bytes)), \(doc.kind.rawValue)\(doc.ocr ? ", OCR" : "")\(doc.embedded ? ", hybrid search" : ", keyword only")")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Re-index") { Task { await knowledge.reindex(doc.id, room: room) } }
-                    .disabled(!canEdit || knowledge.progress != nil)
                 Button("Remove", role: .destructive) { confirmRemove = doc }
                     .disabled(!canEdit)
             }

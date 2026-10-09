@@ -89,6 +89,7 @@
 		75217314431AFDE62258D0F7 /* MeshMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6999B68CA47A8D0750603820 /* MeshMessage.swift */; };
 		7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5552427112301CCC61834729 /* RulesView.swift */; };
 		958306C2DD2E007F6F30720E /* KnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */; };
+		80A47A96085CBD726F4B4BB7 /* SnapshotRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */; };
 		81DA6A37B0AFF7E6F8FC441F /* Compactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 030DCA88E0E635C2077D1DAA /* Compactor.swift */; };
 		82F3721960CA072D634F9034 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71424B599E943648E0F4282 /* SettingsView.swift */; };
 		9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E68A9798A776400EC46DDB /* RoomViews.swift */; };
@@ -139,6 +140,7 @@
 		8230A9767A518B38A41E3398 /* RoomKDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623462451D13DCBF40BBB8C7 /* RoomKDF.swift */; };
 		D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5552427112301CCC61834729 /* RulesView.swift */; };
 		8CF7B0FE975619DE4B515B7B /* KnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */; };
+		2E84A0E277444B77776C9B07 /* SnapshotRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */; };
 		DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */; };
 		E026911E7F1970D6B7261EC7 /* AIResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE00B82803B5BC7E8189CB /* AIResponder.swift */; };
 		EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB350FB658F2EBFC27F077E5 /* TasksView.swift */; };
@@ -181,6 +183,7 @@
 		5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStripView.swift; sourceTree = "<group>"; };
 		5552427112301CCC61834729 /* RulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesView.swift; sourceTree = "<group>"; };
 		B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeView.swift; sourceTree = "<group>"; };
+		7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotRunner.swift; sourceTree = "<group>"; };
 		56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
 		5AFE00B82803B5BC7E8189CB /* AIResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIResponder.swift; sourceTree = "<group>"; };
 		5B9288DEC8E589C86F79C39E /* Info-iOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iOS.plist"; sourceTree = "<group>"; };
@@ -305,6 +308,7 @@
 				5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */,
 				5552427112301CCC61834729 /* RulesView.swift */,
 				B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */,
+				7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */,
 				E71424B599E943648E0F4282 /* SettingsView.swift */,
 				D3E68A9798A776400EC46DDB /* RoomViews.swift */,
 				1B117661B2AA4C1C62F97F79 /* JoinRoomViews.swift */,
@@ -537,6 +541,7 @@
 				AD88362011456A08E76CC228 /* RelayEngine.swift in Sources */,
 				7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */,
 				958306C2DD2E007F6F30720E /* KnowledgeView.swift in Sources */,
+				80A47A96085CBD726F4B4BB7 /* SnapshotRunner.swift in Sources */,
 				82F3721960CA072D634F9034 /* SettingsView.swift in Sources */,
 				9672B63CD522B2A1AE0789E1 /* RoomViews.swift in Sources */,
 				D2628E4A500B3C4499F6582C /* JoinRoomViews.swift in Sources */,
@@ -613,6 +618,7 @@
 				EC1F0F60699E3B51F294312E /* RelayEngine.swift in Sources */,
 				D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */,
 				8CF7B0FE975619DE4B515B7B /* KnowledgeView.swift in Sources */,
+				2E84A0E277444B77776C9B07 /* SnapshotRunner.swift in Sources */,
 				7108DF704DE33B6280376152 /* SettingsView.swift in Sources */,
 				576955B86DEFBF14B5A97108 /* RoomViews.swift in Sources */,
 				A7849441CC525E17AB9955D1 /* JoinRoomViews.swift in Sources */,

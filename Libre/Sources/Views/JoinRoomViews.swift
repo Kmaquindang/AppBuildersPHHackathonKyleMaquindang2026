@@ -82,32 +82,35 @@ struct RoomShareView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            #if os(macOS)
-            if mesh.gatewayCanJoin(mesh.activeRoom) { BrowserGatewayControls() }
-            #endif
             if let link = mesh.activeJoinLink {
                 JoinCard(link: link, hidden: hidden, qrSize: 220, browserURL: browserURL)
-                HStack {
-                    Button(hidden ? "Show code" : "Hide code") { hidden.toggle() }
-                    Button("New code...") { confirmNew = true }
-                        .disabled(mesh.roomBusy)
-                    Button {
+                Button(hidden ? "Show code" : "Hide code") { hidden.toggle() }
+                    .buttonStyle(.bordered)
+                DisclosureGroup("Admin options") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button("New code...") { confirmNew = true }
+                            .disabled(mesh.roomBusy)
+                        Button {
+                            #if os(macOS)
+                            openWindow(id: "projector")
+                            #else
+                            projector = true
+                            #endif
+                        } label: { Label("Projector mode", systemImage: "rectangle.inset.filled.and.person.filled") }
+                        Picker("Code expires", selection: Binding(
+                            get: { currentExpiryChoice },
+                            set: { mesh.setCodeExpiry($0) })) {
+                            ForEach(CodeExpiry.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        Toggle("Approve new members", isOn: Binding(
+                            get: { mesh.activeRoom.gov?.manifest?.approval == true },
+                            set: { mesh.setJoinApproval($0) }))
                         #if os(macOS)
-                        openWindow(id: "projector")
-                        #else
-                        projector = true
+                        Text("Browser joins for Android phones: Settings, Advanced.").font(.caption).foregroundStyle(.secondary)
                         #endif
-                    } label: { Label("Projector mode", systemImage: "rectangle.inset.filled.and.person.filled") }
+                    }
+                    .padding(.top, 6)
                 }
-                .buttonStyle(.bordered)
-                Picker("Code expires", selection: Binding(
-                    get: { currentExpiryChoice },
-                    set: { mesh.setCodeExpiry($0) })) {
-                    ForEach(CodeExpiry.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                Toggle("Approve new members", isOn: Binding(
-                    get: { mesh.activeRoom.gov?.manifest?.approval == true },
-                    set: { mesh.setJoinApproval($0) }))
                 PendingJoinsList()
             } else if let url = browserURL {
                 BrowserJoinCard(room: mesh.activeRoom.displayName, url: url, open: mesh.activeRoom.isDefault, qrSize: 220)
@@ -118,7 +121,7 @@ struct RoomShareView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Text(browserURL == nil
-                 ? "This QR opens the Pasa app. Every phone needs Pasa installed. Android phones can join in a browser if you turn on browser joins."
+                 ? "This QR opens the \(AppBrand.name) app on iPhone. Android phones can join in a browser when browser joins are on (Settings, Advanced)."
                  : "This QR opens a page in any phone browser. iPhones with Pasa can tap Open in Pasa app on that page.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

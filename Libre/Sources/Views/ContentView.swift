@@ -30,23 +30,82 @@ struct ContentView: View {
             }
     }
 
+    #if os(macOS)
+    /// Mac: a native sidebar (Apple HIG) instead of segmented tabs in the title bar, so the room
+    /// title, status and tabs never crowd each other. Three places: Chat, Tasks, Knowledge.
+    /// The old Assistant tab (AI activity, proof, Ollama) lives in Settings, Advanced.
+    @State private var section: MacSection? = .chat
+
     private var tabs: some View {
-        TabView {
+        NavigationSplitView {
+            List(MacSection.allCases, selection: $section) { item in
+                Label(item.title, systemImage: item.symbol).tag(item)
+            }
+            .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 230)
+        } detail: {
+            switch section ?? .chat {
+            case .chat: ChatScreen()
+            case .tasks: TasksView()
+            case .knowledge: KnowledgeTab()
+            }
+        }
+        .frame(minWidth: 720, minHeight: 520)
+        .task { await SnapshotRunner.run { section = $0 } }
+    }
+    #else
+    @State private var tab = 0
+
+    private var tabs: some View {
+        TabView(selection: $tab) {
             ChatScreen()
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                .tag(0)
             TasksView()
                 .tabItem { Label("Tasks", systemImage: "checklist") }
-            RulesView()
-                .tabItem { Label("Rules", systemImage: "book.closed") }
-            #if os(macOS)
-            AssistantDashboardView()
-                .tabItem { Label("Assistant", systemImage: "cpu") }
-            if mesh.isAIPeer {
-                KnowledgeView(knowledge: mesh.knowledge)
-                    .tabItem { Label("Knowledge", systemImage: "books.vertical") }
-            }
-            #endif
+                .tag(1)
+            KnowledgeTab()
+                .tabItem { Label("Knowledge", systemImage: "books.vertical") }
+                .tag(2)
         }
+        .task { await SnapshotRunner.run { tab = $0 } }
+    }
+    #endif
+}
+
+#if os(macOS)
+enum MacSection: String, CaseIterable, Identifiable, Hashable {
+    case chat, tasks, knowledge
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .chat: return "Chat"
+        case .tasks: return "Tasks"
+        case .knowledge: return "Knowledge"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .chat: return "bubble.left.and.bubble.right"
+        case .tasks: return "checklist"
+        case .knowledge: return "books.vertical"
+        }
+    }
+}
+#endif
+
+/// One Knowledge place: the room's rules first, then its documents (Kyle, Oct 9 11:03 PM).
+struct KnowledgeTab: View {
+    @EnvironmentObject private var mesh: MeshService
+    var body: some View {
+        #if os(macOS)
+        if mesh.isAIPeer {
+            KnowledgeView(knowledge: mesh.knowledge)
+        } else {
+            RulesView()
+        }
+        #else
+        RulesView()
+        #endif
     }
 }
 
@@ -73,6 +132,7 @@ struct ChatScreen: View {
                     ConnectionSheet()
                         .environmentObject(mesh)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .pasaSnapshotSettings)) { _ in showSettings = true }
         }
     }
 
@@ -93,10 +153,15 @@ struct ChatScreen: View {
             ChatTimelineView()
             ComposerView()
         }
+        // Native title and subtitle: one status line in words, no pill, no misleading dot.
         .navigationTitle(ChatTitle.roomName(mesh))
+        .navigationSubtitle(ChatTitle.statusLine(mesh))
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                ChatTitle(onTap: { showConnection = true })
+            ToolbarItem(placement: .primaryAction) {
+                Button { showConnection = true } label: {
+                    Label("Nearby devices", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .help("Nearby devices, links and AI status")
             }
             ToolbarItem(placement: .primaryAction) { settingsButton }
         }
@@ -137,7 +202,7 @@ struct ChatScreen: View {
     }
 }
 
-/// Room name with a green (Pasa can answer) or gray dot, and one short line under it.
+/// Room name, then one status line led by the link dot (gray searching, amber connecting, green connected).
 struct ChatTitle: View {
     @EnvironmentObject private var mesh: MeshService
     var onTap: () -> Void
@@ -147,6 +212,25 @@ struct ChatTitle: View {
     }
 
     private var ready: Bool { StatusWords.aiReady(isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability) }
+    private var dot: LinkDot { StatusWords.linkDot(linked: mesh.connectedCount, nearby: mesh.peers.count) }
+
+    static func dotColor(_ dot: LinkDot) -> Color {
+        switch dot {
+        case .searching: return .gray
+        case .connecting: return .orange
+        case .connected: return .green
+        }
+    }
+
+    /// Mac subtitle: the link state first, in words ("Connecting..." never comes with green).
+    static func statusLine(_ mesh: MeshService) -> String {
+        let linked = mesh.peers.filter { $0.state == .connected && !$0.isBlocked }
+        let aiMac = mesh.aiDetail.map { mesh.label(for: $0.device) }
+        let words = StatusWords.subtitle(linked: mesh.connectedCount, nearby: mesh.peers.count, isAIPeer: mesh.isAIPeer,
+                                         ai: mesh.aiAvailability, aiMac: aiMac, firstPeer: linked.first?.label)
+        if mesh.connectedCount == 0 && mesh.peers.isEmpty { return "Looking for nearby devices. No signal needed." }
+        return words
+    }
 
     private var subtitle: String {
         let linked = mesh.peers.filter { $0.state == .connected && !$0.isBlocked }
@@ -158,29 +242,31 @@ struct ChatTitle: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(ChatTitle.roomName(mesh))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                Text(ChatTitle.roomName(mesh))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                // One status indicator: the dot belongs to the status line (gray searching,
+                // amber connecting, green connected), and both wrap at large text.
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Circle()
-                        .fill(ready ? Color.green : Color.gray)
+                        .fill(ChatTitle.dotColor(dot))
                         .frame(width: 8, height: 8)
                         .accessibilityHidden(true)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
             }
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(ChatTitle.roomName(mesh)). \(subtitle). \(ready ? "Pasa can answer now" : "Pasa is not available right now")")
+        .accessibilityLabel("\(ChatTitle.roomName(mesh)). \(dot.spoken). \(subtitle). \(ready ? "\(AppBrand.name) can answer now" : "\(AppBrand.name) AI is not available right now")")
         .accessibilityHint("Shows devices, links and AI status")
         .accessibilityAddTraits(.isButton)
     }

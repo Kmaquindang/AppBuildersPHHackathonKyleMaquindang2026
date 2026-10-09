@@ -121,36 +121,18 @@ struct RoomSettingsSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Active room") {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(mesh.activeRoom.displayName)
-                    if let subtitle = mesh.activeRoom.subtitle { RoomSubtitle(text: subtitle).multilineTextAlignment(.trailing) }
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Active room").font(.caption).foregroundStyle(.secondary)
+                Text(mesh.activeRoom.displayName).font(.headline)
+                if let subtitle = mesh.activeRoom.subtitle { RoomSubtitle(text: subtitle) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
             if showJoinScreenButton {
-                Button { showShare = true } label: { Label("Show join screen (QR and code)", systemImage: "qrcode") }
+                Button { showShare = true } label: { Label("Show join screen", systemImage: "qrcode") }
             }
-            Button { showCodeCreate = true } label: { Label("Create a room with a code", systemImage: "plus.rectangle.on.rectangle") }
-            Button { showCodeJoin = true } label: { Label("Join with QR or room code", systemImage: "qrcode.viewfinder") }
-            if !mesh.activeRoom.isDefault {
-                LabeledContent("Check code", value: mesh.activeRoom.checkCode)
-                LabeledContent("How to join", value: mesh.activeRoom.usesPasscode ? "Name + passcode, or QR" : "QR or join string only")
-                DisclosureGroup("Invite: QR code and join string", isExpanded: $showInvite) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        RoomQRCode(text: mesh.activeRoom.joinString)
-                            .frame(maxWidth: .infinity)
-                        Text(mesh.activeRoom.joinString)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                        Button("Copy join string") {
-                            Clipboard.copy(mesh.activeRoom.joinString)
-                            message = "Join string copied. Share it only with your team."
-                        }
-                        Text("The QR code and join string carry the room key, not the passcode. Anyone who has them can read the room.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
+            Button { showCodeCreate = true } label: { Label("Create a room", systemImage: "plus.rectangle.on.rectangle") }
+            Button { showCodeJoin = true } label: { Label("Join a room", systemImage: "qrcode.viewfinder") }
             if mesh.joinedRooms.count > 1 {
                 ForEach(mesh.joinedRooms) { room in
                     Button {
@@ -170,7 +152,82 @@ struct RoomSettingsSection: View {
                 Button("Leave \(mesh.activeRoom.displayName)...", role: .destructive) { confirmLeave = true }
             }
 
-            DisclosureGroup("Create a room", isExpanded: $showCreate) {
+            if let message {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Room")
+        } footer: {
+            Text(mesh.activeRoom.isDefault ? "Town Square is open to everyone nearby. Create a room with a code for privacy." : "Switch rooms here. Room details and admin tools are in Advanced.")
+        }
+        .sheet(isPresented: $showShare) {
+            NavigationStack {
+                ScrollView { RoomShareView().padding() }
+                    .navigationTitle("Join \(mesh.activeRoom.displayName)")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showShare = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 640)
+            #endif
+        }
+        .sheet(isPresented: $showCodeCreate) {
+            NavigationStack {
+                ScrollView { CreateCodeRoomView(onDone: { showCodeCreate = false }).padding() }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showCodeCreate = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 640)
+            #endif
+        }
+        .sheet(isPresented: $showCodeJoin) {
+            CodeJoinView()
+                #if os(macOS)
+                .frame(minWidth: 460, minHeight: 420)
+                #endif
+        }
+        .confirmationDialog("Leave \(mesh.activeRoom.displayName)? Its chat and memory stay on this device; join again with the name and passcode or the join string.",
+                            isPresented: $confirmLeave) {
+            Button("Leave room", role: .destructive) { mesh.leaveRoom(mesh.activeRoom.id) }
+        }
+    }
+}
+
+/// Advanced room tools: check code, invite strings, passcode rooms (older style), room admin.
+struct RoomAdvancedSection: View {
+    @EnvironmentObject private var mesh: MeshService
+    @State private var createName = ""
+    @State private var createCode = ""
+    @State private var createConfirm = ""
+    @State private var joinName = ""
+    @State private var joinCode = ""
+    @State private var joinText = ""
+    @State private var message: String?
+    @State private var showInvite = false
+    @State private var showCreate = false
+    @State private var showJoin = false
+
+    var body: some View {
+        Section {
+            if !mesh.activeRoom.isDefault {
+                LabeledContent("Check code", value: mesh.activeRoom.checkCode)
+                LabeledContent("How to join", value: mesh.activeRoom.usesPasscode ? "Name + passcode, or QR" : "QR or join string only")
+                DisclosureGroup("Invite: QR code and join string", isExpanded: $showInvite) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoomQRCode(text: mesh.activeRoom.joinString)
+                            .frame(maxWidth: .infinity)
+                        Text(mesh.activeRoom.joinString)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        Button("Copy join string") {
+                            Clipboard.copy(mesh.activeRoom.joinString)
+                            message = "Join string copied. Share it only with your team."
+                        }
+                        Text("The QR code and join string carry the room key, not the passcode. Anyone who has them can read the room.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            DisclosureGroup("Create a passcode room", isExpanded: $showCreate) {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Room name, for example BOHOL-7", text: $createName)
                     PasscodeFields(passcode: $createCode, confirm: $createConfirm)
@@ -191,7 +248,7 @@ struct RoomSettingsSection: View {
                 }
             }
 
-            DisclosureGroup("Join a room", isExpanded: $showJoin) {
+            DisclosureGroup("Join a passcode room or paste a join string", isExpanded: $showJoin) {
                 VStack(alignment: .leading, spacing: 8) {
                     NearbyRoomsList(selectedName: $joinName)
                     TextField("Room name", text: $joinName)
@@ -241,38 +298,9 @@ struct RoomSettingsSection: View {
                 Text(message).font(.caption).foregroundStyle(.secondary)
             }
         } header: {
-            Text("Room")
+            Text("Room details: \(mesh.activeRoom.displayName)")
         } footer: {
             Text(footer)
-        }
-        .sheet(isPresented: $showShare) {
-            NavigationStack {
-                ScrollView { RoomShareView().padding() }
-                    .navigationTitle("Join \(mesh.activeRoom.displayName)")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showShare = false } } }
-            }
-            #if os(macOS)
-            .frame(minWidth: 520, minHeight: 640)
-            #endif
-        }
-        .sheet(isPresented: $showCodeCreate) {
-            NavigationStack {
-                ScrollView { CreateCodeRoomView(onDone: { showCodeCreate = false }).padding() }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showCodeCreate = false } } }
-            }
-            #if os(macOS)
-            .frame(minWidth: 520, minHeight: 640)
-            #endif
-        }
-        .sheet(isPresented: $showCodeJoin) {
-            CodeJoinView()
-                #if os(macOS)
-                .frame(minWidth: 460, minHeight: 420)
-                #endif
-        }
-        .confirmationDialog("Leave \(mesh.activeRoom.displayName)? Its chat and memory stay on this device; join again with the name and passcode or the join string.",
-                            isPresented: $confirmLeave) {
-            Button("Leave room", role: .destructive) { mesh.leaveRoom(mesh.activeRoom.id) }
         }
         if !mesh.activeRoom.isDefault, mesh.activeRoom.gov != nil {
             RoomAdminSection()
