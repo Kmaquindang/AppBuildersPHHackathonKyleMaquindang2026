@@ -7,6 +7,14 @@ struct ContentView: View {
     @EnvironmentObject private var mesh: MeshService
 
     var body: some View {
+        if mesh.onboardingDone {
+            main
+        } else {
+            OnboardingFlow()
+        }
+    }
+
+    private var main: some View {
         tabs
             .sheet(isPresented: Binding(get: { mesh.needsPersonName }, set: { _ in })) {
                 NameOnboardingView()
@@ -43,6 +51,7 @@ struct ChatScreen: View {
                 PeerStripView()
                 Divider()
                 ChatTimelineView()
+                StarterChips()
                 Divider()
                 ComposerView()
             }
@@ -57,6 +66,7 @@ struct ChatScreen: View {
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                     }
+                    .accessibilityHint("Name, room, AI and relay settings")
                 }
             }
             .sheet(isPresented: $showSettings) {
@@ -67,62 +77,86 @@ struct ChatScreen: View {
     }
 }
 
-/// "You are: iPhone 12 | 2 connected | AI peer" plus the latest problem, if any.
+/// Two rows that wrap instead of truncating: who and which room, then the status in plain words.
+/// Below them, one offline banner when messages are waiting for a teammate.
 struct StatusHeader: View {
     @EnvironmentObject private var mesh: MeshService
 
+    private var statusLine: String {
+        StatusWords.line(linked: mesh.connectedCount, nearby: mesh.peers.count, isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability)
+            + (mesh.aiAvailability == .awake && !mesh.isAIPeer ? internetWords : "")
+    }
+
+    /// The AI Mac's own internet state from its status beacon ("no internet" proves answers are local).
+    private var internetWords: String {
+        switch mesh.aiDetail?.internet {
+        case .offline?: return ", no internet"
+        case .connected?: return ", internet not used"
+        default: return ""
+        }
+    }
+
+    private var statusSymbol: String {
+        mesh.connectedCount > 0 ? "dot.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .foregroundStyle(.tint)
-                Text("You are \(mesh.displayName)")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                RoomSwitcherChip()
-                AIStatusChip()
-                if mesh.isAIPeer {
-                    Text("AI peer")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.2), in: Capsule())
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { nameText; RoomSwitcherChip(); Spacer(minLength: 0) }
+                VStack(alignment: .leading, spacing: 4) { nameText; RoomSwitcherChip() }
+            }
+            Label {
+                Text(statusLine)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: statusSymbol)
+                    .foregroundStyle(mesh.connectedCount > 0 ? Color.green : Color.orange)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Status: \(statusLine.replacingOccurrences(of: " · ", with: ". "))")
+            if let banner = StatusWords.offlineBanner(linked: mesh.connectedCount, queued: mesh.queuedMineCount) {
+                Label {
+                    Text(banner).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "clock").foregroundStyle(.orange)
                 }
-                Spacer()
-                Text("\(mesh.connectedCount) linked")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if mesh.outboxCount > 0 {
-                    Text("\(mesh.outboxCount) queued")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityElement(children: .combine)
             }
             if let blocker = mesh.activeRoom.sendBlocker {
-                Label(blocker, systemImage: "lock")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
+                notice(blocker, symbol: "lock", tint: .orange)
             }
             if let badge = mesh.forcedRelayBadge {
-                Label(badge, systemImage: "arrow.triangle.branch")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
-                    .lineLimit(1)
-                    .accessibilityLabel(badge)
+                notice(badge, symbol: "arrow.triangle.branch", tint: .orange)
             }
             if let problem = mesh.lastProblem {
-                Text(problem)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
+                notice(problem, symbol: "exclamationmark.triangle.fill", tint: .red)
             }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    private var nameText: some View {
+        Text(mesh.personName.isEmpty ? "You are \(mesh.displayName)" : "You: \(mesh.personName)")
+            .font(.headline)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(mesh.personName.isEmpty ? "You are \(mesh.displayName)" : "You are \(mesh.personName)")
+    }
+
+    /// Colored icon, text in the primary label color (colored text on white fails 4.5:1).
+    private func notice(_ text: String, symbol: String, tint: Color) -> some View {
+        Label {
+            Text(text).font(.footnote).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(tint)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -150,52 +184,20 @@ struct RoomSwitcherChip: View {
                 }
             }
         } label: {
-            Text(title)
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+            Label(title, systemImage: "person.3")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
                 .background((mesh.activeRoom.isDefault ? Color.gray : (mesh.activeRoom.canSend ? Color.green : Color.orange)).opacity(0.2), in: Capsule())
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         #if os(macOS)
         .menuStyle(.borderlessButton)
         #endif
-        .fixedSize()
-        .accessibilityLabel("Switch room. Now in \(title)")
-    }
-}
-
-/// Header chip: AI Mac Awake, Asleep, Offline or not in this room.
-struct AIStatusChip: View {
-    @EnvironmentObject private var mesh: MeshService
-
-    private var color: Color {
-        switch mesh.aiAvailability {
-        case .awake: return .green
-        case .asleep: return .orange
-        case .offline, .unknown: return .gray
-        case .notServing: return .yellow
-        }
-    }
-
-    /// The AI Mac's own internet state from its status beacon ("no internet" proves answers are local).
-    private var internetWord: String {
-        guard mesh.aiAvailability == .awake, let net = mesh.aiDetail?.internet else { return "" }
-        switch net {
-        case .offline: return ", no internet"
-        case .connected: return ", internet not used"
-        case .unknown: return ""
-        }
-    }
-
-    var body: some View {
-        Text("AI \(mesh.aiAvailability.rawValue)\(internetWord)")
-            .font(.caption2.weight(.bold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2), in: Capsule())
-            .lineLimit(1)
-            .accessibilityLabel("AI Mac status: \(mesh.aiAvailability.rawValue)")
+        .accessibilityLabel("Room: \(title)")
+        .accessibilityHint("Opens the list of your rooms to switch")
     }
 }
 
@@ -221,7 +223,7 @@ struct NameOnboardingView: View {
                 .textFieldStyle(.roundedBorder)
             RoomOnboardingPicker(choice: $roomChoice, name: $roomName, passcode: $passcode, confirm: $confirm, joinText: $joinText)
             if let roomError {
-                Text(roomError).font(.caption).foregroundStyle(.red)
+                TintedLabel(text: roomError, symbol: "exclamationmark.triangle.fill", tint: .red)
             }
             Button(action: save) {
                 BusyLabel(title: "Continue", busy: mesh.roomBusy)

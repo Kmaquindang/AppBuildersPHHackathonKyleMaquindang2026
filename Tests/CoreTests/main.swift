@@ -26,6 +26,8 @@ await runDigestTests()
 await runVisionTests()
 await runAcceptTaskTests()
 await runBenchmarkTests()
+runMacSetupTests()
+runChatStatusTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

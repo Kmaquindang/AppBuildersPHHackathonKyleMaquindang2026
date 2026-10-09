@@ -67,7 +67,7 @@ struct PasscodeFields: View {
                         .foregroundStyle(strengthColor)
                 }
                 if !confirm.wrappedValue.isEmpty && confirm.wrappedValue != passcode {
-                    Text("The two passcodes do not match.").font(.caption).foregroundStyle(.red)
+                    TintedLabel(text: "The two passcodes do not match.", symbol: "exclamationmark.triangle.fill", tint: .red)
                 }
             }
         }
