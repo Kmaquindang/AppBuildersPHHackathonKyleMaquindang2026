@@ -49,12 +49,12 @@ Use this if XcodeGen is not available.
 
 ## Run the milestone 1 demo
 
-1. Open Pasa on all three devices. Open **Settings** (gear icon) on each one and give it a unique name: `MacBook Air`, `iPhone 14 Pro Max`, `iPhone 12`. Tap **Save name**.
+1. Open Pasa on all three devices. On first launch each one asks for your name (for example `Kyle`, `Ana`). Device ids are created automatically and can be changed under **Settings** (gear icon) > **This device**, for example `MacBook Air`, `iPhone 14 Pro Max`, `iPhone 12`.
 2. Wait until the peer chips at the top show **linked** (green). Keep the app open in the foreground on the iPhones; iOS pauses links when the app is in the background.
 3. To prove there is no internet: on each iPhone turn on Airplane Mode, then turn **Wi-Fi back on** (do not join any network). Bluetooth can stay on. On the Mac, Wi-Fi must be on but does not need to be joined to a network.
 4. Send a chat from any device. Every other device shows it with the path and time, for example `iPhone 12 -> MacBook Air, 1 hop, 35 ms`.
 5. Forced relay: on **iPhone 12** open Settings and turn on **Block direct link to MacBook Air**. Now iPhone 12 and the Mac can only talk through iPhone 14 Pro Max.
-6. On iPhone 12 switch the composer to **Ask AI** (or type `@pasa` before the question; `@libre` still works) and send. The Mac (AI peer is on by default on the Mac) replies `AI peer received: ...`. On iPhone 12 the answer row shows:
+6. On iPhone 12 type `@pasa` before the question (typing `@` shows an `@pasa` chip; `@libre` still works) and send. The Mac (AI peer is on by default on the Mac) replies `AI peer received: ...`. On iPhone 12 the answer row shows:
    - `MacBook Air -> iPhone 14 Pro Max -> iPhone 12, 2 hops, ... ms`
    - `Ask path: iPhone 12 -> iPhone 14 Pro Max -> MacBook Air, 2 hops`
    - `Round trip ... ms (measured on this device)`
@@ -69,9 +69,9 @@ Use this if XcodeGen is not available.
 
 ### In the app
 1. Run Pasa on the Mac. Open Settings > AI peer: Engine = Executive assistant, model `qwen3:8b`, fallback `qwen3:4b`. Admin devices default to `iPhone 14 Pro Max` (this Mac is always an admin).
-2. In Team roster add one line per person, for example `Ana = iPhone 12` and `Kyle = iPhone 14 Pro Max`. Tap **Save AI settings**. The status line should say `Ollama running. Using qwen3:8b.`
+2. Optional: the roster is only an override now, because tasks follow the names people picked. If you need it, add one line per person, for example `Ana = iPhone 12`. Tap **Save AI settings**. The status line should say `Ollama running. Using qwen3:8b.`, then `Warming up the model...` and finally `Ready. qwen3:8b loaded in ... s`.
 3. Open the **Assistant** tab on the Mac to watch every ask, the reply, the model, the latency in ms and the tokens per second.
-4. From iPhone 12 (Ask AI mode, or type `@pasa` first):
+4. From iPhone 12 (type `@pasa` first):
    - `save rule: No site visits after 5 PM` gives `Saved [Rule: No site visits after 5 PM v1]`, and the rule appears in every device's Rules tab.
    - `update rule No site visits after 5 PM: No site visits after 6 PM` from iPhone 12 is refused (not an admin). The same message from iPhone 14 Pro Max creates v2 and keeps v1 in history.
    - `remind Ana to order cement Friday` creates the task, and it pops up on iPhone 12 (Ana's device) as a green Task row and in its Tasks tab.
@@ -88,7 +88,7 @@ Use this if XcodeGen is not available.
 
 ## Mac-only test (no iPhones)
 
-1. Run **Libre-macOS**. Switch to **Ask AI** and send a question. The Mac answers itself through the local AI path (0 hops), which tests the AI seam.
+1. Run **Libre-macOS**. Type `@pasa` and a question, then send. The Mac answers itself through the local AI path (0 hops), which tests the AI seam.
 2. For a real mesh with only Macs, run the app on two Macs near each other. MultipeerConnectivity works Mac to Mac.
 
 ## Run the core unit tests
