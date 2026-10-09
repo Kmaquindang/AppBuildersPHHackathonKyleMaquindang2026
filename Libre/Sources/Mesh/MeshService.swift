@@ -1192,6 +1192,25 @@ final class MeshService: ObservableObject {
         send("\(AssistantMention.primary) \(locked ? "lock" : "unlock") rule: \(rule.title)")
     }
 
+    /// Owner or admin may finish a task from its card (the AI Mac checks again on phones' asks).
+    func canComplete(_ task: TaskItem) -> Bool {
+        task.canComplete(by: displayName, names: [personName], isAdmin: isAIPeer || isRoomAdmin || adminDevices.contains(displayName), roster: roster)
+    }
+
+    /// Done button: the Mac marks it right away; a phone asks the Mac, which syncs it back.
+    func completeTask(_ task: TaskItem) {
+        guard canComplete(task) else { return }
+        #if os(macOS)
+        if isAIPeer {
+            setTaskDone(task.id, done: true)
+            return
+        }
+        #endif
+        do {
+            send("\(AssistantMention.primary) mark done: \(task.title) #\(task.shortID)")
+        }
+    }
+
     #if os(macOS)
     func setAIPeer(_ on: Bool) {
         isAIPeer = on
@@ -1355,21 +1374,6 @@ final class MeshService: ObservableObject {
     }
 
     // MARK: Mac dashboard actions (the Mac acts as an admin)
-
-    /// Owner or admin may finish a task from its card (the AI Mac checks again on phones' asks).
-    func canComplete(_ task: TaskItem) -> Bool {
-        task.canComplete(by: displayName, names: [personName], isAdmin: isAIPeer || isRoomAdmin || adminDevices.contains(displayName), roster: roster)
-    }
-
-    /// Done button: the Mac marks it right away; a phone asks the Mac, which syncs it back.
-    func completeTask(_ task: TaskItem) {
-        guard canComplete(task) else { return }
-        if isAIPeer {
-            setTaskDone(task.id, done: true)
-        } else {
-            send("\(AssistantMention.primary) mark done: \(task.title) #\(task.shortID)")
-        }
-    }
 
     func setTaskDone(_ id: UUID, done: Bool) {
         let updated = done ? memory.markDone(id, by: displayName) : memory.reopen(id, by: displayName)
