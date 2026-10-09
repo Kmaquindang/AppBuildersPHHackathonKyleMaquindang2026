@@ -23,7 +23,7 @@ struct ChatTimelineView: View {
                     let names = nameMap
                     ForEach(mesh.entries) { entry in
                         MessageRow(entry: entry, sender: mesh.senderLabel(for: entry.message), names: names,
-                                   waiting: mesh.waitingAsks.contains(entry.id))
+                                   waiting: mesh.waitingAsks.contains(entry.id), waitingNote: mesh.waitingText)
                             .id(entry.id)
                     }
                 }
@@ -56,6 +56,8 @@ struct MessageRow: View {
     let names: [String: String]
     /// An ask of ours with no answer after 20 s.
     var waiting: Bool = false
+    /// What to say while waiting (AI Mac asleep, offline, not in this room, or queue depth).
+    var waitingNote: String = "Waiting for the AI Mac... It answers when it is in range."
     @State private var showDetails = false
 
     private var message: MeshMessage { entry.message }
@@ -155,7 +157,7 @@ struct MessageRow: View {
     private var waitingText: String {
         entry.sentTo == ["this Mac (AI peer)"]
             ? "Pasa is still thinking..."
-            : "Waiting for the AI Mac... It answers when it is in range."
+            : waitingNote
     }
 
     /// AI replies render bold, italics, inline code and bullets. Anything that does not parse
@@ -259,7 +261,7 @@ struct KindBadge: View {
         case .chat: return .blue
         case .ask: return .orange
         case .answer: return .purple
-        case .ack, .sync, .sealed, .chunk, .mediaNack, .transcript: return .gray
+        case .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus: return .gray
         case .media: return .blue
         case .rule: return .teal
         case .task: return .green

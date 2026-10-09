@@ -7,8 +7,12 @@ import SwiftUI
 #if os(macOS)
 struct AssistantDashboardView: View {
     @EnvironmentObject private var mesh: MeshService
+    /// Room filter: "" shows every room the Mac answers in.
+    @State private var roomFilter = ""
 
-    private var log: [AssistantLogEntry] { Array(mesh.assistantLog.reversed()) }
+    private var log: [AssistantLogEntry] {
+        Array(mesh.assistantLog.filter { roomFilter.isEmpty || $0.roomID == roomFilter }.reversed())
+    }
 
     private var modelEntries: [AssistantLogEntry] { mesh.assistantLog.filter { $0.model != nil && $0.error == nil } }
 
@@ -55,6 +59,20 @@ struct AssistantDashboardView: View {
                     StatTile(label: "Chat lines seen", value: "\(mesh.org.chatLog.count)")
                 }
 
+                HStack(spacing: 8) {
+                    Picker("Room", selection: $roomFilter) {
+                        Text("All rooms (\(mesh.joinedRooms.filter(\.canSend).count))").tag("")
+                        ForEach(mesh.joinedRooms) { room in
+                            Text(room.displayName).tag(room.id)
+                        }
+                    }
+                    .frame(maxWidth: 280)
+                    Text(mesh.macAsleep ? "Asleep: asks wait until the Mac wakes" : "Queue: \(mesh.aiQueueDepth) waiting, one model call at a time, rooms take turns")
+                        .font(.caption)
+                        .foregroundStyle(mesh.macAsleep ? Color.orange : Color.secondary)
+                    Spacer()
+                }
+
                 Divider()
 
                 if log.isEmpty {
@@ -97,6 +115,13 @@ struct AssistantLogRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
+                if !entry.roomLabel.isEmpty {
+                    Text(entry.roomLabel)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.green.opacity(0.2), in: Capsule())
+                }
                 Text(entry.asker)
                     .font(.caption.weight(.semibold))
                 Text(entry.askHops == 1 ? "1 hop" : "\(entry.askHops) hops")

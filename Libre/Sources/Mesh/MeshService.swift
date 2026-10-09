@@ -15,6 +15,9 @@
 
 import Foundation
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// Which brain the Mac AI peer uses.
 enum AIEngine: String, CaseIterable, Identifiable {
@@ -51,6 +54,33 @@ struct AssistantLogEntry: Identifiable, Equatable {
     var checked: [String] = []
     var promptTokensEstimate: Int?
     var promptEvalCount: Int?
+    /// Room tag and label the ask came from (multi-room AI Mac).
+    var roomID: String = ""
+    var roomLabel: String = ""
+}
+
+/// AI Mac: a room it serves that is not the active one (chat log, team memory, timeline).
+/// Exactly one OrgMemory instance exists per room: switching rooms swaps these in and out.
+final class RoomContext {
+    let roomID: String
+    var memory: OrgMemory
+    var entries: [ChatEntry]
+    let timelineURL: URL?
+    var dirty = false
+
+    init(roomID: String, memory: OrgMemory, entries: [ChatEntry], timelineURL: URL?) {
+        self.roomID = roomID
+        self.memory = memory
+        self.entries = entries
+        self.timelineURL = timelineURL
+    }
+
+    func save(limit: Int) {
+        _ = memory.save()
+        guard dirty, let url = timelineURL else { return }
+        dirty = false
+        TimelineStore.save(PersistedTimeline(entries: entries, outbox: []), to: url, limit: limit)
+    }
 }
 
 @MainActor
@@ -110,6 +140,18 @@ final class MeshService: ObservableObject {
     /// Mac: language for voice note transcripts ("en-US" or "fil-PH").
     @Published private(set) var speechLocale: String
 
+    // Multi-room: discovery, admin, AI status.
+    /// Listed rooms heard nearby (signed beacons, expire after 45 s).
+    @Published private(set) var nearbyRooms: [BeaconRegistry.Heard] = []
+    /// AI Mac status for the active room (phones from signed status beacons; the Mac itself).
+    @Published private(set) var aiAvailability: AIAvailability = .unknown
+    /// Queue depth and model of the AI Mac serving the active room, when heard.
+    @Published private(set) var aiDetail: AIStatus?
+    /// Mac: true between willSleep and didWake.
+    @Published private(set) var macAsleep = false
+    /// Mac: asks waiting for the model, all rooms.
+    @Published private(set) var aiQueueDepth = 0
+
     // MARK: Internals
 
     private let engine: RelayEngine
@@ -133,7 +175,21 @@ final class MeshService: ObservableObject {
     private let assembler = MediaAssembler()
     /// "<media id>|<requester>" -> when this device last answered that NACK (throttle).
     private var nackAnswered: [String: Date] = [:]
-    private struct ChunkJob { var message: MeshMessage; var mediaId: UUID; var index: Int; var count: Int; var outgoing: Bool }
+    private struct ChunkJob { var message: MeshMessage; var mediaId: UUID; var index: Int; var count: Int; var outgoing: Bool; var room: String }
+    /// This device's signing and key agreement keys (identity.json).
+    let identity: DeviceIdentity
+    private let beacons = BeaconRegistry()
+    private let aiTracker = AIStatusTracker()
+    /// Phones: unanswered asks of the active room, resent when the AI Mac wakes.
+    private var pendingAsks = PendingAskBook()
+    /// Media id -> room it belongs to (so NACKs and transcripts go to the right room).
+    private var mediaRoom: [UUID: String] = [:]
+    /// Throttles: room id -> last time.
+    private var lastJoinRequest: [String: Date] = [:]
+    private var lastWant: [String: Date] = [:]
+    private var lastManifestSent: [String: Date] = [:]
+    private var lastBeaconAt = Date.distantPast
+    private var lastStatusAt = Date.distantPast
     private var chunkQueue: [ChunkJob] = []
     private var chunkPump: Task<Void, Never>?
     #if os(macOS)
@@ -143,6 +199,12 @@ final class MeshService: ObservableObject {
     private var ollamaTimer: Timer?
     private var ollamaBusy = false
     private var lastWarm: Date?
+    /// Rooms the AI Mac serves that are not active (one OrgMemory per room).
+    private var contexts: [String: RoomContext] = [:]
+    /// One model call at a time, rooms take turns.
+    private let askQueue = FairAskQueue<MeshMessage>()
+    private var askRunning = false
+    private var sleepObservers: [NSObjectProtocol] = []
     #endif
 
     private enum Keys {
@@ -199,6 +261,14 @@ final class MeshService: ObservableObject {
                                   legacyFiles: ["org-memory.json", "org-cache.json", "timeline.json"],
                                   legacyAdmins: admins,
                                   legacyClearedAt: store.object(forKey: Keys.clearedAt) as? Date)
+        // Device keys, and admin keys for rooms this device created before admin keys existed.
+        let ident = DeviceIdentity.loadOrCreate(at: MeshService.storageURL("identity.json"))
+        for old in roomStore.rooms {
+            var copy = old
+            if RoomGovernor.migrate(&copy, selfID: name, identity: ident, name: person.isEmpty ? name : person) != nil {
+                roomStore.update(old.id) { $0.gov = copy.gov }
+            }
+        }
         let room = roomStore.active
         let cleared = room.clearedAt
         let away = store.object(forKey: Keys.awaySince) as? Date
@@ -222,6 +292,7 @@ final class MeshService: ObservableObject {
         let relay = RelayEngine(selfName: name, roles: ai ? [MeshDestination.aiRole] : [])
         relay.roomID = room.id
         relay.senderName = person.isEmpty ? nil : person
+        if ai { relay.extraRoomIDs = Set(roomStore.rooms.filter(\.canSend).map(\.id)) }
         relay.restoreOutbox(saved.outbox)
         for entry in saved.entries.suffix(300) { relay.markSeen(entry.id) }
 
@@ -249,6 +320,8 @@ final class MeshService: ObservableObject {
         speechLocale = store.string(forKey: Keys.speechLocale) ?? "en-US"
         entries = TimelineStore.dropping(saved.entries, before: cleared)
         outboxCount = relay.outbox.count
+        identity = ident
+        pendingAsks = PendingAskBook(items: saved.pendingAsks ?? [])
 
         #if os(macOS)
         let brain = ExecutiveAssistant(
@@ -261,7 +334,13 @@ final class MeshService: ObservableObject {
         brain.directory = dir
         brain.clearedAt = cleared
         assistant = brain
+        let ledgerURL = MeshService.storageURL("ai-ledger.json")
+        if let url = ledgerURL, let data = try? Data(contentsOf: url),
+           let saved = try? JSONDecoder().decode([String: FairAskQueue<MeshMessage>.LedgerEntry].self, from: data) {
+            askQueue.importLedger(saved)
+        }
         #endif
+        for item in pendingAsks.items { sentAsks[item.ask.id] = item.firstSentAt }
     }
 
     static func defaultDeviceName() -> String {
@@ -344,6 +423,48 @@ final class MeshService: ObservableObject {
         device == displayName || adminDevices.contains(device) || device == activeRoom.creator
     }
 
+    // MARK: Room admin state (signed manifest)
+
+    /// This device may sign admin actions in the active room (creator or co-admin).
+    var isRoomAdmin: Bool { RoomGovernor.isAdmin(activeRoom, identity: identity) }
+    /// This device holds the room admin key (it created the room).
+    var isRoomCreatorAdmin: Bool { RoomGovernor.isCreatorAdmin(activeRoom) }
+    var roomMembers: [RoomMember] { activeRoom.gov?.manifest?.members ?? [] }
+    func isCoAdmin(_ member: RoomMember) -> Bool { activeRoom.gov?.manifest?.isCoAdmin(member.signKey) ?? false }
+    func isMe(_ member: RoomMember) -> Bool { member.signKey == identity.signKey }
+    /// "7/12" for the header, nil for rooms without a roster.
+    var roomCountText: String? {
+        guard let m = activeRoom.gov?.manifest else { return nil }
+        return "\(m.members.count)/\(m.cap)"
+    }
+
+    /// Text under an unanswered ask, by AI status.
+    var waitingText: String {
+        switch aiAvailability {
+        case .asleep: return "AI Mac asleep. Your question will be answered when it wakes."
+        case .notServing: return "The AI Mac nearby is not in this room. Ask the room admin to add it."
+        case .awake:
+            if let q = aiDetail?.queue, q > 1 { return "Waiting for the AI Mac (\(q) questions in line, rooms take turns)." }
+            return "Waiting for the AI Mac..."
+        case .offline, .unknown: return "Waiting for the AI Mac... It answers when it is in range."
+        }
+    }
+
+    /// Rooms the AI Mac answers in: joined, holding the current key, not closed or removed.
+    private var servedRoomIDs: [String] {
+        guard isAIPeer else { return [] }
+        return joinedRooms.filter(\.canSend).map(\.id)
+    }
+
+    /// Re-reads room records after a governance change and updates relay roles.
+    private func refreshRoomState() {
+        activeRoom = rooms.active
+        joinedRooms = rooms.rooms
+        engine.extraRoomIDs = isAIPeer ? Set(servedRoomIDs) : []
+        memory.admins = activeRoom.adminDevices(selfID: displayName)
+        refreshAIAvailability()
+    }
+
     // MARK: Rooms
 
     /// Creates a room from a name and passcode (Wi-Fi style) and switches to it. This device is
@@ -368,9 +489,50 @@ final class MeshService: ObservableObject {
         let made = await Task.detached(priority: .userInitiated) {
             Room.fromPasscode(name: name, passcode: passcode, creator: creator)
         }.value
-        guard let room = made else { return nil }
+        guard var room = made else { return nil }
+        let isNew = rooms.room(withID: room.id) == nil
+        if isNew {
+            if !creator.isEmpty {
+                RoomGovernor.setUp(&room, identity: identity, device: displayName, name: personName.isEmpty ? displayName : personName)
+            } else {
+                room.gov = RoomGov(pending: true)
+            }
+        }
         switchRoom { rooms.join(room) }
+        afterJoin(activeRoom.id)
         return activeRoom
+    }
+
+    /// Joins a Listed room from the Nearby list. The passcode is checked against the room tag
+    /// in the beacon first, so a typo says "wrong passcode" instead of landing in an empty room.
+    enum NearbyJoin { case joined(Room), wrongPasscode, failed }
+    func joinNearby(_ beacon: RoomBeacon, passcode: String) async -> NearbyJoin {
+        guard !roomBusy else { return .failed }
+        roomBusy = true
+        let name = beacon.label
+        let made = await Task.detached(priority: .userInitiated) {
+            Room.fromPasscode(name: name, passcode: passcode, creator: "")
+        }.value
+        roomBusy = false
+        guard var room = made else { return .failed }
+        guard room.id == beacon.room else { return .wrongPasscode }
+        if rooms.room(withID: room.id) == nil { room.gov = RoomGov(pending: true) }
+        switchRoom { rooms.join(room) }
+        afterJoin(activeRoom.id)
+        return .joined(activeRoom)
+    }
+
+    /// After joining or creating: publish (admin) or ask for the manifest and admission.
+    private func afterJoin(_ roomID: String) {
+        guard let room = rooms.room(withID: roomID), !room.isDefault else { return }
+        if let signed = room.gov?.signed, RoomGovernor.isAdmin(room, identity: identity) {
+            publishManifest(signed, roomID: roomID, force: true)
+        } else {
+            lastWant[roomID] = nil
+            lastJoinRequest[roomID] = nil
+            requestManifest(roomID)
+            sendJoinRequestIfNeeded(roomID)
+        }
     }
 
     /// Joins a room from a pasted or scanned join string. False when the string is not valid.
@@ -378,6 +540,7 @@ final class MeshService: ObservableObject {
     func joinRoom(_ joinString: String) -> Bool {
         guard let room = Room.parse(joinString: joinString) else { return false }
         switchRoom { rooms.join(room) }
+        afterJoin(activeRoom.id)
         return true
     }
 
@@ -389,11 +552,15 @@ final class MeshService: ObservableObject {
     /// Leaves a room (not the last one). Its saved chat and memory stay on disk.
     func leaveRoom(_ id: String) {
         guard joinedRooms.count > 1 else { return }
+        #if os(macOS)
+        askQueue.drop(room: id)
+        contexts.removeValue(forKey: id)?.save(limit: timelineLimit)
+        #endif
         if id == activeRoom.id {
             switchRoom { rooms.leave(id) }
         } else {
             rooms.leave(id)
-            joinedRooms = rooms.rooms
+            refreshRoomState()
         }
     }
 
@@ -402,6 +569,10 @@ final class MeshService: ObservableObject {
     private func switchRoom(_ change: () -> Void) {
         saveNow()
         _ = memory.save()
+        let oldID = activeRoom.id
+        let oldMemory = memory
+        let oldEntries = entries
+        let oldURL = timelineURL
         change()
         let room = rooms.active
         activeRoom = room
@@ -411,17 +582,37 @@ final class MeshService: ObservableObject {
         adminDevices = room.admins
         timelineURL = rooms.fileURL("timeline.json")
         let saved = timelineURL.map { TimelineStore.load(from: $0, limit: timelineLimit) } ?? PersistedTimeline()
+        var loadedEntries = saved.entries
+        #if os(macOS)
+        // The AI Mac keeps serving the room it leaves (as a background context) and adopts the
+        // new room's live context if it has one, so each room has exactly one memory instance.
+        if room.id != oldID, rooms.room(withID: oldID) != nil {
+            contexts[oldID] = RoomContext(roomID: oldID, memory: oldMemory, entries: oldEntries, timelineURL: oldURL)
+        }
+        if let ctx = contexts.removeValue(forKey: room.id) {
+            ctx.save(limit: timelineLimit)
+            memory = ctx.memory
+            memory.admins = room.adminDevices(selfID: displayName)
+            loadedEntries = ctx.entries
+        } else {
+            memory = OrgMemory(fileURL: rooms.fileURL(MeshService.memoryFileName), admins: room.adminDevices(selfID: displayName))
+        }
+        #else
+        _ = (oldID, oldMemory, oldEntries, oldURL)
         memory = OrgMemory(fileURL: rooms.fileURL(MeshService.memoryFileName), admins: room.adminDevices(selfID: displayName))
+        #endif
+        pendingAsks = PendingAskBook(items: saved.pendingAsks ?? [])
         sentAsks.removeAll()
         waitingAsks.removeAll()
         chunkQueue.removeAll()
         mediaProgress.removeAll()
-        entries = TimelineStore.dropping(saved.entries, before: clearedAt)
+        entries = TimelineStore.dropping(loadedEntries, before: clearedAt)
         for entry in entries.suffix(300) { engine.markSeen(entry.id) }
+        for item in pendingAsks.items { sentAsks[item.ask.id] = item.firstSentAt }
         refreshOrg()
+        refreshRoomState()
         #if os(macOS)
-        assistant.switchRoom(memory: memory, clearedAt: clearedAt)
-        assistantLog.removeAll()
+        assistant.serve(room: room.id, memory: memory, clearedAt: clearedAt)
         for (name, state) in peerStates where state == .connected && !blocked.contains(name) { syncMemory(to: name) }
         #endif
         lastBackfillRequest = .distantPast
@@ -449,7 +640,9 @@ final class MeshService: ObservableObject {
         updateAwakeActivity()
         startOllamaWatch()
         checkOllama()
+        observeSleep()
         #endif
+        refreshRoomState()
     }
 
     func stop() {
@@ -462,6 +655,8 @@ final class MeshService: ObservableObject {
         ollamaTimer?.invalidate()
         ollamaTimer = nil
         endAwakeActivity()
+        for o in sleepObservers { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+        sleepObservers.removeAll()
         #endif
     }
 
@@ -509,6 +704,202 @@ final class MeshService: ObservableObject {
         refreshWaitingAsks(now: now)
         sendDueNacks()
         nackAnswered = nackAnswered.filter { now.timeIntervalSince($0.value) < 60 }
+        roomTick(now: now)
+    }
+
+    // MARK: Multi-room housekeeping
+
+    /// Every 5 s: beacons for Listed rooms this device administers (every 12 s), AI status on
+    /// the AI Mac (every 10 s), join requests while waiting for admission, resending asks after
+    /// the AI Mac woke, saving background rooms, and expiring Nearby rooms and AI status.
+    private func roomTick(now: Date) {
+        beacons.prune(now: now)
+        let heard = beacons.nearby(now: now)
+        if heard != nearbyRooms { nearbyRooms = heard }
+        refreshAIAvailability(now: now)
+        guard transport != nil else { return }
+        if now.timeIntervalSince(lastBeaconAt) >= BeaconRegistry.sendEvery {
+            lastBeaconAt = now
+            sendBeacons(now: now)
+        }
+        #if os(macOS)
+        if isAIPeer, now.timeIntervalSince(lastStatusAt) >= AIStatusTracker.sendEvery {
+            sendAIStatus(asleep: macAsleep, now: now)
+        }
+        for ctx in contexts.values where ctx.dirty { ctx.save(limit: timelineLimit) }
+        pumpAsks()
+        #endif
+        guard connectedCount > 0 else { return }
+        for room in joinedRooms where !room.isDefault {
+            sendJoinRequestIfNeeded(room.id, now: now)
+            if room.gov?.pending == true, room.gov?.manifest == nil { requestManifest(room.id, now: now) }
+        }
+        resendDueAsks(now: now)
+    }
+
+    private func sendBeacons(now: Date) {
+        for room in joinedRooms {
+            guard let blob = RoomBeacon.make(for: room, now: now), let body = PasaJSON.string(blob) else { continue }
+            beacons.ingest(blob, now: now)
+            sendClear(engine.makeOutgoing(kind: .beacon, body: body, destination: nil, ttl: BeaconRegistry.ttl))
+        }
+        nearbyRooms = beacons.nearby(now: now)
+    }
+
+    /// Clear (unsealed) signals: beacons and AI status. Never queued, never stored.
+    private func sendClear(_ message: MeshMessage) {
+        guard let transport, let data = try? MeshCodec.encode(message) else { return }
+        _ = transport.send(data, excluding: [])
+    }
+
+    private func refreshAIAvailability(now: Date = Date()) {
+        var availability: AIAvailability
+        var detail: AIStatus?
+        if isAIPeer {
+            availability = macAsleep ? .asleep : (activeRoom.canSend ? .awake : .notServing)
+            detail = AIStatus(device: displayName, state: macAsleep ? .asleep : .awake, model: ollamaModel,
+                              queue: aiQueueDepth, rooms: servedRoomIDs, at: now)
+        } else {
+            availability = aiTracker.availability(room: activeRoom.id, now: now)
+            detail = aiTracker.detail(room: activeRoom.id, now: now)
+        }
+        if availability != aiAvailability { aiAvailability = availability }
+        if detail?.queue != aiDetail?.queue || detail?.model != aiDetail?.model || (detail == nil) != (aiDetail == nil) { aiDetail = detail }
+    }
+
+    /// Phones: resend unanswered asks of the active room (new packet id, retryOf = original)
+    /// when the AI Mac woke up, or every 90 s while it is awake. The Mac answers each once.
+    private func resendDueAsks(now: Date = Date()) {
+        guard !isAIPeer, activeRoom.canSend else { return }
+        pendingAsks.prune(now: now)
+        let due = pendingAsks.due(room: activeRoom.id, aiAwake: aiAvailability == .awake, wokeAt: aiTracker.wokeAt, now: now)
+        for item in due {
+            let retry = PendingAskBook.retry(of: item.ask, hops: [displayName], now: now)
+            engine.markSeen(retry.id, now: now)
+            transmit(retry, excluding: [])
+            pendingAsks.markSent(item.ask.id, now: now)
+        }
+        if !due.isEmpty { scheduleSave() }
+    }
+
+    // MARK: Room governance (manifests, join requests, admin actions)
+
+    private func publishManifest(_ blob: SignedBlob, roomID: String, force: Bool = false, now: Date = Date()) {
+        guard let room = rooms.room(withID: roomID) else { return }
+        if !force, let last = lastManifestSent[roomID], now.timeIntervalSince(last) < 3 { return }
+        lastManifestSent[roomID] = now
+        guard let body = RoomControl(type: .manifest, blob: blob).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .roomControl, body: body, destination: nil), room: room, excluding: [])
+    }
+
+    private func requestManifest(_ roomID: String, now: Date = Date()) {
+        guard let room = rooms.room(withID: roomID), !room.isDefault, !room.isRemoved else { return }
+        if let last = lastWant[roomID], now.timeIntervalSince(last) < 10 { return }
+        lastWant[roomID] = now
+        guard let body = RoomControl(type: .want, haveSeq: room.gov?.seq ?? 0).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .roomControl, body: body, destination: nil), room: room, excluding: [], queueIfUnsent: false)
+    }
+
+    private func sendJoinRequestIfNeeded(_ roomID: String, now: Date = Date()) {
+        guard let room = rooms.room(withID: roomID), RoomGovernor.wantsAdmission(room, identity: identity) else { return }
+        if let last = lastJoinRequest[roomID], now.timeIntervalSince(last) < 15 { return }
+        lastJoinRequest[roomID] = now
+        guard let blob = RoomGovernor.joinRequest(room: room, identity: identity, device: displayName,
+                                                  name: personName.isEmpty ? displayName : personName, now: now),
+              let body = RoomControl(type: .join, blob: blob).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .roomControl, body: body, destination: nil), room: room, excluding: [], queueIfUnsent: false)
+    }
+
+    /// A room control message (manifest, join request, manifest request) for any joined room,
+    /// active or not, so a kick or rekey in a background room is never missed.
+    private func handleRoomControl(_ message: MeshMessage, roomID: String) {
+        guard let control = RoomControl.decode(message.body), var room = rooms.room(withID: roomID) else { return }
+        switch control.type {
+        case .manifest:
+            guard let blob = control.blob else { return }
+            let result = RoomGovernor.accept(blob, into: &room, identity: identity)
+            guard case .applied(let change) = result else {
+                if case .rejected(let why) = result, roomID == activeRoom.id {
+                    lastProblem = "Ignored a room update for \(room.label): \(why)."
+                }
+                return
+            }
+            let gov = room.gov
+            rooms.update(roomID) { $0.gov = gov }
+            refreshRoomState()
+            if change.removed { lastProblem = "An admin removed this device from \(room.label)." }
+            if change.admitted {
+                if roomID == activeRoom.id { lastProblem = nil }
+                if roomID == activeRoom.id, connectedCount > 0 { lastBackfillRequest = .distantPast; requestBackfill() }
+            }
+            #if os(macOS)
+            if change.closed == true { askQueue.drop(room: roomID) }
+            #endif
+            if change.firstPin, roomID == activeRoom.id, let m = room.gov?.manifest {
+                lastProblem = "Room admin \(m.adminName), fingerprint \(Fingerprint.of(m.adminKey)). Compare it with the admin's screen."
+            }
+            sendJoinRequestIfNeeded(roomID)
+        case .join:
+            guard let blob = control.blob, RoomGovernor.isAdmin(room, identity: identity) else { return }
+            switch RoomGovernor.admit(blob, room: &room, identity: identity) {
+            case .admitted(let manifest):
+                let gov = room.gov
+                rooms.update(roomID) { $0.gov = gov }
+                refreshRoomState()
+                publishManifest(manifest, roomID: roomID, force: true)
+            case .already, .refused:
+                // Re-send the current manifest: it carries the key box, or shows Full or Closed.
+                if let signed = room.gov?.signed { publishManifest(signed, roomID: roomID) }
+            case .invalid:
+                break
+            }
+        case .want:
+            guard let signed = room.gov?.signed, (control.haveSeq ?? 0) < room.gov?.seq ?? 0,
+                  isAIPeer || RoomGovernor.isAdmin(room, identity: identity) else { return }
+            publishManifest(signed, roomID: roomID)
+        }
+    }
+
+    /// Admin actions on the active room. Each signs a new manifest, applies it here, and
+    /// broadcasts it. Returns false when this device is not an admin or nothing changed.
+    @discardableResult
+    func kick(_ member: RoomMember) -> Bool {
+        adminAction { room in RoomGovernor.kick(member.signKey, room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setRoomClosed(_ closed: Bool) -> Bool {
+        adminAction { room in RoomGovernor.setClosed(closed, room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setRoomCap(_ cap: Int) -> Bool {
+        adminAction { room in RoomGovernor.setCap(cap, room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setRoomListed(_ listed: Bool) -> Bool {
+        adminAction { room in RoomGovernor.setListed(listed, room: &room, identity: identity) }
+    }
+
+    @discardableResult
+    func setCoAdmin(_ member: RoomMember, _ on: Bool) -> Bool {
+        adminAction { room in RoomGovernor.setCoAdmin(member.signKey, on: on, room: &room, identity: identity) }
+    }
+
+    private func adminAction(_ action: (inout Room) -> SignedBlob?) -> Bool {
+        var room = activeRoom
+        guard let blob = action(&room) else { return false }
+        let gov = room.gov
+        let id = room.id
+        rooms.update(id) { $0.gov = gov }
+        refreshRoomState()
+        #if os(macOS)
+        if room.isClosed { askQueue.drop(room: id) }
+        #endif
+        publishManifest(blob, roomID: id, force: true)
+        lastBeaconAt = .distantPast
+        return true
     }
 
     private func refreshWaitingAsks(now: Date = Date()) {
@@ -533,7 +924,8 @@ final class MeshService: ObservableObject {
     private func saveNow() {
         savePending = false
         guard let url = timelineURL else { return }
-        let snapshot = PersistedTimeline(entries: entries, outbox: engine.outbox)
+        var snapshot = PersistedTimeline(entries: entries, outbox: engine.outbox)
+        snapshot.pendingAsks = pendingAsks.items.isEmpty ? nil : pendingAsks.items
         let limit = timelineLimit
         saveQueue.async {
             TimelineStore.save(snapshot, to: url, limit: limit)
@@ -656,6 +1048,7 @@ final class MeshService: ObservableObject {
         defaults.set(on, forKey: Keys.aiPeer)
         engine.roles = on ? [MeshDestination.aiRole] : []
         updateAwakeActivity()
+        refreshRoomState()
         if on { checkOllama() }
     }
 
@@ -843,9 +1236,11 @@ final class MeshService: ObservableObject {
         }
     }
 
-    private func sendManifest(to device: String) {
-        guard let body = SyncPayload(manifest: memory.manifest(clearedAt: clearedAt)).encoded() else { return }
-        transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), excluding: [])
+    private func sendManifest(to device: String, room roomID: String? = nil) {
+        let id = roomID ?? activeRoom.id
+        guard let room = rooms.room(withID: id), let mem = memoryFor(id),
+              let body = SyncPayload(manifest: mem.manifest(clearedAt: clearedAtFor(id))).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), room: room, excluding: [])
     }
     #endif
 
@@ -860,6 +1255,10 @@ final class MeshService: ObservableObject {
     func send(_ rawText: String) {
         var text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if let blocker = activeRoom.sendBlocker {
+            lastProblem = blocker
+            return
+        }
 
         var kind: MessageKind = .chat
         if let question = AssistantMention.strip(text) {
@@ -873,7 +1272,10 @@ final class MeshService: ObservableObject {
         if kind == .ask {
             sentAsks[message.id] = Date()
             // Phones tell the Mac since when they were away (or cleared), for "what did I miss".
-            if !isAIPeer { message.since = CacheSync.latest(awaySince, clearedAt) }
+            if !isAIPeer {
+                message.since = CacheSync.latest(awaySince, clearedAt)
+                pendingAsks.add(message, room: activeRoom.id)
+            }
         }
 
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
@@ -886,7 +1288,7 @@ final class MeshService: ObservableObject {
             // This Mac is the AI peer: answer locally, no mesh needed (Mac-only path for judges).
             entry.sentTo = ["this Mac (AI peer)"]
             entries.append(entry)
-            answer(message)
+            enqueueAsk(message, roomID: activeRoom.id)
             return
         }
         #endif
@@ -906,14 +1308,19 @@ final class MeshService: ObservableObject {
     /// outbox items) pass through untouched. `foreign` marks another room's packet (capped).
     /// `queueIfUnsent: false` is for media chunks and NACKs: they are never parked in the outbox
     /// (whoever holds the file serves it again when asked).
+    /// `room` picks the room to seal for (the AI Mac answers in many rooms); default is active.
     @discardableResult
-    private func transmit(_ plain: MeshMessage, excluding: Set<String>, foreign: Bool = false, queueIfUnsent: Bool = true) -> [String] {
+    private func transmit(_ plain: MeshMessage, room: Room? = nil, excluding: Set<String>, foreign: Bool = false, queueIfUnsent: Bool = true) -> [String] {
         let message: MeshMessage
         if plain.kind == .sealed {
             message = plain
         } else {
+            let target = room ?? activeRoom
             do {
-                message = try RoomEnvelope.seal(plain, in: activeRoom)
+                message = try RoomEnvelope.seal(plain, in: target)
+            } catch RoomEnvelope.SealError.noKey {
+                lastProblem = target.sendBlocker ?? "No key for \(target.label) yet."
+                return []
             } catch {
                 lastProblem = "Could not seal message: \(error.localizedDescription)"
                 return []
@@ -965,6 +1372,10 @@ final class MeshService: ObservableObject {
     /// Sends a photo or voice note: saves it in the cache, sends the manifest as a timeline
     /// message (queued like chat when nobody is linked), then the chunks, paced.
     func sendMedia(_ data: Data, kind: MediaKind, mime: String, durationSeconds: Double? = nil, width: Int? = nil, height: Int? = nil) {
+        if let blocker = activeRoom.sendBlocker {
+            lastProblem = blocker
+            return
+        }
         guard !data.isEmpty, data.count <= MediaLimits.maxBytes else {
             lastProblem = "That \(kind == .image ? "photo" : "voice note") is too large to send (\(data.count / 1024) KB, limit \(MediaLimits.maxBytes / 1024) KB)."
             return
@@ -979,17 +1390,18 @@ final class MeshService: ObservableObject {
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         entry.sentTo = transmit(message, excluding: [])
         entries.append(entry)
-        queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true)
+        mediaRoom[manifest.mediaId] = activeRoom.id
+        queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true, room: activeRoom.id)
         #if os(macOS)
         if kind == .audio { transcribeIfNeeded(manifest.mediaId) }
         #endif
     }
 
-    private func queueChunks(of data: Data, manifest: MediaManifest, indexes: [Int], outgoing: Bool) {
+    private func queueChunks(of data: Data, manifest: MediaManifest, indexes: [Int], outgoing: Bool, room: String) {
         for i in indexes {
             guard let chunk = MediaChunker.chunk(of: data, manifest: manifest, index: i), let body = chunk.encoded() else { continue }
             let message = engine.makeOutgoing(kind: .chunk, body: body, destination: nil)
-            chunkQueue.append(ChunkJob(message: message, mediaId: manifest.mediaId, index: i, count: manifest.chunkCount, outgoing: outgoing))
+            chunkQueue.append(ChunkJob(message: message, mediaId: manifest.mediaId, index: i, count: manifest.chunkCount, outgoing: outgoing, room: room))
         }
         startChunkPump()
     }
@@ -1002,7 +1414,9 @@ final class MeshService: ObservableObject {
             while true {
                 guard let service = self, !service.chunkQueue.isEmpty else { break }
                 let job = service.chunkQueue.removeFirst()
-                service.transmit(job.message, excluding: [], queueIfUnsent: false)
+                if let room = service.rooms.room(withID: job.room) {
+                    service.transmit(job.message, room: room, excluding: [], queueIfUnsent: false)
+                }
                 if job.outgoing {
                     if job.index + 1 >= job.count {
                         service.mediaProgress.removeValue(forKey: job.mediaId)
@@ -1018,18 +1432,22 @@ final class MeshService: ObservableObject {
 
     /// Manifest of a media message in this room's timeline.
     private func manifest(for mediaId: UUID) -> MediaManifest? {
-        for entry in entries.reversed() where entry.message.kind == .media {
+        let room = mediaRoom[mediaId] ?? activeRoom.id
+        for entry in entriesFor(room).reversed() where entry.message.kind == .media {
             if let m = MediaManifest.decode(entry.message.body), m.mediaId == mediaId { return m }
         }
         return nil
     }
 
     /// Registers media messages whose file is not here yet, so missing chunks get asked for.
-    private func expectMissingMedia(in list: [ChatEntry]) {
+    private func expectMissingMedia(in list: [ChatEntry], room: String? = nil) {
+        let roomID = room ?? activeRoom.id
         for entry in list where entry.message.kind == .media {
-            guard let m = MediaManifest.decode(entry.message.body), !mediaStore.has(m.mediaId) else { continue }
+            guard let m = MediaManifest.decode(entry.message.body) else { continue }
+            mediaRoom[m.mediaId] = roomID
+            guard !mediaStore.has(m.mediaId) else { continue }
             assembler.expect(m)
-            mediaProgress[m.mediaId] = assembler.progress(m.mediaId) ?? 0
+            if roomID == activeRoom.id { mediaProgress[m.mediaId] = assembler.progress(m.mediaId) ?? 0 }
         }
     }
 
@@ -1059,7 +1477,7 @@ final class MeshService: ObservableObject {
 
     /// Someone is missing chunks: send the ones this device has (from the cache, or from its own
     /// unfinished copy). At most once every 4 s per file and requester.
-    private func answerNack(_ message: MeshMessage) {
+    private func answerNack(_ message: MeshMessage, room: String) {
         guard let nack = MediaNack.decode(message.body) else { return }
         let key = "\(nack.mediaId.uuidString)|\(message.origin)"
         let now = Date()
@@ -1068,7 +1486,7 @@ final class MeshService: ObservableObject {
             nackAnswered[key] = now
             // Chunk layout only depends on size, chunk size and hash, so any holder rebuilds it.
             let layout = MediaChunker.manifest(for: data, kind: .image, mime: "application/octet-stream", mediaId: nack.mediaId)
-            queueChunks(of: data, manifest: layout, indexes: nack.missing, outgoing: false)
+            queueChunks(of: data, manifest: layout, indexes: nack.missing, outgoing: false, room: room)
             return
         }
         let parts = nack.missing.compactMap { assembler.part(nack.mediaId, index: $0) }
@@ -1077,7 +1495,7 @@ final class MeshService: ObservableObject {
         for chunk in parts {
             guard let body = chunk.encoded() else { continue }
             let m = engine.makeOutgoing(kind: .chunk, body: body, destination: nil)
-            chunkQueue.append(ChunkJob(message: m, mediaId: chunk.mediaId, index: chunk.index, count: chunk.count, outgoing: false))
+            chunkQueue.append(ChunkJob(message: m, mediaId: chunk.mediaId, index: chunk.index, count: chunk.count, outgoing: false, room: room))
         }
         startChunkPump()
     }
@@ -1087,9 +1505,9 @@ final class MeshService: ObservableObject {
         assembler.prune()
         guard connectedCount > 0 else { return }
         for nack in assembler.dueForNack(force: force) {
-            guard let body = nack.encoded() else { continue }
+            guard let body = nack.encoded(), let room = rooms.room(withID: mediaRoom[nack.mediaId] ?? activeRoom.id) else { continue }
             let m = engine.makeOutgoing(kind: .mediaNack, body: body, destination: nil, ttl: 4)
-            transmit(m, excluding: [], queueIfUnsent: false)
+            transmit(m, room: room, excluding: [], queueIfUnsent: false)
         }
     }
 
@@ -1105,13 +1523,73 @@ final class MeshService: ObservableObject {
     }
 
     /// A voice note transcript from the Mac: shown under the voice note bubble.
-    private func applyTranscript(_ message: MeshMessage) {
-        guard let target = message.replyTo, let payload = TranscriptPayload.decode(message.body),
-              let index = entries.lastIndex(where: { $0.id == target }) else { return }
+    private func applyTranscript(_ message: MeshMessage, room: String? = nil) {
+        guard let target = message.replyTo, let payload = TranscriptPayload.decode(message.body) else { return }
         let line = payload.displayLine
-        guard !line.isEmpty, entries[index].transcript != line else { return }
-        entries[index].transcript = line
+        guard !line.isEmpty else { return }
+        updateEntry(target, room: room ?? activeRoom.id) { entry in
+            guard entry.transcript != line else { return false }
+            entry.transcript = line
+            return true
+        }
     }
+
+    // MARK: Per-room timelines (the AI Mac keeps background rooms in RoomContext)
+
+    private func entriesFor(_ room: String) -> [ChatEntry] {
+        if room == activeRoom.id { return entries }
+        #if os(macOS)
+        return context(room)?.entries ?? []
+        #else
+        return []
+        #endif
+    }
+
+    private func appendEntry(_ entry: ChatEntry, room: String) {
+        if room == activeRoom.id { entries.append(entry); return }
+        #if os(macOS)
+        guard let ctx = context(room) else { return }
+        ctx.entries.append(entry)
+        ctx.dirty = true
+        #endif
+    }
+
+    /// Changes the newest entry with this id. `change` returns false when nothing changed.
+    private func updateEntry(_ id: UUID, room: String, _ change: (inout ChatEntry) -> Bool) {
+        if room == activeRoom.id {
+            guard let index = entries.lastIndex(where: { $0.id == id }) else { return }
+            var copy = entries[index]
+            if change(&copy) { entries[index] = copy }
+            return
+        }
+        #if os(macOS)
+        guard let ctx = context(room), let index = ctx.entries.lastIndex(where: { $0.id == id }) else { return }
+        if change(&ctx.entries[index]) { ctx.dirty = true }
+        #endif
+    }
+
+    private func clearedAtFor(_ room: String) -> Date? {
+        room == activeRoom.id ? clearedAt : rooms.room(withID: room)?.clearedAt
+    }
+
+    #if os(macOS)
+    /// Background room context, loaded from disk the first time the AI Mac needs it.
+    private func context(_ room: String) -> RoomContext? {
+        guard room != activeRoom.id, let record = rooms.room(withID: room) else { return nil }
+        if let ctx = contexts[room] { return ctx }
+        let url = rooms.fileURL("timeline.json", roomID: room)
+        let saved = url.map { TimelineStore.load(from: $0, limit: timelineLimit) } ?? PersistedTimeline()
+        let mem = OrgMemory(fileURL: rooms.fileURL(MeshService.memoryFileName, roomID: room), admins: record.adminDevices(selfID: displayName))
+        let ctx = RoomContext(roomID: room, memory: mem, entries: TimelineStore.dropping(saved.entries, before: record.clearedAt), timelineURL: url)
+        for entry in ctx.entries.suffix(100) { engine.markSeen(entry.id) }
+        contexts[room] = ctx
+        return ctx
+    }
+
+    private func memoryFor(_ room: String) -> OrgMemory? {
+        room == activeRoom.id ? memory : context(room)?.memory
+    }
+    #endif
 
     // MARK: Backfill
 
@@ -1125,12 +1603,14 @@ final class MeshService: ObservableObject {
     }
 
     /// AI Mac side: send the phone what it missed, at most 200 messages, in small chunks.
-    private func serveBackfill(to device: String, request: SyncRequest) {
-        var missing = Backfill.select(from: entries, for: device, request: request, macClearedAt: clearedAt)
+    private func serveBackfill(to device: String, request: SyncRequest, room roomID: String) {
+        guard let room = rooms.room(withID: roomID) else { return }
+        let list = entriesFor(roomID)
+        var missing = Backfill.select(from: list, for: device, request: request, macClearedAt: clearedAtFor(roomID))
         guard !missing.isEmpty else { return }
         // Voice note transcripts ride along as small .transcript messages.
         for m in missing where m.kind == .media {
-            guard let text = entries.last(where: { $0.id == m.id })?.transcript, !text.isEmpty else { continue }
+            guard let text = list.last(where: { $0.id == m.id })?.transcript, !text.isEmpty else { continue }
             var t = engine.makeOutgoing(kind: .transcript, body: TranscriptPayload(text: text, locale: "").encoded() ?? "",
                                         destination: .peer(device), replyTo: m.id)
             t.createdAt = m.createdAt
@@ -1140,7 +1620,7 @@ final class MeshService: ObservableObject {
         for (index, chunk) in chunks.enumerated() {
             let batch = SyncBatch(messages: chunk, part: index + 1, parts: chunks.count)
             guard let body = SyncPayload(batch: batch).encoded() else { continue }
-            transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), excluding: [])
+            transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), room: room, excluding: [])
         }
     }
 
@@ -1224,44 +1704,104 @@ final class MeshService: ObservableObject {
         let decision = engine.handleIncoming(message, from: sender)
         if decision.isDuplicate { return }
 
-        let foreign = message.kind == .sealed && message.room != activeRoom.id
-        // Open our room's packets before forwarding, so media chunks and NACKs that cannot be
-        // passed on right now are dropped instead of filling the outbox.
+        // Clear signals (room beacons, AI status): relayed with their short ttl, never queued.
+        if message.kind == .beacon || message.kind == .aiStatus {
+            if let forward = decision.forward {
+                sendClearForward(forward, excluding: decision.forwardExcluding)
+            }
+            if let d = decision.deliver { handleClearSignal(d) }
+            return
+        }
+
+        // Which joined room (if any) this packet belongs to. Phones read only the active room's
+        // content; every device handles room control of all its rooms; the AI Mac reads all.
+        let packetRoom: Room? = message.kind == .sealed ? message.room.flatMap { rooms.room(withID: $0) } : nil
+        let isActive = packetRoom?.id == activeRoom.id
+        let notMine = message.kind == .sealed && !isActive
         var opened: MeshMessage?
-        if let d = decision.deliver, d.kind == .sealed, !foreign { opened = RoomEnvelope.open(d, in: activeRoom) }
+        if let d = decision.deliver, d.kind == .sealed, let r = packetRoom {
+            opened = RoomEnvelope.open(d, in: r)
+            if opened == nil, RoomEnvelope.isAhead(d, of: r) { requestManifest(r.id) }
+        }
         let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack } ?? false
         if let forward = decision.forward {
-            transmit(forward, excluding: decision.forwardExcluding, foreign: foreign, queueIfUnsent: !transient)
+            transmit(forward, excluding: decision.forwardExcluding, foreign: notMine, queueIfUnsent: !transient)
             relayedCount += 1
-            if foreign { foreignRelayedCount += 1 }
+            if packetRoom == nil && message.kind == .sealed { foreignRelayedCount += 1 }
         }
 
         guard var delivered = decision.deliver else { return }
+        var roomID = activeRoom.id
         if delivered.kind == .sealed {
             // Another room's packet (or one that fails authentication): relayed above, never
             // shown or stored here.
-            guard !foreign, let opened else { return }
+            guard let r = packetRoom, let opened else { return }
             delivered = opened
+            roomID = r.id
             if delivered.kind == .sealed { return }
+            if delivered.kind == .roomControl { handleRoomControl(delivered, roomID: r.id); return }
+            // Joined by passcode, no manifest heard yet, and the room still talks with the
+            // passcode key: it is a room from before admin keys. Stop waiting.
+            if r.gov?.pending == true, r.gov?.manifest == nil, (opened.epoch ?? 0) == 0 {
+                rooms.update(r.id) { $0.gov?.pending = false }
+                refreshRoomState()
+            }
+            if !isActive && !isAIPeer { return }
         } else if !activeRoom.isDefault {
             // Plaintext from a build before rooms belongs to the Default room only.
             return
+        } else if delivered.kind == .roomControl {
+            return
         }
+        handleDelivered(delivered, room: roomID)
+    }
+
+    /// Relays a beacon or AI status without sealing (they are clear by design).
+    private func sendClearForward(_ forward: MeshMessage, excluding: Set<String>) {
+        guard let transport, let data = try? MeshCodec.encode(forward) else { return }
+        if !transport.send(data, excluding: excluding).isEmpty { relayedCount += 1 }
+    }
+
+    private func handleClearSignal(_ message: MeshMessage) {
+        guard let blob = PasaJSON.value(SignedBlob.self, from: message.body) else { return }
+        switch message.kind {
+        case .beacon:
+            if beacons.ingest(blob) { nearbyRooms = beacons.nearby() }
+        case .aiStatus:
+            let transition = aiTracker.ingest(blob)
+            refreshAIAvailability()
+            if case .woke = transition { resendDueAsks() }
+        default:
+            break
+        }
+    }
+
+    /// A message of one of this device's rooms, opened. `room` is the active room on phones;
+    /// on the AI Mac it can be any room it serves.
+    private func handleDelivered(_ delivered: MeshMessage, room roomID: String) {
+        let active = roomID == activeRoom.id
         if let name = delivered.senderName, delivered.origin != displayName {
             learn(device: delivered.origin, name: name)
         }
 
         switch delivered.kind {
         case .chunk: receiveChunk(delivered); return
-        case .mediaNack: answerNack(delivered); return
-        case .transcript: applyTranscript(delivered); return
+        case .mediaNack: answerNack(delivered, room: roomID); return
+        case .transcript: applyTranscript(delivered, room: roomID); return
         default: break
         }
 
         if delivered.kind == .sync {
             // Backfill traffic never shows in the timeline.
             guard let payload = SyncPayload.decode(delivered.body) else { return }
-            if let request = payload.request, isAIPeer { serveBackfill(to: delivered.origin, request: request) }
+            if let request = payload.request, isAIPeer {
+                serveBackfill(to: delivered.origin, request: request, room: roomID)
+                #if os(macOS)
+                // Background rooms get their rules and tasks here (the active room on link).
+                if !active { syncMemory(to: delivered.origin, room: roomID) }
+                #endif
+            }
+            guard active else { return }
             if let manifest = payload.manifest, !isAIPeer {
                 // The Mac is the source of truth: drop cached rules and tasks it no longer has.
                 CacheSync.applyManifest(manifest, to: memory)
@@ -1272,7 +1812,7 @@ final class MeshService: ObservableObject {
             return
         }
         // Already in the timeline (for example restored from disk, or backfilled): do not repeat it.
-        if entries.contains(where: { $0.id == delivered.id }) { return }
+        if entriesFor(roomID).contains(where: { $0.id == delivered.id }) { return }
 
         // Phones: a rule or task update only becomes a card when it changed the cached copy and
         // is not a silent sync-on-link update. Reconnects no longer flood the chat.
@@ -1283,30 +1823,39 @@ final class MeshService: ObservableObject {
         }
 
         var entry = ChatEntry(id: delivered.id, message: delivered, direction: .received, receivedAt: Date())
-        if delivered.kind == .answer, let askID = delivered.replyTo, let askedAt = sentAsks.removeValue(forKey: askID) {
-            entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
-            refreshWaitingAsks()
+        if delivered.kind == .answer, let askID = delivered.replyTo {
+            // An answer re-delivered after a resend: show it once.
+            if entriesFor(roomID).contains(where: { $0.message.kind == .answer && $0.message.replyTo == askID }) {
+                pendingAsks.resolve(askID)
+                return
+            }
+            pendingAsks.resolve(askID)
+            if let askedAt = sentAsks.removeValue(forKey: askID) {
+                entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
+                refreshWaitingAsks()
+            }
+            scheduleSave()
         }
-        entries.append(entry)
+        appendEntry(entry, room: roomID)
 
         switch delivered.kind {
         case .task, .rule:
             break   // phones handled above; the AI peer is the source of truth
         case .chat:
             #if os(macOS)
-            memory.recordChat(from: senderLabel(for: delivered), text: delivered.body, at: delivered.createdAt, device: delivered.origin)
+            memoryFor(roomID)?.recordChat(from: senderLabel(for: delivered), text: delivered.body, at: delivered.createdAt, device: delivered.origin)
             #endif
         case .ask:
             #if os(macOS)
-            if isAIPeer { answer(delivered) }
+            if isAIPeer { enqueueAsk(delivered, roomID: roomID) }
             #endif
         case .media:
-            expectMissingMedia(in: [entry])
+            expectMissingMedia(in: [entry], room: roomID)
             fixMediaExtension(delivered)
             #if os(macOS)
             if let m = MediaManifest.decode(delivered.body), m.kind == .audio { transcribeIfNeeded(m.mediaId) }
             #endif
-        case .answer, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript:
+        case .answer, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus:
             break
         }
     }
@@ -1334,30 +1883,35 @@ final class MeshService: ObservableObject {
 
     /// The AI Mac transcribes each voice note once, on the device (never a server), shows the
     /// text under the bubble, sends it to the room, and treats "@pasa ..." / "Pasa, ..." as an ask.
+    /// Works in every room the Mac serves.
     private func transcribeIfNeeded(_ mediaId: UUID) {
-        guard isAIPeer, !transcribing.contains(mediaId), let url = mediaStore.url(mediaId),
-              let index = entries.lastIndex(where: { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }),
-              entries[index].transcript == nil else { return }
-        let media = entries[index].message
+        guard isAIPeer, !transcribing.contains(mediaId), let url = mediaStore.url(mediaId) else { return }
+        let roomID = mediaRoom[mediaId] ?? activeRoom.id
+        let list = entriesFor(roomID)
+        guard let index = list.lastIndex(where: { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }),
+              list[index].transcript == nil else { return }
+        let media = list[index].message
         let locale = speechLocale
         transcribing.insert(mediaId)
         Task { [weak self] in
             let payload = await VoiceTranscriber.transcribe(url: url, localeID: locale)
-            self?.finishTranscript(payload, mediaId: mediaId, media: media)
+            self?.finishTranscript(payload, mediaId: mediaId, media: media, room: roomID)
         }
     }
 
-    private func finishTranscript(_ payload: TranscriptPayload, mediaId: UUID, media: MeshMessage) {
+    private func finishTranscript(_ payload: TranscriptPayload, mediaId: UUID, media: MeshMessage, room roomID: String) {
         transcribing.remove(mediaId)
-        if let index = entries.lastIndex(where: { $0.id == media.id }) {
-            entries[index].transcript = payload.displayLine
+        guard let room = rooms.room(withID: roomID) else { return }
+        updateEntry(media.id, room: roomID) { entry in
+            entry.transcript = payload.displayLine
+            return true
         }
         if let body = payload.encoded() {
-            transmit(engine.makeOutgoing(kind: .transcript, body: body, destination: nil, replyTo: media.id), excluding: [])
+            transmit(engine.makeOutgoing(kind: .transcript, body: body, destination: nil, replyTo: media.id), room: room, excluding: [])
         }
         let text = payload.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        memory.recordChat(from: senderLabel(for: media), text: "(voice note) \(text)", at: media.createdAt, device: media.origin)
+        memoryFor(roomID)?.recordChat(from: senderLabel(for: media), text: "(voice note) \(text)", at: media.createdAt, device: media.origin)
         if let question = VoiceAsk.extract(text) {
             // Same id as the voice note, so the answer's replyTo points at it.
             var ask = media
@@ -1365,53 +1919,119 @@ final class MeshService: ObservableObject {
             ask.body = question
             ask.destination = .role(MeshDestination.aiRole)
             ask.since = nil
-            answer(ask)
+            enqueueAsk(ask, roomID: roomID)
         }
     }
 
-    private func answer(_ ask: MeshMessage) {
+    // MARK: Multi-room ask queue (one model call at a time, rooms take turns)
+
+    /// Queues an ask for the model. Repeats (a phone resending after the Mac woke) never get a
+    /// second answer: the stored answer is re-delivered instead.
+    private func enqueueAsk(_ ask: MeshMessage, roomID: String) {
+        guard let room = rooms.room(withID: roomID), room.canSend else { return }
+        switch askQueue.enqueue(room: roomID, askID: ask.askKey, payload: ask) {
+        case .queued:
+            pumpAsks()
+        case .duplicate:
+            break
+        case .alreadyAnswered(let answerID):
+            redeliverAnswer(for: ask, answerID: answerID, room: roomID)
+        case .roomFull:
+            let reply = AIReply(text: "Too many questions are waiting in \(room.label) right now. Ask again in a minute.")
+            sendAnswer(reply, to: ask, room: roomID, intent: "busy", error: "room queue full")
+        }
+        aiQueueDepth = askQueue.depth
+    }
+
+    /// Starts the next ask if the model is free and the Mac is awake.
+    private func pumpAsks() {
+        guard !askRunning, isAIPeer, let job = askQueue.next() else { return }
+        askRunning = true
+        aiQueueDepth = askQueue.depth
+        Task { [weak self] in
+            await self?.run(job)
+            guard let self else { return }
+            self.askRunning = false
+            self.aiQueueDepth = self.askQueue.depth
+            self.pumpAsks()
+        }
+    }
+
+    private func run(_ job: AskJob<MeshMessage>) async {
+        let ask = job.payload
+        let roomID = job.room
+        guard let room = rooms.room(withID: roomID), room.canSend, let mem = memoryFor(roomID) else {
+            askQueue.finish(job.askID, answerID: nil)
+            return
+        }
         switch aiEngine {
         case .assistant:
-            Task { [weak self] in
-                guard let self else { return }
-                let outcome = await self.assistant.handle(ask.body, from: ask.origin, since: ask.since)
-                let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
-                                    latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond,
-                                    checked: outcome.intent == .answer ? outcome.checked : nil)
-                self.sendAnswer(reply, to: ask, intent: outcome.intent.rawValue, error: outcome.error,
-                                promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
-                for task in outcome.taskUpdates { self.notifyTask(task) }
-                for rule in outcome.ruleUpdates { self.broadcastRule(rule) }
-                self.refreshOrg()
+            assistant.serve(room: roomID, memory: mem, clearedAt: clearedAtFor(roomID))
+            let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since)
+            if outcome.error != nil, askQueue.wasCutBySleep(job) {
+                // The Mac slept during the model call: answer it after wake instead.
+                askQueue.requeueInFlight()
+                return
             }
+            let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
+                                latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond,
+                                checked: outcome.intent == .answer ? outcome.checked : nil)
+            let answerID = sendAnswer(reply, to: ask, room: roomID, intent: outcome.intent.rawValue, error: outcome.error,
+                                      promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
+            askQueue.finish(job.askID, answerID: answerID)
+            for task in outcome.taskUpdates { notifyTask(task, room: roomID) }
+            for rule in outcome.ruleUpdates { broadcastRule(rule, room: roomID) }
+            if roomID == activeRoom.id { refreshOrg() }
         case .plain, .echo:
             let responder: any AIResponder = aiEngine == .echo ? EchoResponder() : OllamaResponder(client: makeClient())
-            let question = ask.body
-            let asker = ask.origin
-            Task { [weak self] in
-                let started = Date()
-                var reply: AIReply
-                var failure: String? = nil
-                do {
-                    reply = try await responder.respond(to: question, from: asker)
-                } catch {
-                    let message = (error as? LLMError)?.errorDescription ?? error.localizedDescription
-                    failure = message
-                    reply = AIReply(text: message)
-                }
-                if reply.latencyMs == 0 { reply.latencyMs = Int(Date().timeIntervalSince(started) * 1000) }
-                self?.sendAnswer(reply, to: ask, intent: "answer", error: failure)
+            let started = Date()
+            var reply: AIReply
+            var failure: String? = nil
+            do {
+                reply = try await responder.respond(to: ask.body, from: ask.origin)
+            } catch {
+                if askQueue.wasCutBySleep(job) { askQueue.requeueInFlight(); return }
+                let message = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+                failure = message
+                reply = AIReply(text: message)
             }
+            if reply.latencyMs == 0 { reply.latencyMs = Int(Date().timeIntervalSince(started) * 1000) }
+            let answerID = sendAnswer(reply, to: ask, room: roomID, intent: "answer", error: failure)
+            askQueue.finish(job.askID, answerID: answerID)
         }
+        saveLedger()
     }
 
-    private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, intent: String, error: String?,
-                            promptTokens: Int? = nil, promptEval: Int? = nil) {
+    private func saveLedger() {
+        guard let url = MeshService.storageURL("ai-ledger.json"),
+              let data = try? JSONEncoder().encode(askQueue.exportLedger()) else { return }
+        saveQueue.async { try? data.write(to: url, options: .atomic) }
+    }
+
+    /// Sends the stored answer again (new packet id, same replyTo) for an ask answered before.
+    private func redeliverAnswer(for ask: MeshMessage, answerID: UUID?, room roomID: String) {
+        guard ask.origin != displayName, let room = rooms.room(withID: roomID) else { return }
+        let list = entriesFor(roomID)
+        guard let stored = list.last(where: { $0.id == answerID && $0.message.kind == .answer })
+                ?? list.last(where: { $0.message.kind == .answer && $0.message.replyTo == ask.askKey }) else { return }
+        var copy = engine.makeOutgoing(kind: .answer, body: stored.message.body, destination: .peer(ask.origin),
+                                       replyTo: ask.askKey, replyPath: ask.hops)
+        copy.compact = stored.message.compact
+        copy.model = stored.message.model
+        copy.latencyMs = stored.message.latencyMs
+        copy.tokensPerSecond = stored.message.tokensPerSecond
+        copy.checked = stored.message.checked
+        transmit(copy, room: room, excluding: [])
+    }
+
+    @discardableResult
+    private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, room roomID: String, intent: String, error: String?,
+                            promptTokens: Int? = nil, promptEval: Int? = nil) -> UUID {
         var message = engine.makeOutgoing(
             kind: .answer,
             body: reply.text,
             destination: .peer(ask.origin),
-            replyTo: ask.id,
+            replyTo: ask.askKey,
             replyPath: ask.hops
         )
         message.compact = reply.compact
@@ -1424,66 +2044,114 @@ final class MeshService: ObservableObject {
         if ask.origin == displayName {
             // Local ask on the AI Mac: show the answer as received with a local round trip.
             entry.direction = .received
-            if let askedAt = sentAsks.removeValue(forKey: ask.id) {
+            if let askedAt = sentAsks.removeValue(forKey: ask.askKey) {
                 entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
                 refreshWaitingAsks()
             }
-        } else {
-            entry.sentTo = transmit(message, excluding: [])
+        } else if let room = rooms.room(withID: roomID) {
+            entry.sentTo = transmit(message, room: room, excluding: [])
         }
-        entries.append(entry)
+        appendEntry(entry, room: roomID)
 
         assistantLog.append(AssistantLogEntry(
             id: message.id, at: Date(), asker: ask.origin, question: ask.body, askHops: ask.hopCount,
             intent: intent, reply: reply.text, model: reply.model, latencyMs: reply.latencyMs,
             tokensPerSecond: reply.tokensPerSecond, compact: reply.compact, error: error,
-            checked: reply.checked ?? [], promptTokensEstimate: promptTokens, promptEvalCount: promptEval
+            checked: reply.checked ?? [], promptTokensEstimate: promptTokens, promptEvalCount: promptEval,
+            roomID: roomID, roomLabel: rooms.room(withID: roomID)?.displayName ?? ""
         ))
         if assistantLog.count > 200 { assistantLog.removeFirst(assistantLog.count - 200) }
+        return message.id
     }
 
     /// Sends a task to its assignee's device (and its creator, when the task is finished).
-    private func notifyTask(_ task: TaskItem) {
-        guard let body = MeshPayload.encode(task) else { return }
+    private func notifyTask(_ task: TaskItem, room roomID: String? = nil) {
+        let id = roomID ?? activeRoom.id
+        guard let room = rooms.room(withID: id), let body = MeshPayload.encode(task) else { return }
         var targets: [String] = []
         if let device = task.assigneeDevice { targets.append(device) }
         if task.status == .done, !targets.contains(task.createdBy) { targets.append(task.createdBy) }
         for device in targets where device != displayName {
             let message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
             var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
-            entry.sentTo = transmit(message, excluding: [])
-            entries.append(entry)
+            entry.sentTo = transmit(message, room: room, excluding: [])
+            appendEntry(entry, room: id)
         }
     }
 
     /// Broadcasts a rule summary (no history) so every phone caches a read-only copy.
-    private func broadcastRule(_ rule: RuleEntry) {
-        guard let body = MeshPayload.encode(rule.meshSummary) else { return }
+    private func broadcastRule(_ rule: RuleEntry, room roomID: String? = nil) {
+        let id = roomID ?? activeRoom.id
+        guard let room = rooms.room(withID: id), let body = MeshPayload.encode(rule.meshSummary) else { return }
         let message = engine.makeOutgoing(kind: .rule, body: body, destination: nil)
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
-        entry.sentTo = transmit(message, excluding: [])
-        entries.append(entry)
+        entry.sentTo = transmit(message, room: room, excluding: [])
+        appendEntry(entry, room: id)
     }
 
-    /// When a device links: send the manifest (so stale cached rules and tasks are dropped and a
-    /// team-wide clear sticks), then the rules and its open tasks as silent updates. Silent
-    /// updates refresh the phone's cache without adding cards to its timeline.
-    private func syncMemory(to device: String) {
+    /// When a device links (active room) or asks for backfill (any room): send the manifest
+    /// (so stale cached rules and tasks are dropped and a team-wide clear sticks), then the
+    /// rules and its open tasks as silent updates that refresh the phone's cache without cards.
+    private func syncMemory(to device: String, room roomID: String? = nil) {
         guard isAIPeer else { return }
-        sendManifest(to: device)
+        let id = roomID ?? activeRoom.id
+        guard let room = rooms.room(withID: id), room.canSend, let mem = memoryFor(id) else { return }
+        sendManifest(to: device, room: id)
         // allRules includes tombstones, so a phone still caching a deleted rule drops it.
-        for rule in memory.allRules.suffix(60) {
+        for rule in mem.allRules.suffix(60) {
             guard let body = MeshPayload.encode(rule.meshSummary) else { continue }
             var message = engine.makeOutgoing(kind: .rule, body: body, destination: .peer(device))
             message.silent = true
-            transmit(message, excluding: [])
+            transmit(message, room: room, excluding: [])
         }
-        for task in memory.tasks(forDevice: device, roster: roster).prefix(30) {
+        for task in mem.tasks(forDevice: device, roster: roster).prefix(30) {
             guard let body = MeshPayload.encode(task) else { continue }
             var message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
             message.silent = true
-            transmit(message, excluding: [])
+            transmit(message, room: room, excluding: [])
         }
+    }
+
+    // MARK: Mac sleep and wake
+
+    /// willSleep: pause the queue and tell the mesh the AI is asleep (best effort: the radio may
+    /// go down before it leaves). didWake: re-warm the model, re-announce, answer the backlog.
+    private func observeSleep() {
+        guard sleepObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        sleepObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.macWillSleep() }
+        })
+        sleepObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.macDidWake() }
+        })
+    }
+
+    private func macWillSleep() {
+        macAsleep = true
+        askQueue.willSleep()
+        if isAIPeer { sendAIStatus(asleep: true) }
+        refreshAIAvailability()
+    }
+
+    private func macDidWake() {
+        macAsleep = false
+        askQueue.didWake()
+        transport?.restartDiscovery(force: true)
+        if isAIPeer {
+            sendAIStatus(asleep: false)
+            checkOllama()
+        }
+        refreshAIAvailability()
+        pumpAsks()
+    }
+
+    private func sendAIStatus(asleep: Bool, now: Date = Date()) {
+        lastStatusAt = now
+        let status = AIStatus(device: displayName, state: asleep ? .asleep : .awake, model: ollamaModel,
+                              queue: askQueue.depth, rooms: servedRoomIDs, at: now)
+        guard let blob = AIStatusTracker.make(status, identity: identity), let body = PasaJSON.string(blob) else { return }
+        sendClear(engine.makeOutgoing(kind: .aiStatus, body: body, destination: nil, ttl: AIStatusTracker.ttl))
     }
     #endif
 }

@@ -40,10 +40,14 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     /// How the key was made. nil means a random key (rooms from before passcodes).
     public var keySource: KeySource?
 
+    /// Admin key, signed membership manifest and epoch keys (see RoomGovernance.swift).
+    /// nil for the Default room and for rooms from before admin keys (until migrated).
+    public var gov: RoomGov?
+
     public enum KeySource: String, Codable, Sendable { case random, passcode }
 
     public init(label: String, key: Data, creator: String, createdAt: Date = Date(), admins: [String] = [], clearedAt: Date? = nil,
-                keySource: KeySource? = nil) {
+                keySource: KeySource? = nil, gov: RoomGov? = nil) {
         self.label = label
         self.key = key
         self.creator = creator
@@ -51,6 +55,7 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
         self.admins = admins
         self.clearedAt = clearedAt
         self.keySource = keySource
+        self.gov = gov
     }
 
     /// True when people can join by typing the name and passcode.
@@ -67,17 +72,22 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
 
     /// Admin device ids for this room: the pinned creator plus those ticked on the Mac.
     public func adminDevices(selfID: String) -> Set<String> {
-        AdminPolicy.devices(adminIDs: admins + (creator.isEmpty ? [] : [creator]), selfID: selfID)
+        // Co-admins from the signed manifest count for rule edits too (by their device id).
+        let coAdmins = gov?.manifest.map { m in m.members.filter { m.isCoAdmin($0.signKey) }.map(\.device) } ?? []
+        return AdminPolicy.devices(adminIDs: admins + coAdmins + (creator.isEmpty ? [] : [creator]), selfID: selfID)
     }
 
-    // MARK: Join string ("PASA1.<label>.<creator>.<key>[.p]", base64url parts)
+    // MARK: Join string ("PASA1.<label>.<creator>.<key>[.p][.A<admin key>]", base64url parts)
     // The key is the derived room key, never the passcode. ".p" marks a passcode room.
+    // ".A..." pins the room admin's public signing key, so a QR joiner does not need to trust
+    // the first manifest it hears.
 
     public static let joinPrefix = "PASA1"
 
     public var joinString: String {
         var parts = [Room.joinPrefix, label, RoomCrypto.base64url(Data(creator.utf8)), RoomCrypto.base64url(key)]
         if usesPasscode { parts.append("p") }
+        if let admin = gov?.adminKey { parts.append("A" + RoomCrypto.base64url(admin)) }
         return parts.joined(separator: ".")
     }
 
@@ -85,13 +95,20 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     public static func parse(joinString raw: String, now: Date = Date()) -> Room? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = text.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 4 || (parts.count == 5 && parts[4] == "p"), parts[0] == joinPrefix else { return nil }
+        guard (4...6).contains(parts.count), parts[0] == joinPrefix else { return nil }
+        var passcode = false
+        var admin: Data?
+        for flag in parts.dropFirst(4) {
+            if flag == "p", !passcode { passcode = true; continue }
+            if flag.hasPrefix("A"), admin == nil, let k = RoomCrypto.fromBase64url(String(flag.dropFirst())), k.count == 32 { admin = k; continue }
+            return nil
+        }
         let label = Room.cleanLabel(parts[1])
         guard !label.isEmpty,
               let creatorData = RoomCrypto.fromBase64url(parts[2]),
               let key = RoomCrypto.fromBase64url(parts[3]), key.count == 32 else { return nil }
         return Room(label: label, key: key, creator: String(decoding: creatorData, as: UTF8.self), createdAt: now,
-                    keySource: parts.count == 5 ? .passcode : nil)
+                    keySource: passcode ? .passcode : nil, gov: admin.map { RoomGov(adminKey: $0, pending: true) })
     }
 
     /// Names are short and easy to say: A-Z, 0-9 and "-", at most 24 characters.
@@ -176,34 +193,56 @@ public enum RoomCrypto {
 /// Seals a message for a room and opens it again. The clear header keeps what relays need.
 public enum RoomEnvelope {
     /// Header fields bound to the ciphertext (relays may change ttl and hops, so those are not).
+    /// The epoch (when above 0) is part of the bound header, so it cannot be swapped.
     static func aad(_ m: MeshMessage, room: String) -> Data {
-        Data("\(m.wireVersion)|\(m.id.uuidString)|\(room)|\(m.origin)|\(m.destination?.label ?? "*")".utf8)
+        var text = "\(m.wireVersion)|\(m.id.uuidString)|\(room)|\(m.origin)|\(m.destination?.label ?? "*")"
+        if let e = m.epoch, e > 0 { text += "|e\(e)" }
+        return Data(text.utf8)
     }
 
-    /// Outer packet: routing fields in the clear, everything else sealed.
+    public enum SealError: Error { case noKey }
+
+    /// Outer packet: routing fields in the clear, everything else sealed. Content is sealed with
+    /// the room's current epoch key; room control (`.roomControl`) always with the base key.
     public static func seal(_ inner: MeshMessage, in room: Room) throws -> MeshMessage {
         var plain = inner
         plain.v = MeshMessage.protocolVersion
+        let control = inner.kind == .roomControl
+        let epoch = control ? 0 : room.epoch
+        guard let key = control ? room.key : room.contentKey else { throw SealError.noKey }
+        plain.epoch = nil
         let body = try MeshCodec.encode(plain)
         var outer = MeshMessage(id: inner.id, origin: inner.origin, destination: inner.destination, kind: .sealed, body: "",
                                 ttl: inner.ttl, hops: inner.hops, createdAt: Date(timeIntervalSince1970: 0),
                                 v: MeshMessage.protocolVersion)
         outer.room = room.id
-        outer.sealed = RoomCrypto.base64url(try RoomCrypto.seal(body, key: room.key, aad: aad(outer, room: room.id)))
+        outer.epoch = epoch > 0 ? epoch : nil
+        outer.sealed = RoomCrypto.base64url(try RoomCrypto.seal(body, key: key, aad: aad(outer, room: room.id)))
         return outer
     }
 
     /// Opens a packet of `room`. Returns the inner message with the outer hop path and ttl, or
-    /// nil when it belongs to another room, was tampered with, or does not match its header.
-    public static func open(_ outer: MeshMessage, in room: Room) -> MeshMessage? {
-        guard outer.kind == .sealed, outer.room == room.id,
+    /// nil when it belongs to another room, was tampered with, does not match its header, or is
+    /// content sealed with a key this room no longer accepts (for example the passcode key after
+    /// the room moved to a random epoch key, or an old epoch after the grace period).
+    public static func open(_ outer: MeshMessage, in room: Room, now: Date = Date()) -> MeshMessage? {
+        let epoch = outer.epoch ?? 0
+        let key = epoch == 0 ? room.key : room.openKey(epoch: epoch, now: now)
+        guard outer.kind == .sealed, outer.room == room.id, let key,
               let sealed = outer.sealed.flatMap(RoomCrypto.fromBase64url),
-              let plain = try? RoomCrypto.open(sealed, key: room.key, aad: aad(outer, room: room.id)),
+              let plain = try? RoomCrypto.open(sealed, key: key, aad: aad(outer, room: room.id)),
               var inner = try? MeshCodec.decode(plain),
               inner.id == outer.id, inner.origin == outer.origin, inner.destination == outer.destination else { return nil }
+        if epoch == 0, inner.kind != .roomControl, room.epoch > 0 { return nil }
         inner.hops = outer.hops
         inner.ttl = outer.ttl
+        inner.epoch = outer.epoch
         return inner
+    }
+
+    /// Epoch of a packet of this room that this device cannot open yet (it missed a rotation).
+    public static func isAhead(_ outer: MeshMessage, of room: Room) -> Bool {
+        outer.kind == .sealed && outer.room == room.id && (outer.epoch ?? 0) > room.epoch
     }
 }
 
@@ -275,6 +314,12 @@ public final class RoomStore {
             // if this copy did not know it, never replace a known one.
             if rooms[index].creator.isEmpty && !room.creator.isEmpty { rooms[index].creator = room.creator }
             if rooms[index].keySource == nil, room.keySource != nil { rooms[index].keySource = room.keySource }
+            // Pin an admin key from a QR code if none is pinned yet; never replace a pinned one.
+            if rooms[index].gov?.adminKey == nil, let admin = room.gov?.adminKey {
+                var gov = rooms[index].gov ?? RoomGov()
+                gov.adminKey = admin
+                rooms[index].gov = gov
+            }
             activeID = rooms[index].id
         } else {
             rooms.append(room)
@@ -303,6 +348,9 @@ public final class RoomStore {
         change(&rooms[index])
         save()
     }
+
+    /// All joined room ids.
+    public var ids: Set<String> { Set(rooms.map(\.id)) }
 
     public func save() {
         guard let base = baseURL else { return }

@@ -49,6 +49,8 @@ public struct PersistedTimeline: Codable, Equatable, Sendable {
     public var schemaVersion: Int = 1
     public var entries: [ChatEntry]
     public var outbox: [OutboxItem]
+    /// Phones: asks with no answer yet, resent when the AI Mac wakes (see PendingAskBook).
+    public var pendingAsks: [PendingAsk]?
 
     public init(entries: [ChatEntry] = [], outbox: [OutboxItem] = []) {
         self.entries = entries

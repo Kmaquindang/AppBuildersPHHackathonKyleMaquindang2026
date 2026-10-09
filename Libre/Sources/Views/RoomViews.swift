@@ -168,12 +168,24 @@ struct RoomSettingsSection: View {
 
             DisclosureGroup("Join a room", isExpanded: $showJoin) {
                 VStack(alignment: .leading, spacing: 8) {
+                    NearbyRoomsList(selectedName: $joinName)
                     TextField("Room name", text: $joinName)
                     PasscodeFields(passcode: $joinCode, confirm: nil)
                     Button {
                         Task {
-                            if let room = await mesh.joinRoom(name: joinName, passcode: joinCode) {
-                                message = "Joined \(room.label). Check code \(room.checkCode): it should match your teammates' screens. If it does not, the name or passcode was typed differently."
+                            if let beacon = mesh.nearbyRooms.first(where: { $0.beacon.label == Room.cleanLabel(joinName) })?.beacon {
+                                switch await mesh.joinNearby(beacon, passcode: joinCode) {
+                                case .joined(let room):
+                                    message = "Joined \(room.label). \(room.canSend ? "" : "Waiting for an admin device to let you in (automatic when it is nearby). ")Admin fingerprint \(room.adminFingerprint ?? "not heard yet"): compare it with the admin's screen."
+                                    joinName = ""; joinCode = ""
+                                    showJoin = false
+                                case .wrongPasscode:
+                                    message = "Wrong passcode for \(beacon.label). Ask the room admin."
+                                case .failed:
+                                    message = "Could not join. Check the name and passcode."
+                                }
+                            } else if let room = await mesh.joinRoom(name: joinName, passcode: joinCode) {
+                                message = "Joined \(room.label). Check code \(room.checkCode): it should match your teammates' screens. If it does not, the name or passcode was typed differently. If an admin must let you in, that happens automatically when an admin device is nearby."
                                 joinName = ""; joinCode = ""
                                 showJoin = false
                             } else {
@@ -212,10 +224,15 @@ struct RoomSettingsSection: View {
                             isPresented: $confirmLeave) {
             Button("Leave room", role: .destructive) { mesh.leaveRoom(mesh.activeRoom.id) }
         }
+        if !mesh.activeRoom.isDefault, mesh.activeRoom.gov != nil {
+            RoomAdminSection()
+        }
     }
 
     private var footer: String {
-        let common = "This device reads and writes one room at a time. It still relays other rooms' messages without being able to read them."
+        let common = mesh.isAIPeer
+            ? "As the AI peer, this Mac answers in every room it has joined (one question at a time, rooms take turns). It still relays other rooms' messages without being able to read them."
+            : "This device reads and writes one room at a time (switch from the room chip in the header). It still relays other rooms' messages without being able to read them."
         if mesh.activeRoom.isDefault {
             return "Default is the open room: its key is public, so anyone running Pasa nearby can read it. Create a room for privacy. " + common
         }
@@ -273,6 +290,7 @@ struct RoomOnboardingPicker: View {
                 Text("Like Wi-Fi: teammates join by typing the same name and passcode. The name is not secret; the passcode is never stored.")
                     .font(.caption).foregroundStyle(.secondary)
             case .join:
+                NearbyRoomsList(selectedName: $name)
                 TextField("Room name", text: $name)
                     .textFieldStyle(.roundedBorder)
                 PasscodeFields(passcode: $passcode, confirm: nil)
@@ -295,6 +313,129 @@ struct RoomOnboardingPicker: View {
         case .join:
             return !joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || RoomFormCheck.canJoin(name: name, passcode: passcode)
+        }
+    }
+}
+
+/// Nearby rooms: Listed rooms heard over the mesh (signed beacons, gone after 45 s of silence).
+/// Tapping one fills its name; the passcode is still needed.
+struct NearbyRoomsList: View {
+    @EnvironmentObject private var mesh: MeshService
+    @Binding var selectedName: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Nearby rooms").font(.subheadline.weight(.semibold))
+            if mesh.nearbyRooms.isEmpty {
+                Text("None heard yet. Listed rooms show here when their admin device is nearby with Pasa open. Hidden rooms never show: type the name.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(mesh.nearbyRooms, id: \.beacon.room) { heard in
+                let b = heard.beacon
+                let joined = mesh.joinedRooms.contains { $0.id == b.room }
+                Button {
+                    selectedName = b.label
+                } label: {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.label).font(.body.weight(.semibold))
+                            Text("Admin \(b.adminName), key \(b.adminFingerprint)\(heard.conflict ? ". Warning: another device claims this room" : "")")
+                                .font(.caption2).foregroundStyle(heard.conflict ? Color.red : Color.secondary)
+                        }
+                        Spacer()
+                        if joined { Text("Joined").font(.caption2).foregroundStyle(.secondary) }
+                        Text(b.badge)
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background((b.isClosed || b.isFull ? Color.orange : Color.green).opacity(0.2), in: Capsule())
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(b.isClosed || b.isFull)
+            }
+            Text("Listed room names and member counts are visible to anyone nearby running Pasa.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Settings > Room admin: Listed or Hidden, member cap, members with Kick, close or reopen,
+/// admin fingerprint. Every change is a signed manifest that every device checks.
+struct RoomAdminSection: View {
+    @EnvironmentObject private var mesh: MeshService
+    @State private var kickTarget: RoomMember?
+    @State private var confirmClose = false
+    @State private var note: String?
+
+    private var room: Room { mesh.activeRoom }
+    private var manifest: RoomManifest? { room.gov?.manifest }
+
+    private var roleText: String {
+        if room.isRemoved { return "Removed by an admin" }
+        if mesh.isRoomCreatorAdmin { return "You are the room admin (this device holds the admin key)" }
+        if mesh.isRoomAdmin { return "You are a co-admin" }
+        if room.isPending { return manifest == nil ? "Waiting for the room admin" : "Waiting to be let in" }
+        return "Member"
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent("Your role", value: roleText)
+            if let m = manifest {
+                LabeledContent("Admin", value: "\(m.adminName), key \(Fingerprint.of(m.adminKey))")
+                LabeledContent("Status", value: "\(m.statusWord), \(m.members.count)/\(m.cap) members, key epoch \(m.epoch)")
+                Toggle("Listed in Nearby rooms", isOn: Binding(get: { m.listed }, set: { on in
+                    if mesh.setRoomListed(on) { note = on ? "Listed: the name and member count are visible to anyone nearby." : "Hidden: people must type the name." }
+                }))
+                .disabled(!mesh.isRoomAdmin)
+                Stepper("Member cap: \(m.cap)", value: Binding(get: { m.cap }, set: { mesh.setRoomCap($0) }),
+                        in: RoomLimits.minCap...RoomLimits.maxCap)
+                    .disabled(!mesh.isRoomAdmin)
+                ForEach(m.members) { member in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(member.name + (mesh.isMe(member) ? " (you)" : "") + (mesh.isCoAdmin(member) ? " (co-admin)" : ""))
+                            Text("\(member.device), key \(member.fingerprint)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if mesh.isRoomCreatorAdmin && !mesh.isMe(member) {
+                            Button(mesh.isCoAdmin(member) ? "Remove co-admin" : "Make co-admin") {
+                                mesh.setCoAdmin(member, !mesh.isCoAdmin(member))
+                            }
+                            .font(.caption)
+                        }
+                        if mesh.isRoomAdmin && !mesh.isMe(member) {
+                            Button("Kick", role: .destructive) { kickTarget = member }
+                                .font(.caption)
+                        }
+                    }
+                }
+                if mesh.isRoomAdmin {
+                    Button(m.state == .closed ? "Reopen room" : "Close room...", role: m.state == .closed ? nil : .destructive) {
+                        if m.state == .closed { mesh.setRoomClosed(false) } else { confirmClose = true }
+                    }
+                }
+            } else {
+                Text("No room manifest heard yet. It arrives when an admin device of this room is nearby.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+        } header: {
+            Text("Room admin")
+        } footer: {
+            Text("Kick makes a new room key and hands it to everyone else, so the removed device cannot read new messages. Messages it already received stay on it. The removed device's key is banned, but a changed copy of the app could make a new key and ask to join again with the passcode: to fully lock someone out, make a new room with a new passcode. Joining needs an admin device nearby. The cap limits who is let in.\(room.epoch == 0 ? " This room still uses the passcode key (it was made before admin keys), so anyone with the passcode can read it until the first kick." : "")")
+        }
+        .confirmationDialog(kickTarget.map { "Kick \($0.name)? Pasa makes a new room key for everyone else." } ?? "",
+                            isPresented: Binding(get: { kickTarget != nil }, set: { if !$0 { kickTarget = nil } })) {
+            Button("Kick and change the room key", role: .destructive) {
+                if let target = kickTarget, mesh.kick(target) { note = "\(target.name) removed. New room key sent to the others." }
+                kickTarget = nil
+            }
+        }
+        .confirmationDialog("Close \(room.label)? Nobody can send in it; chat and memory stay read-only. You can reopen it.", isPresented: $confirmClose) {
+            Button("Close room", role: .destructive) { mesh.setRoomClosed(true) }
         }
     }
 }

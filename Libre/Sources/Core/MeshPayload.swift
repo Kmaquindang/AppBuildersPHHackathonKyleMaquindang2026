@@ -48,7 +48,7 @@ public enum MeshPayload {
             return MediaManifest.decode(message.body)?.displayLine ?? "Media"
         case .transcript:
             return TranscriptPayload.decode(message.body)?.displayLine ?? message.body
-        case .chunk, .mediaNack:
+        case .chunk, .mediaNack, .roomControl, .beacon, .aiStatus:
             return ""
         default:
             return message.body
