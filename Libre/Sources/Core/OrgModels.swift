@@ -1,5 +1,5 @@
 // OrgModels.swift
-// Libre: the team's shared memory (tasks, notes, rules and skills). Pure Swift, Codable.
+// Pasa: the team's shared memory (tasks, notes, rules and skills). Pure Swift, Codable.
 // The Mac AI peer holds the source of truth; phones keep a read-only cache received over the mesh.
 
 import Foundation

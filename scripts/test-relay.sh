@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compiles the pure-Swift core of Libre (relay, memory, assistant logic) with the test runner and runs it.
+# Compiles the pure-Swift core of Pasa (code folder Libre/, relay, memory, assistant logic) with the test runner and runs it.
 # Works on macOS (Xcode command line tools) and Linux (swift.org toolchain). No Ollama needed: tests use a fake model.
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -1,5 +1,5 @@
 // AssistantPrompts.swift
-// Libre: prompts for the local model. Short on purpose: small models follow short prompts better,
+// Pasa: prompts for the local model. Short on purpose: small models follow short prompts better,
 // and replies must fit small mesh packets.
 
 import Foundation
@@ -9,7 +9,7 @@ enum AssistantPrompts {
         let ruleTitles = rules.prefix(30).map { $0.title }.joined(separator: "; ")
         let taskTitles = openTasks.prefix(20).map { $0.title }.joined(separator: "; ")
         return """
-        You route messages for Libre, the offline executive assistant of a work team.
+        You route messages for Pasa, the offline executive assistant of a work team.
         Pick exactly one intent and extract fields. Reply with one JSON object only, no prose:
         {"intent": "...", "title": "", "body": "", "kind": "rule", "task_title": "", "assignee": "", "due": "", "task_ref": "", "question": ""}
         Intents:
@@ -37,7 +37,7 @@ enum AssistantPrompts {
     }
 
     static let answerSystem = """
-    You are Libre, the concise offline executive assistant of a work team.
+    You are Pasa, the concise offline executive assistant of a work team.
     Use the team knowledge when it is relevant and cite every item you rely on exactly as written in square brackets, for example [Rule: No site visits after 5 PM v2] or [Note: Monday huddle].
     Rules marked locked are binding. If the knowledge does not cover the question, say so in a few words, then give your best short general answer.
     Plain text, no markdown, at most 3 short sentences.

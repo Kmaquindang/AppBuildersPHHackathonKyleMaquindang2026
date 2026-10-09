@@ -1,5 +1,5 @@
 // AIResponder.swift
-// Libre: simple question -> answer seam for the AI peer.
+// Pasa: simple question -> answer seam for the AI peer.
 // - EchoResponder: milestone 1 stub, no model.
 // - OllamaResponder: plain local-model answers through Ollama (no team memory).
 // The full executive assistant (intents, tasks, rules, notes) lives in ExecutiveAssistant.swift.
@@ -54,7 +54,7 @@ public struct OllamaResponder: AIResponder {
     public func respond(to question: String, from asker: String) async throws -> AIReply {
         let started = Date()
         let result = try await client.chat([
-            .system("You are Libre, a helpful assistant running offline on a laptop for people with no internet. Answer in plain text, at most 3 short sentences."),
+            .system("You are Pasa, a helpful assistant running offline on a laptop for people with no internet. Answer in plain text, at most 3 short sentences."),
             .user(question)
         ], json: false)
         let parts = Compactor.split(result.text)

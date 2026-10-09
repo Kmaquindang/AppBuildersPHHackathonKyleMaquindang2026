@@ -1,5 +1,5 @@
 // AssistantIntent.swift
-// Libre: what the user wants from "@libre ..." and how we read it.
+// Pasa: what the user wants from "@pasa ..." and how we read it.
 // Deterministic fast paths handle the common phrases with no model call. Everything else is
 // classified by the local model in JSON mode and decoded leniently here.
 
@@ -60,6 +60,28 @@ public struct NotesExtraction: Equatable, Sendable {
     public var summary: String
     public var decisions: [String]
     public var actionItems: [NoteActionItem]
+}
+
+/// How a chat message calls the assistant. "@pasa" is the name since Oct 9 2026; "@libre" (the
+/// working name) stays as an alias so old habits and demo notes keep working.
+public enum AssistantMention {
+    public static let primary = "@pasa"
+    public static let aliases = ["@pasa", "@libre"]
+
+    /// Returns the text after a leading mention (trimmed, may be empty), or nil when the message
+    /// does not start with one. The mention must end at a word boundary, so "@pasaway" is not a call.
+    public static func strip(_ raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        for tag in aliases where lower.hasPrefix(tag) {
+            let rest = text.dropFirst(tag.count)
+            if let next = rest.first, next.isLetter || next.isNumber || next == "_" { continue }
+            var tail = Substring(rest)
+            while let c = tail.first, c == ":" || c == "," { tail = tail.dropFirst() }
+            return tail.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+    }
 }
 
 public enum IntentParser {

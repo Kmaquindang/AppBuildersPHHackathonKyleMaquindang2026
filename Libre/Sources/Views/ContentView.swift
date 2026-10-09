@@ -35,7 +35,7 @@ struct ChatScreen: View {
                 Divider()
                 ComposerView()
             }
-            .navigationTitle("Libre")
+            .navigationTitle("Pasa")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

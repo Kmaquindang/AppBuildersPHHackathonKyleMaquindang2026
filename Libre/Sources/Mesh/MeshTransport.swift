@@ -1,5 +1,5 @@
 // MeshTransport.swift
-// Libre: link layer. Apple MultipeerConnectivity finds nearby devices and opens encrypted
+// Pasa: link layer. Apple MultipeerConnectivity finds nearby devices and opens encrypted
 // links over peer-to-peer Wi-Fi (Bluetooth is only used by the OS for discovery, if at all).
 // This file only moves bytes between directly connected devices. Multi-hop routing lives in
 // RelayEngine, which is our own code.
@@ -62,7 +62,7 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     /// MCPeerID crashes on an empty name or one longer than 63 UTF-8 bytes.
     static func sanitize(_ raw: String) -> String {
         var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty { name = "Libre device" }
+        if name.isEmpty { name = "Pasa device" }
         while name.utf8.count > maxNameBytes { name.removeLast() }
         return name
     }

@@ -52,7 +52,7 @@ struct AssistantDashboardView: View {
                 Divider()
 
                 if log.isEmpty {
-                    Text("No asks yet. From a phone, switch to Ask AI or type \"@libre ...\". You can also ask from this Mac's Chat tab.")
+                    Text("No asks yet. From a phone, switch to Ask AI or type \"@pasa ...\". You can also ask from this Mac's Chat tab.")
                         .foregroundStyle(.secondary)
                     Spacer()
                 } else {

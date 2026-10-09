@@ -1,5 +1,5 @@
 // LLMClient.swift
-// Libre: minimal chat interface to a local language model. Pure Foundation.
+// Pasa: minimal chat interface to a local language model. Pure Foundation.
 
 import Foundation
 

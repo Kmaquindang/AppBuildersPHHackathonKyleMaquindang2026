@@ -47,7 +47,7 @@ struct TasksView: View {
             } header: {
                 Text("Open")
             } footer: {
-                Text("Read-only copy. Tasks arrive from the AI peer over the mesh. Say \"@libre done with ...\" to finish one.")
+                Text("Read-only copy. Tasks arrive from the AI peer over the mesh. Say \"@pasa done with ...\" to finish one.")
             }
             if !done.isEmpty {
                 Section("Done") {

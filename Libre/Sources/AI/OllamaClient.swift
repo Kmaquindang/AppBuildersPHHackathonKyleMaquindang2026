@@ -1,5 +1,5 @@
 // OllamaClient.swift
-// Libre: talks to Ollama on the same Mac (default http://127.0.0.1:11434), non-streaming /api/chat.
+// Pasa: talks to Ollama on the same Mac (default http://127.0.0.1:11434), non-streaming /api/chat.
 // No internet involved: Ollama serves the model from local disk.
 
 import Foundation

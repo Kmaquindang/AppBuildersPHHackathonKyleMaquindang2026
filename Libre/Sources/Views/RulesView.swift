@@ -16,7 +16,7 @@ struct RulesView: View {
             List {
                 Section {
                     if rules.isEmpty {
-                        Text("No rules yet. Try \"@libre save rule: No site visits after 5 PM\".")
+                        Text("No rules yet. Try \"@pasa save rule: No site visits after 5 PM\".")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(rules) { rule in
@@ -26,7 +26,7 @@ struct RulesView: View {
                     #if os(macOS)
                     Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(mesh.adminNames.joined(separator: ", ")) and this Mac) can edit, lock or unlock. Every change keeps the older version.")
                     #else
-                    Text("Read-only copy from the AI peer. Add one with \"@libre save rule: ...\".")
+                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\".")
                     #endif
                 }
             }

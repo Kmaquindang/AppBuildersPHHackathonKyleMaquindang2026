@@ -21,6 +21,15 @@ func runIntentTests() {
     check(IntentParser.fastPath("remind Ana to order cement Friday") == nil, "natural task goes to the model")
     check(IntentParser.fastPath("save rule") == nil, "empty rule is not a fast path")
 
+    // Assistant mention: @pasa is primary, @libre still works.
+    check(AssistantMention.strip("@pasa what did I miss?") == "what did I miss?", "@pasa mention")
+    check(AssistantMention.strip("@Libre my tasks") == "my tasks", "@libre alias still works")
+    check(AssistantMention.strip("@PASA: save rule: Hard hats") == "save rule: Hard hats", "mention with colon")
+    check(AssistantMention.strip("@pasa") == "", "bare mention")
+    check(AssistantMention.strip("@pasaway ka talaga") == nil, "word boundary")
+    check(AssistantMention.strip("hello @pasa") == nil, "mention must lead")
+    check(Compactor.moreHint.contains("@pasa more"), "more hint uses @pasa")
+
     // Lenient model decoding.
     let fenced = "Sure!\n```json\n{\"intent\": \"add_task\", \"task_title\": \"order cement\", \"assignee\": \"Ana\", \"due\": \"Friday\", \"title\": null}\n```"
     let plan = IntentParser.decodePlan(from: fenced, original: "remind Ana to order cement Friday")

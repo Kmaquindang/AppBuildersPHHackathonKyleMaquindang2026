@@ -1,5 +1,5 @@
 // RelayEngine.swift
-// Libre: our own multi-hop relay layer that sits on top of any transport.
+// Pasa: our own multi-hop relay layer that sits on top of any transport.
 // Pure Swift (Foundation only), no Apple frameworks, so it is unit tested on Linux.
 //
 // Rules (controlled flooding with a hop budget):

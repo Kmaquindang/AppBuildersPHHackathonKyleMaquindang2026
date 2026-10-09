@@ -1,5 +1,5 @@
 // OrgMemory.swift
-// Libre: the team memory store with permission rules and versioning. Pure Swift.
+// Pasa: the team memory store with permission rules and versioning. Pure Swift.
 // On the Mac it is the source of truth; on phones it is a read-only cache fed by mesh updates.
 //
 // Rules policy:

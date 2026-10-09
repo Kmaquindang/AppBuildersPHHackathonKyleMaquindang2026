@@ -1,12 +1,12 @@
 // ExecutiveAssistant.swift
-// Libre: the team's executive assistant. Runs on the Mac AI peer, all local.
+// Pasa: the team's executive assistant. Runs on the Mac AI peer, all local.
 //
-// Flow for every "@libre ..." / Ask AI message:
+// Flow for every "@pasa ..." / Ask AI message:
 // 1. Fast path for common phrases (no model call), otherwise one JSON-mode model call
 //    classifies the intent and extracts fields.
 // 2. The intent is applied to OrgMemory (the source of truth) with its permission rules.
 // 3. When needed, a second model call writes the reply (grounded answers, catch-up, notes).
-// 4. The reply is compacted for the mesh; the rest is kept for "@libre more".
+// 4. The reply is compacted for the mesh; the rest is kept for "@pasa more".
 // Task and rule changes are returned so the mesh layer can notify assignees and phones.
 
 import Foundation

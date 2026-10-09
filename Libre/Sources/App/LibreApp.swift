@@ -1,5 +1,5 @@
 // LibreApp.swift
-// Libre: offline device-to-device mesh team chat with a local AI assistant.
+// Pasa: offline device-to-device mesh team chat with a local AI assistant.
 // One SwiftUI codebase for iOS and macOS.
 
 import SwiftUI

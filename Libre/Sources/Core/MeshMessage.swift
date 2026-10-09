@@ -1,5 +1,5 @@
 // MeshMessage.swift
-// Libre: offline device-to-device mesh team chat.
+// Pasa: offline device-to-device mesh team chat.
 // Pure Swift (Foundation only). Compiles on Apple platforms and on Linux for tests.
 
 import Foundation
@@ -51,7 +51,7 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var replyTo: UUID?
     /// For answers: the hop path the original ask took to reach the answering device.
     public var replyPath: [String]?
-    /// For answers: true when the body is a shortened first packet ("@libre more" gets the rest).
+    /// For answers: true when the body is a shortened first packet ("@pasa more" gets the rest).
     public var compact: Bool?
     /// For answers: local model that produced the reply, for example "qwen3:8b".
     public var model: String?

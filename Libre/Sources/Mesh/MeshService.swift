@@ -1,5 +1,5 @@
 // MeshService.swift
-// Libre: glue between the link layer (MeshTransport), our relay layer (RelayEngine), team memory
+// Pasa: glue between the link layer (MeshTransport), our relay layer (RelayEngine), team memory
 // (OrgMemory), the AI peer (ExecutiveAssistant / AIResponder) and the SwiftUI views.
 // Everything here runs on the main actor.
 
@@ -100,6 +100,7 @@ final class MeshService: ObservableObject {
     #endif
 
     private enum Keys {
+        // Keys keep the working name "libre." so settings saved before the rename to Pasa survive.
         static let name = "libre.displayName"
         static let blocked = "libre.blocked"
         static let aiPeer = "libre.isAIPeer"
@@ -169,7 +170,7 @@ final class MeshService: ObservableObject {
         #endif
     }
 
-    /// Application Support/Libre/<file>. Inside the app sandbox container on macOS.
+    /// Application Support/Libre/<file> (folder keeps the working name so saved team memory survives the rename). Inside the app sandbox container on macOS.
     static func storageURL(_ fileName: String) -> URL? {
         guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         return base.appendingPathComponent("Libre", isDirectory: true).appendingPathComponent(fileName)
@@ -351,10 +352,10 @@ final class MeshService: ObservableObject {
         guard !text.isEmpty else { return }
 
         var kind: MessageKind = mode == .ask ? .ask : .chat
-        // "@libre question" also means ask the AI.
-        if text.lowercased().hasPrefix("@libre") {
+        // "@pasa question" (or the old "@libre question") also means ask the AI.
+        if let question = AssistantMention.strip(text) {
             kind = .ask
-            text = String(text.dropFirst("@libre".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            text = question
             if text.isEmpty { return }
         }
 

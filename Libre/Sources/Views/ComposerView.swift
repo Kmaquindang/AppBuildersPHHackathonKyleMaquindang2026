@@ -1,5 +1,5 @@
 // ComposerView.swift
-// Quick actions, a Chat / Ask AI switch and the text field. Typing "@libre ..." also asks the AI.
+// Quick actions, a Chat / Ask AI switch and the text field. Typing "@pasa ..." (or the old "@pasa ...") also asks the AI.
 
 import SwiftUI
 
