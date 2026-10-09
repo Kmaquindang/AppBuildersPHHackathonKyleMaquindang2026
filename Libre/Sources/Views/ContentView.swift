@@ -1,9 +1,27 @@
 // ContentView.swift
-// Main screen: who you are, nearby peers, the timeline with hop paths, and the composer.
+// Main screen: tabs for chat (peers, hop-path timeline, composer), tasks, rules and, on the Mac, the AI dashboard.
 
 import SwiftUI
 
 struct ContentView: View {
+    var body: some View {
+        TabView {
+            ChatScreen()
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+            TasksView()
+                .tabItem { Label("Tasks", systemImage: "checklist") }
+            RulesView()
+                .tabItem { Label("Rules", systemImage: "book.closed") }
+            #if os(macOS)
+            AssistantDashboardView()
+                .tabItem { Label("Assistant", systemImage: "cpu") }
+            #endif
+        }
+    }
+}
+
+/// Peers, timeline and composer, with the settings sheet.
+struct ChatScreen: View {
     @EnvironmentObject private var mesh: MeshService
     @State private var showSettings = false
 

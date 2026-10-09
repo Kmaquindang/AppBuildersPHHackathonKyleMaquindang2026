@@ -1,5 +1,5 @@
 // ComposerView.swift
-// Text field plus a Chat / Ask AI switch. Typing "@libre ..." also asks the AI.
+// Quick actions, a Chat / Ask AI switch and the text field. Typing "@libre ..." also asks the AI.
 
 import SwiftUI
 
@@ -10,6 +10,15 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Button("What did I miss?") { mesh.quickAsk("what did I miss?") }
+                Button("My tasks") { mesh.quickAsk("my tasks") }
+                Button("More") { mesh.quickAsk("more") }
+                Spacer(minLength: 0)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
             Picker("Mode", selection: $mode) {
                 ForEach(ComposeMode.allCases) { option in
                     Text(option.rawValue).tag(option)

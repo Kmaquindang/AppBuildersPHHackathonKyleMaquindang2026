@@ -54,9 +54,14 @@ struct MessageRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(message.body)
+                Text(MeshPayload.displayText(for: message))
                     .font(.body)
                     .textSelection(.enabled)
+                if let meta = answerMeta {
+                    Text(meta)
+                        .font(.caption2)
+                        .foregroundStyle(.purple)
+                }
                 Text(pathLine)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
@@ -77,8 +82,20 @@ struct MessageRow: View {
         }
     }
 
+    /// "qwen3:8b, 1840 ms, 22.4 tok/s, compact" for AI answers.
+    private var answerMeta: String? {
+        guard message.kind == .answer, message.model != nil || message.latencyMs != nil else { return nil }
+        var parts: [String] = [message.model ?? "no model call"]
+        if let ms = message.latencyMs { parts.append("\(ms) ms") }
+        if let tps = message.tokensPerSecond { parts.append(String(format: "%.1f tok/s", tps)) }
+        if message.compact == true { parts.append("compact") }
+        return parts.joined(separator: ", ")
+    }
+
     private var bubbleColor: Color {
         if message.kind == .answer { return Color.purple.opacity(0.15) }
+        if message.kind == .task { return Color.green.opacity(0.15) }
+        if message.kind == .rule { return Color.teal.opacity(0.15) }
         return isMine ? Color.accentColor.opacity(0.18) : Color.gray.opacity(0.15)
     }
 

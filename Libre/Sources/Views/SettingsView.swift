@@ -1,5 +1,5 @@
 // SettingsView.swift
-// Device name, AI peer role (Mac only), and the forced-relay block list.
+// Device name, AI peer settings (Mac only: engine, model, admins, roster), and the forced-relay block list.
 
 import SwiftUI
 
@@ -8,6 +8,12 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var nameDraft = ""
     @State private var manualBlock = ""
+    @State private var engineDraft: AIEngine = .assistant
+    @State private var modelDraft = ""
+    @State private var fallbackDraft = ""
+    @State private var adminsDraft = ""
+    @State private var rosterDraft = ""
+    @State private var confirmReset = false
 
     var body: some View {
         NavigationStack {
@@ -31,11 +37,39 @@ struct SettingsView: View {
                         get: { mesh.isAIPeer },
                         set: { mesh.setAIPeer($0) }
                     ))
-                    LabeledContent("Responder", value: mesh.aiResponderName)
+                    Picker("Engine", selection: $engineDraft) {
+                        ForEach(AIEngine.allCases) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    TextField("Ollama model", text: $modelDraft)
+                    TextField("Fallback model (if the first is not installed)", text: $fallbackDraft)
+                    TextField("Admin devices, comma separated", text: $adminsDraft)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Team roster (one per line: Ana = iPhone 12)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $rosterDraft)
+                            .font(.body.monospaced())
+                            .frame(minHeight: 70)
+                    }
+                    HStack {
+                        Button("Save AI settings") {
+                            mesh.updateAssistantSettings(engine: engineDraft, model: modelDraft, fallback: fallbackDraft, admins: adminsDraft, rosterText: rosterDraft)
+                        }
+                        Button("Check Ollama") { mesh.checkOllama() }
+                    }
+                    Text(mesh.ollamaStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Button("Reset team memory...", role: .destructive) {
+                        confirmReset = true
+                    }
                 } header: {
                     Text("AI peer")
                 } footer: {
-                    Text("Milestone 1 echoes the question back. Milestone 2 answers with a local model through Ollama.")
+                    Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). This Mac is always an admin.")
                 }
                 #endif
 
@@ -82,10 +116,22 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear { nameDraft = mesh.displayName }
+            .onAppear {
+                nameDraft = mesh.displayName
+                engineDraft = mesh.aiEngine
+                modelDraft = mesh.ollamaModel
+                fallbackDraft = mesh.ollamaFallbackModel
+                adminsDraft = mesh.adminNames.joined(separator: ", ")
+                rosterDraft = mesh.rosterText
+            }
+            #if os(macOS)
+            .confirmationDialog("Erase all tasks, notes, rules and the chat log on this Mac?", isPresented: $confirmReset) {
+                Button("Erase team memory", role: .destructive) { mesh.resetMemory() }
+            }
+            #endif
         }
         #if os(macOS)
-        .frame(minWidth: 480, minHeight: 520)
+        .frame(minWidth: 520, minHeight: 640)
         #endif
     }
 
