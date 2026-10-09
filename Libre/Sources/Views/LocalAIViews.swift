@@ -44,6 +44,9 @@ struct LocalProofPanel: View {
                     }
                 }
                 .font(.caption)
+                Text("Link layer: \(mesh.discoveryRestarts) discovery restarts, \(mesh.discoveryRestartsCoalesced) folded or deferred (at most one per 15 s)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
                 if !items.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .bottom, spacing: 3) {
