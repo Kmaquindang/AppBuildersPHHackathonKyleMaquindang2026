@@ -120,7 +120,8 @@ public struct OllamaClient: LLMClient {
     }
 
     static func prepare(_ messages: [ChatTurn], model: String) -> [ChatTurn] {
-        guard model.lowercased().hasPrefix("qwen3") else { return messages }
+        // Instruct builds (qwen3:4b-instruct, qwen3-vl:4b-instruct) have no thinking switch.
+        guard model.lowercased().hasPrefix("qwen3"), !model.lowercased().contains("instruct") else { return messages }
         // Belt and braces for older Ollama builds that ignore "think": Qwen3 also honors /no_think.
         return messages.map { turn in
             guard turn.role == "user", !turn.content.hasPrefix("/no_think") else { return turn }
@@ -231,6 +232,34 @@ public struct OllamaClient: LLMClient {
             var digest: String?
         }
         var models: [Model]
+    }
+
+    /// Models loaded in memory right now (GET /api/ps on 127.0.0.1): name, size and memory in
+    /// use. Local call only. Used by the Proof panel and the benchmark report.
+    public func runningModels() async throws -> [RunningModel] {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/ps"))
+        request.timeoutInterval = 5
+        let (data, response) = try await perform(request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200, let list = RunningModel.decodeList(data) else {
+            throw LLMError.badResponse("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0) from /api/ps")
+        }
+        return list
+    }
+
+    /// Ollama version string (GET /api/version), for reports.
+    public func serverVersion() async throws -> String {
+        struct V: Decodable { var version: String }
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/version"))
+        request.timeoutInterval = 5
+        let (data, _) = try await perform(request)
+        return try JSONDecoder().decode(V.self, from: data).version
+    }
+
+    /// True when the base URL is this Mac (127.0.0.1, ::1 or localhost). Pasa never talks to a
+    /// model server elsewhere; the benchmark refuses to run against one.
+    public static func isLoopback(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "[::1]"
     }
 
     /// Installed model name -> digest (sha256), for pinning the tested model.

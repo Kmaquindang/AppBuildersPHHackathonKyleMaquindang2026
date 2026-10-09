@@ -19,6 +19,12 @@ public enum IntentKind: String, CaseIterable, Sendable {
     case takeNotes = "take_notes"
     case answer = "answer"
     case more = "more"
+    /// "@pasa summary": today's digest for the whole room (summary card).
+    case dailySummary = "daily_summary"
+    /// "@pasa what is this": photo check of the newest photo (the Mac runs the vision model).
+    case describePhoto = "describe_photo"
+    /// "@pasa accept task: ...": an admin adds a task suggested by a photo check.
+    case acceptTask = "accept_task"
 }
 
 public struct AssistantPlan: Equatable, Sendable {
@@ -99,8 +105,14 @@ public enum IntentParser {
         if ["more", "more please", "continue", "go on", "the rest"].contains(norm) {
             return AssistantPlan(kind: .more, fromFastPath: true)
         }
+        if dailySummaryPhrases.contains(norm) {
+            return AssistantPlan(kind: .dailySummary, fromFastPath: true)
+        }
+        if photoPhrases.contains(norm) {
+            return AssistantPlan(kind: .describePhoto, fromFastPath: true)
+        }
         if norm.contains("what did i miss") || norm.contains("what i missed") || norm.contains("catch me up")
-            || norm == "summary" || norm == "summarize" || norm == "recap"
+            || norm == "summarize" || norm == "recap"
             || norm.contains("na miss ko") || norm.contains("namiss ko") || norm.contains("nangyari habang wala ako") {
             return AssistantPlan(kind: .summarize, fromFastPath: true)
         }
@@ -112,6 +124,11 @@ public enum IntentParser {
         }
 
         let lower = text.lowercased()
+        for prefix in ["accept task", "accept suggested task", "add suggested task"] where lower.hasPrefix(prefix) {
+            let rest = remainder(of: text, after: prefix)
+            guard !rest.isEmpty else { return nil }
+            return AssistantPlan(kind: .acceptTask, taskTitle: rest, fromFastPath: true)
+        }
         let ruleCommands: [(prefix: String, kind: IntentKind, ruleKind: RuleKind)] = [
             ("save rule", .saveRule, .rule), ("add rule", .saveRule, .rule), ("new rule", .saveRule, .rule),
             ("save skill", .saveRule, .skill), ("add skill", .saveRule, .skill), ("new skill", .saveRule, .skill),
@@ -143,6 +160,22 @@ public enum IntentParser {
         }
         return nil
     }
+
+    /// "@pasa summary" and friends: today's digest (not the "what did I miss" catch-up).
+    public static let dailySummaryPhrases: Set<String> = [
+        "summary", "daily summary", "day summary", "summary today", "today summary", "todays summary", "today s summary",
+        "summary for today", "end of day", "end of day summary", "eod", "eod summary", "digest", "daily digest",
+        "buod", "buod ngayon", "buod ngayong araw", "buod ng araw", "summary karon", "summary karong adlawa"
+    ]
+
+    /// "@pasa what is this" and friends: check the newest photo in the room.
+    public static let photoPhrases: Set<String> = [
+        "what is this", "whats this", "what s this", "what is in this photo", "what is in the photo", "what is this photo",
+        "describe this", "describe the photo", "describe photo", "describe this photo", "read this", "read the photo",
+        "read this photo", "check this photo", "check the photo", "check photo", "photo", "what does it say",
+        "ano ito", "ano to", "ano yan", "ano ito litrato", "ano nasa litrato", "anong nasa litrato", "basahin mo ito",
+        "unsa ni", "unsa kini", "basaha ni", "unsa ning litrato"
+    ]
 
     static func remainder(of text: String, after prefix: String) -> String {
         var rest = String(text.dropFirst(prefix.count))

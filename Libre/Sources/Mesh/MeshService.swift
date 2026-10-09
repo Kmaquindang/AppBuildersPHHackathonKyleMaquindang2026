@@ -37,6 +37,18 @@ struct PeerInfo: Identifiable, Equatable {
     var id: String { name }
 }
 
+/// One job for the Mac's single model slot (rooms take turns in FairAskQueue).
+enum AIJob {
+    /// An "@pasa ..." ask.
+    case ask(MeshMessage)
+    /// Photo check: the media message, and the ask that asked for it (nil when automatic).
+    case photo(media: MeshMessage, ask: MeshMessage?)
+    /// Scheduled end-of-day digest.
+    case digest(DigestClock.Due)
+    /// Admin button "Send summary now".
+    case summaryNow
+}
+
 /// One AI peer request, for the Mac dashboard.
 struct AssistantLogEntry: Identifiable, Equatable {
     let id: UUID
@@ -152,6 +164,27 @@ final class MeshService: ObservableObject {
     /// Mac: asks waiting for the model, all rooms.
     @Published private(set) var aiQueueDepth = 0
 
+    // Local AI: proof, daily digest, photo checks (Mac).
+    /// Mac: internet route state from NWPathMonitor (listens only, never sends).
+    @Published private(set) var internetState: InternetState = .unknown
+    /// Mac: last 20 answers and cards with their proof (Proof panel).
+    @Published private(set) var proofLog = ProofLog()
+    /// Mac: what Ollama has loaded right now (/api/ps), for the Proof panel.
+    @Published private(set) var ollamaRunning: [RunningModel] = []
+    /// Mac: models Ollama has installed (/api/tags).
+    @Published private(set) var installedModels: [String] = []
+    /// Mac: Ollama is answering on 127.0.0.1:11434.
+    @Published private(set) var ollamaReachable = false
+    /// Mac: vision model picked from the installed ones (nil: not installed).
+    @Published private(set) var visionModel: String?
+    /// Mac: describe every photo that arrives (when a vision model is installed).
+    @Published private(set) var autoDescribePhotos: Bool
+    @Published private(set) var digestSchedule: DigestSchedule
+    /// Mac: newest digest made (any room), for the dashboard.
+    @Published private(set) var lastDigest: DailyDigest?
+    /// First-run onboarding finished (or skipped) on this device.
+    @Published private(set) var onboardingDone: Bool
+
     // MARK: Internals
 
     private let engine: RelayEngine
@@ -202,7 +235,13 @@ final class MeshService: ObservableObject {
     /// Rooms the AI Mac serves that are not active (one OrgMemory per room).
     private var contexts: [String: RoomContext] = [:]
     /// One model call at a time, rooms take turns.
-    private let askQueue = FairAskQueue<MeshMessage>()
+    private let askQueue = FairAskQueue<AIJob>()
+    private var connectivity: ConnectivityMonitor?
+    private var lastDigestCheck = Date.distantPast
+    /// "<room>|<day>" digests queued but not written yet.
+    private var digestQueued: Set<String> = []
+    /// Photo checks already made (media id -> card text and suggestions).
+    private var visionCache: [UUID: (text: String, suggestions: [String])] = [:]
     private var askRunning = false
     private var sleepObservers: [NSObjectProtocol] = []
     #endif
@@ -223,6 +262,11 @@ final class MeshService: ObservableObject {
         static let personName = "pasa.personName"
         static let directory = "pasa.directory"
         static let speechLocale = "pasa.speechLocale"
+        static let autoPhotos = "pasa.autoDescribePhotos"
+        static let digestEnabled = "pasa.digestEnabled"
+        static let digestHour = "pasa.digestHour"
+        static let digestMinute = "pasa.digestMinute"
+        static let onboarded = "pasa.onboardingDone"
     }
 
     /// Peers that are not linked and have not been seen for this long leave the peer strip.
@@ -318,6 +362,12 @@ final class MeshService: ObservableObject {
         timelineLimit = limit
         mediaStore = MediaStore(directory: MeshService.storageURL("media"), capBytes: mediaCap)
         speechLocale = store.string(forKey: Keys.speechLocale) ?? "en-US"
+        autoDescribePhotos = store.object(forKey: Keys.autoPhotos) as? Bool ?? true
+        digestSchedule = DigestSchedule(enabled: store.object(forKey: Keys.digestEnabled) as? Bool ?? true,
+                                        hour: store.object(forKey: Keys.digestHour) as? Int ?? 17,
+                                        minute: store.object(forKey: Keys.digestMinute) as? Int ?? 0)
+        // Existing users (a saved name, or rooms beyond Default) skip onboarding.
+        onboardingDone = store.object(forKey: Keys.onboarded) as? Bool ?? (!person.isEmpty || roomStore.rooms.contains { !$0.isDefault })
         entries = TimelineStore.dropping(saved.entries, before: cleared)
         outboxCount = relay.outbox.count
         identity = ident
@@ -336,7 +386,7 @@ final class MeshService: ObservableObject {
         assistant = brain
         let ledgerURL = MeshService.storageURL("ai-ledger.json")
         if let url = ledgerURL, let data = try? Data(contentsOf: url),
-           let saved = try? JSONDecoder().decode([String: FairAskQueue<MeshMessage>.LedgerEntry].self, from: data) {
+           let saved = try? JSONDecoder().decode([String: FairAskQueue<AIJob>.LedgerEntry].self, from: data) {
             askQueue.importLedger(saved)
         }
         #endif
@@ -642,6 +692,17 @@ final class MeshService: ObservableObject {
         startOllamaWatch()
         checkOllama()
         observeSleep()
+        if connectivity == nil {
+            connectivity = ConnectivityMonitor { [weak self] state in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self, self.internetState != state else { return }
+                        self.internetState = state
+                        if self.isAIPeer { self.sendAIStatus(asleep: self.macAsleep) }
+                    }
+                }
+            }
+        }
         #endif
         refreshRoomState()
     }
@@ -658,6 +719,8 @@ final class MeshService: ObservableObject {
         endAwakeActivity()
         for o in sleepObservers { NSWorkspace.shared.notificationCenter.removeObserver(o) }
         sleepObservers.removeAll()
+        connectivity?.cancel()
+        connectivity = nil
         #endif
     }
 
@@ -728,6 +791,10 @@ final class MeshService: ObservableObject {
             sendAIStatus(asleep: macAsleep, now: now)
         }
         for ctx in contexts.values where ctx.dirty { ctx.save(limit: timelineLimit) }
+        if now.timeIntervalSince(lastDigestCheck) >= 30 {
+            lastDigestCheck = now
+            checkDigests(now: now)
+        }
         pumpAsks()
         #endif
         guard connectedCount > 0 else { return }
@@ -759,13 +826,13 @@ final class MeshService: ObservableObject {
         if isAIPeer {
             availability = macAsleep ? .asleep : (activeRoom.canSend ? .awake : .notServing)
             detail = AIStatus(device: displayName, state: macAsleep ? .asleep : .awake, model: ollamaModel,
-                              queue: aiQueueDepth, rooms: servedRoomIDs, at: now)
+                              queue: aiQueueDepth, rooms: servedRoomIDs, at: now, internet: internetState)
         } else {
             availability = aiTracker.availability(room: activeRoom.id, now: now)
             detail = aiTracker.detail(room: activeRoom.id, now: now)
         }
         if availability != aiAvailability { aiAvailability = availability }
-        if detail?.queue != aiDetail?.queue || detail?.model != aiDetail?.model || (detail == nil) != (aiDetail == nil) { aiDetail = detail }
+        if detail?.queue != aiDetail?.queue || detail?.model != aiDetail?.model || detail?.internet != aiDetail?.internet || (detail == nil) != (aiDetail == nil) { aiDetail = detail }
     }
 
     /// Phones: resend unanswered asks of the active room (new packet id, retryOf = original)
@@ -1179,6 +1246,9 @@ final class MeshService: ObservableObject {
             var canWarm = false
             do {
                 let models = try await client.installedModels()
+                self?.installedModels = models
+                self?.ollamaReachable = true
+                self?.visionModel = VisionModels.pick(installed: models)
                 let digests = (try? await client.installedModelDigests()) ?? [:]
                 self?.modelDigest = digests[client.model] ?? digests[client.model + ":latest"] ?? ""
                 let has = models.contains(client.model) || models.contains(client.model + ":latest")
@@ -1193,6 +1263,9 @@ final class MeshService: ObservableObject {
                 }
             } catch {
                 status = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+                self?.ollamaReachable = false
+                self?.installedModels = []
+                self?.visionModel = nil
             }
             self?.ollamaStatus = status
             guard canWarm, let service = self, service.aiEngine != .echo else { return }
@@ -1204,6 +1277,7 @@ final class MeshService: ObservableObject {
                 self?.ollamaStatus = "Ready. \(loaded) loaded in \(String(format: "%.1f", seconds)) s. Kept warm while Pasa runs (checked every minute)."
                 self?.modelWarm = true
                 self?.lastWarm = Date()
+                self?.refreshProof()
             } catch {
                 let why = (error as? LLMError)?.errorDescription ?? error.localizedDescription
                 self?.ollamaStatus = status + " Warm-up failed: \(why)"
@@ -1408,6 +1482,7 @@ final class MeshService: ObservableObject {
         queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true, room: activeRoom.id)
         #if os(macOS)
         if kind == .audio { transcribeIfNeeded(manifest.mediaId) }
+        if kind == .image { photoArrived(manifest.mediaId) }
         #endif
     }
 
@@ -1479,6 +1554,7 @@ final class MeshService: ObservableObject {
                 mediaVersion += 1
                 #if os(macOS)
                 if known?.kind == .audio { transcribeIfNeeded(chunk.mediaId) }
+                if known?.kind == .image { photoArrived(chunk.mediaId) }
                 #endif
             } else {
                 lastProblem = "Could not save a received photo or voice note (cache full or disk error)."
@@ -1533,6 +1609,7 @@ final class MeshService: ObservableObject {
         mediaStore.put(m.mediaId, data: data, ext: m.fileExtension)
         #if os(macOS)
         if m.kind == .audio { transcribeIfNeeded(m.mediaId) }
+        if m.kind == .image { photoArrived(m.mediaId) }
         #endif
     }
 
@@ -1944,7 +2021,7 @@ final class MeshService: ObservableObject {
     /// second answer: the stored answer is re-delivered instead.
     private func enqueueAsk(_ ask: MeshMessage, roomID: String) {
         guard let room = rooms.room(withID: roomID), room.canSend else { return }
-        switch askQueue.enqueue(room: roomID, askID: ask.askKey, payload: ask) {
+        switch askQueue.enqueue(room: roomID, askID: ask.askKey, payload: .ask(ask)) {
         case .queued:
             pumpAsks()
         case .duplicate:
@@ -1972,20 +2049,59 @@ final class MeshService: ObservableObject {
         }
     }
 
-    private func run(_ job: AskJob<MeshMessage>) async {
-        let ask = job.payload
+    private func run(_ job: AskJob<AIJob>) async {
         let roomID = job.room
         guard let room = rooms.room(withID: roomID), room.canSend, let mem = memoryFor(roomID) else {
             askQueue.finish(job.askID, answerID: nil)
             return
         }
+        let ask: MeshMessage
+        switch job.payload {
+        case .ask(let a):
+            ask = a
+        case .photo(let media, let photoAsk):
+            await runPhoto(media: media, ask: photoAsk, room: roomID, memory: mem)
+            askQueue.finish(job.askID, answerID: nil)
+            return
+        case .digest(let due):
+            await runDigest(due, room: room, memory: mem)
+            askQueue.finish(job.askID, answerID: nil)
+            return
+        case .summaryNow:
+            await runSummaryNow(room: room, memory: mem, replyTo: nil)
+            askQueue.finish(job.askID, answerID: nil)
+            return
+        }
+        // "@pasa what is this": check the newest photo in this room with the vision model.
+        if aiEngine == .assistant, IntentParser.fastPath(ask.body)?.kind == .describePhoto {
+            if let media = latestPhoto(in: roomID, preferFrom: ask.origin) {
+                await runPhoto(media: media, ask: ask, room: roomID, memory: mem)
+            } else {
+                sendAnswer(AIReply(text: "I do not see a photo in \(room.displayName) from the last 30 minutes. Send one, then ask \(AssistantMention.primary) what is this."),
+                           to: ask, room: roomID, intent: IntentKind.describePhoto.rawValue, error: nil)
+            }
+            askQueue.finish(job.askID, answerID: nil)
+            saveLedger()
+            return
+        }
         switch aiEngine {
         case .assistant:
             assistant.serve(room: roomID, memory: mem, clearedAt: clearedAtFor(roomID))
+            assistant.roomLabel = room.displayName
+            assistant.digestSchedule = digestSchedule
             let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since)
             if outcome.error != nil, askQueue.wasCutBySleep(job) {
                 // The Mac slept during the model call: answer it after wake instead.
                 askQueue.requeueInFlight()
+                return
+            }
+            if let digest = outcome.digest {
+                // "@pasa summary": one summary card for the whole room (answers the ask too).
+                recordDigest(digest, room: roomID)
+                let id = sendCard(digest.text, card: "summary", room: roomID, replyTo: ask.askKey, personal: digest.personal,
+                                  proof: proof(model: digest.model, tps: digest.tokensPerSecond, ms: outcome.latencyMs), asker: ask)
+                askQueue.finish(job.askID, answerID: id)
+                saveLedger()
                 return
             }
             let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
@@ -2036,6 +2152,10 @@ final class MeshService: ObservableObject {
         copy.latencyMs = stored.message.latencyMs
         copy.tokensPerSecond = stored.message.tokensPerSecond
         copy.checked = stored.message.checked
+        copy.proof = stored.message.proof
+        copy.card = stored.message.card
+        copy.personal = stored.message.personal
+        copy.suggestions = stored.message.suggestions
         transmit(copy, room: room, excluding: [])
     }
 
@@ -2054,6 +2174,8 @@ final class MeshService: ObservableObject {
         message.latencyMs = reply.latencyMs
         message.tokensPerSecond = reply.tokensPerSecond
         message.checked = reply.checked
+        message.proof = proof(model: reply.model, tps: reply.tokensPerSecond, ms: reply.latencyMs)
+        logProof(message.proof!, room: roomID, kind: intent)
 
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         if ask.origin == displayName {
@@ -2157,6 +2279,7 @@ final class MeshService: ObservableObject {
             sendAIStatus(asleep: false)
             checkOllama()
         }
+        lastDigestCheck = .distantPast   // a digest the Mac slept through runs now
         refreshAIAvailability()
         pumpAsks()
     }
@@ -2164,9 +2287,224 @@ final class MeshService: ObservableObject {
     private func sendAIStatus(asleep: Bool, now: Date = Date()) {
         lastStatusAt = now
         let status = AIStatus(device: displayName, state: asleep ? .asleep : .awake, model: ollamaModel,
-                              queue: askQueue.depth, rooms: servedRoomIDs, at: now)
+                              queue: askQueue.depth, rooms: servedRoomIDs, at: now, internet: internetState)
         guard let blob = AIStatusTracker.make(status, identity: identity), let body = PasaJSON.string(blob) else { return }
         sendClear(engine.makeOutgoing(kind: .aiStatus, body: body, destination: nil, ttl: AIStatusTracker.ttl))
     }
+
+    // MARK: Local proof (badge on every answer, Proof panel)
+
+    /// Name the badge shows for this Mac: the chosen display name ("Site Office"), else the device id.
+    var macProofName: String { personName.isEmpty ? displayName : personName }
+
+    private func proof(model: String?, tps: Double?, ms: Int) -> AIProof {
+        AIProof(mac: macProofName, model: model, internet: internetState, tokensPerSecond: tps, latencyMs: ms)
+    }
+
+    private func logProof(_ p: AIProof, room roomID: String, kind: String) {
+        proofLog.add(.init(at: Date(), room: rooms.room(withID: roomID)?.displayName ?? "", kind: kind, proof: p))
+    }
+
+    /// Proof panel: what Ollama has loaded and how much memory it uses (local /api/ps).
+    func refreshProof() {
+        let client = makeClient()
+        Task { [weak self] in
+            let running = (try? await client.runningModels()) ?? []
+            self?.ollamaRunning = running
+        }
+    }
+
+    /// Sends an AI card (daily summary or photo check) to everyone in the room.
+    @discardableResult
+    private func sendCard(_ text: String, card: String, room roomID: String, replyTo: UUID?, personal: [String: String]? = nil,
+                          suggestions: [String]? = nil, proof cardProof: AIProof, asker: MeshMessage? = nil) -> UUID {
+        var message = engine.makeOutgoing(kind: .answer, body: text, destination: nil, replyTo: replyTo, replyPath: asker?.hops)
+        message.card = card
+        message.personal = personal
+        message.suggestions = suggestions?.isEmpty == false ? suggestions : nil
+        message.proof = cardProof
+        message.model = cardProof.model
+        message.latencyMs = cardProof.latencyMs
+        message.tokensPerSecond = cardProof.tokensPerSecond
+        var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
+        if let asker, asker.origin == displayName {
+            entry.direction = .received
+            if let askedAt = sentAsks.removeValue(forKey: asker.askKey) {
+                entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
+                refreshWaitingAsks()
+            }
+        }
+        if let room = rooms.room(withID: roomID) { entry.sentTo = transmit(message, room: room, excluding: []) }
+        if asker?.origin == displayName { entry.direction = .received }
+        appendEntry(entry, room: roomID)
+        logProof(cardProof, room: roomID, kind: card)
+        assistantLog.append(AssistantLogEntry(
+            id: message.id, at: Date(), asker: asker?.origin ?? displayName, question: asker?.body ?? (card == "summary" ? "(scheduled summary)" : "(photo arrived)"),
+            askHops: asker?.hopCount ?? 0, intent: card, reply: text, model: cardProof.model, latencyMs: cardProof.latencyMs,
+            tokensPerSecond: cardProof.tokensPerSecond, compact: false, error: nil,
+            roomID: roomID, roomLabel: rooms.room(withID: roomID)?.displayName ?? ""))
+        if assistantLog.count > 200 { assistantLog.removeFirst(assistantLog.count - 200) }
+        return message.id
+    }
+
+    // MARK: Daily digest
+
+    private func digestURL(_ roomID: String) -> URL? { rooms.fileURL("digests.json", roomID: roomID) }
+
+    private func recordDigest(_ digest: DailyDigest, room roomID: String) {
+        var book = DigestBook.load(digestURL(roomID))
+        book.record(digest)
+        _ = book.save(digestURL(roomID))
+        if !digest.skipped { lastDigest = digest }
+    }
+
+    /// Every 30 s (and right after wake): queue the scheduled digest of each served room that is due.
+    private func checkDigests(now: Date) {
+        guard isAIPeer, !macAsleep, aiEngine == .assistant else { return }
+        for roomID in servedRoomIDs {
+            let url = digestURL(roomID)
+            var book = DigestBook.load(url)
+            let due = DigestClock.due(now: now, schedule: digestSchedule, book: book, calendar: .current)
+                .filter { !digestQueued.contains(roomID + "|" + $0.day) }
+            if due.isEmpty {
+                // Nothing pending for this room: remember that the Mac was awake and watching now.
+                if !digestQueued.contains(where: { $0.hasPrefix(roomID + "|") }) {
+                    book.lastCheckedAt = now
+                    _ = book.save(url)
+                }
+                continue
+            }
+            for d in due {
+                digestQueued.insert(roomID + "|" + d.day)
+                _ = askQueue.enqueue(room: roomID, askID: UUID(), payload: .digest(d), now: now)
+            }
+        }
+        aiQueueDepth = askQueue.depth
+    }
+
+    private func runDigest(_ due: DigestClock.Due, room: Room, memory mem: OrgMemory) async {
+        defer { digestQueued.remove(room.id + "|" + due.day) }
+        guard DigestBook.load(digestURL(room.id)).days[due.day] == nil else { return }
+        let digest = await DigestWriter.make(room: room.id, label: room.displayName, snapshot: mem.snapshot, day: due.day, interval: due.interval,
+                                             scheduled: true, late: due.late, llm: makeClient(), now: Date(), calendar: .current,
+                                             directory: directory, schedule: digestSchedule)
+        recordDigest(digest, room: room.id)
+        guard !digest.skipped else { return }
+        sendCard(digest.text, card: "summary", room: room.id, replyTo: nil, personal: digest.personal,
+                 proof: proof(model: digest.model, tps: digest.tokensPerSecond, ms: digest.latencyMs))
+    }
+
+    private func runSummaryNow(room: Room, memory mem: OrgMemory, replyTo: UUID?) async {
+        let now = Date()
+        let digest = await DigestWriter.make(room: room.id, label: room.displayName, snapshot: mem.snapshot,
+                                             day: DigestClock.dayKey(now, calendar: .current), interval: DigestClock.dayInterval(of: now, calendar: .current),
+                                             scheduled: false, late: false, llm: makeClient(), now: now, calendar: .current,
+                                             directory: directory, schedule: digestSchedule)
+        recordDigest(digest, room: room.id)
+        sendCard(digest.text, card: "summary", room: room.id, replyTo: replyTo, personal: digest.personal,
+                 proof: proof(model: digest.model, tps: digest.tokensPerSecond, ms: digest.latencyMs))
+    }
+
+    /// Admin button on the Mac: send today's summary so far to a room now.
+    func sendSummaryNow(roomID: String? = nil) {
+        let id = roomID ?? activeRoom.id
+        guard rooms.room(withID: id)?.canSend == true else { return }
+        _ = askQueue.enqueue(room: id, askID: UUID(), payload: .summaryNow)
+        aiQueueDepth = askQueue.depth
+        pumpAsks()
+    }
+
+    func setDigestSchedule(_ schedule: DigestSchedule) {
+        digestSchedule = schedule
+        defaults.set(schedule.enabled, forKey: Keys.digestEnabled)
+        defaults.set(schedule.hour, forKey: Keys.digestHour)
+        defaults.set(schedule.minute, forKey: Keys.digestMinute)
+    }
+
+    // MARK: Photo checks (local vision model)
+
+    func setAutoDescribePhotos(_ on: Bool) {
+        autoDescribePhotos = on
+        defaults.set(on, forKey: Keys.autoPhotos)
+    }
+
+    /// Newest photo in the room from the last 30 minutes (the asker's own first).
+    private func latestPhoto(in roomID: String, preferFrom device: String) -> MeshMessage? {
+        let cutoff = Date().addingTimeInterval(-1800)
+        let photos = entriesFor(roomID).filter {
+            $0.message.kind == .media && $0.receivedAt >= cutoff && MediaManifest.decode($0.message.body)?.kind == .image
+        }
+        return (photos.last { $0.message.origin == device } ?? photos.last)?.message
+    }
+
+    /// A photo is complete on the Mac: check it once with the vision model, if on and installed.
+    private func photoArrived(_ mediaId: UUID) {
+        guard isAIPeer, autoDescribePhotos, visionModel != nil, aiEngine == .assistant, visionCache[mediaId] == nil else { return }
+        let roomID = mediaRoom[mediaId] ?? activeRoom.id
+        guard let entry = entriesFor(roomID).last(where: { $0.message.kind == .media && MediaManifest.decode($0.message.body)?.mediaId == mediaId }),
+              rooms.room(withID: roomID)?.canSend == true else { return }
+        _ = askQueue.enqueue(room: roomID, askID: entry.message.id, payload: .photo(media: entry.message, ask: nil))
+        aiQueueDepth = askQueue.depth
+        pumpAsks()
+    }
+
+    private func runPhoto(media: MeshMessage, ask: MeshMessage?, room roomID: String, memory mem: OrgMemory) async {
+        guard let manifest = MediaManifest.decode(media.body), manifest.kind == .image else { return }
+        let replyTo = ask?.askKey ?? media.id
+        func tell(_ text: String, error: String? = nil) {
+            if let ask { sendAnswer(AIReply(text: text), to: ask, room: roomID, intent: IntentKind.describePhoto.rawValue, error: error) }
+        }
+        if let cached = visionCache[manifest.mediaId] {
+            if ask != nil {
+                sendCard(cached.text, card: "vision", room: roomID, replyTo: replyTo, suggestions: cached.suggestions,
+                         proof: proof(model: visionModel, tps: nil, ms: 0), asker: ask)
+            }
+            return
+        }
+        guard let model = visionModel else { tell(VisionModels.notInstalledMessage); return }
+        guard let data = mediaStore.data(manifest.mediaId) else {
+            tell("That photo has not fully reached the AI Mac yet. Ask again in a moment.")
+            return
+        }
+        let jpeg = VisionImage.downscale(data) ?? data
+        let memoryBytes = ProcessInfo.processInfo.physicalMemory
+        let client = VisionClient(model: model, keepAlive: VisionPolicy.keepAlive(physicalMemory: memoryBytes))
+        let started = Date()
+        do {
+            let result = try await client.analyze(jpeg: jpeg, caption: ask?.body)
+            let ms = Int((Date().timeIntervalSince(started) * 1000).rounded())
+            guard let finding = VisionPrompt.parse(result.text) else {
+                tell("The vision model could not read that photo.")
+                return
+            }
+            let related = VisionCard.relatedRules(finding, rules: mem.rules)
+            let text = VisionCard.text(finding, sender: senderLabel(for: media), related: related)
+            visionCache[manifest.mediaId] = (text, finding.tasks)
+            mem.recordChat(from: senderLabel(for: media), text: VisionCard.logLine(finding), at: Date(), device: media.origin)
+            sendCard(text, card: "vision", room: roomID, replyTo: replyTo, suggestions: finding.tasks,
+                     proof: proof(model: result.model, tps: result.tokensPerSecond, ms: ms), asker: ask)
+        } catch LLMError.modelMissing {
+            visionModel = nil
+            tell(VisionModels.notInstalledMessage)
+        } catch {
+            let why = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+            tell("Photo check failed: \(why)", error: why)
+        }
+        // Tight memory: the vision model unloads after 30 s; load the chat model back now.
+        if VisionPolicy.rewarmTextModel(physicalMemory: memoryBytes), !ollamaBusy { refreshWarm() }
+        refreshProof()
+    }
     #endif
+
+    // MARK: Onboarding
+
+    func finishOnboarding() {
+        onboardingDone = true
+        defaults.set(true, forKey: Keys.onboarded)
+    }
+
+    func replayOnboarding() {
+        onboardingDone = false
+        defaults.set(false, forKey: Keys.onboarded)
+    }
 }

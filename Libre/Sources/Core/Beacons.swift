@@ -112,8 +112,11 @@ public struct AIStatus: Codable, Equatable, Sendable {
     /// Room tags this Mac answers in.
     public var rooms: [String]
     public var at: Date
+    /// The Mac's internet state (path monitor). nil from builds before Local proof.
+    public var internet: InternetState?
 
-    public init(device: String, state: State, model: String, queue: Int, rooms: [String], at: Date) {
+    public init(device: String, state: State, model: String, queue: Int, rooms: [String], at: Date, internet: InternetState? = nil) {
+        self.internet = internet
         self.device = device
         self.state = state
         self.model = model
