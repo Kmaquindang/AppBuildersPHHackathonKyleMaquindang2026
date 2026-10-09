@@ -178,7 +178,7 @@ struct AdvancedSettingsView: View {
                         LabeledContent("Room creator (\(adminLabel(mesh.activeRoom.creator)))", value: "pinned admin")
                     }
                     if mesh.adminCandidates.isEmpty {
-                        Text("No other devices seen yet. Open Pasa on a phone nearby, then come back here.")
+                        Text("No other devices seen yet. Open Libre on a phone nearby, then come back here.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(mesh.adminCandidates.filter { $0 != mesh.activeRoom.creator }, id: \.self) { device in
@@ -270,10 +270,10 @@ struct AdvancedSettingsView: View {
                     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                     do {
                         let data = try Data(contentsOf: url)
-                        _ = try OrgMemory.decodeBackup(data)   // check it is Pasa team memory before asking
+                        _ = try OrgMemory.decodeBackup(data)   // check it is Libre team memory before asking
                         pendingImport = data
                     } catch {
-                        backupMessage = "That file is not a Pasa team memory backup."
+                        backupMessage = "That file is not a Libre team memory backup."
                     }
                 case .failure(let error):
                     backupMessage = "Import failed: \(error.localizedDescription)"

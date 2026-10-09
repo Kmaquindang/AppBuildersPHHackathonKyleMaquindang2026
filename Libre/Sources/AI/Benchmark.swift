@@ -239,7 +239,7 @@ public enum BenchmarkReport {
     }
 
     public static func markdown(header: Header, runs: [(String, [BenchmarkResult])]) -> String {
-        var out = ["# Pasa benchmark (\(BenchmarkSuite.version))", "",
+        var out = ["# Libre benchmark (\(BenchmarkSuite.version))", "",
                    "- Date: \(header.date)", "- Machine: \(header.machine)", "- Ollama: \(header.ollamaVersion)",
                    "- Questions: \(BenchmarkSuite.questions.count) fixed (11 English, 6 Tagalog, 3 Cebuano; 16 with a matching rule, 4 with none), synthetic team memory of 10 rules",
                    "- Pipeline: the app's ExecutiveAssistant (plain questions skip the intent call; grounded answer call with keyword retrieval, citation guard and chat styling), local Ollama on 127.0.0.1 only",

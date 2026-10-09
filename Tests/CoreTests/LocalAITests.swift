@@ -148,7 +148,7 @@ func runDigestTests() async {
     a.now = { manila(2026, 10, 9, 15) }
     a.roomLabel = "BOHOL-7"
     let out = await a.handle("summary", from: "DEV_KYLE")
-    check(out.intent == .dailySummary && out.digest?.scheduled == false && out.reply.contains("Summary so far: BOHOL-7") && !out.compact, "@pasa summary makes an on-demand digest card")
+    check(out.intent == .dailySummary && out.digest?.scheduled == false && out.reply.contains("Summary so far: BOHOL-7") && !out.compact, "@libre summary makes an on-demand digest card")
     check(IntentParser.fastPath("recap")?.kind == .summarize && IntentParser.fastPath("buod")?.kind == .dailySummary, "recap stays catch-up, buod is the digest")
 }
 
@@ -166,7 +166,7 @@ func runVisionTests() async {
     let client = VisionClient(model: VisionModels.primary, keepAlive: "30s", poster: poster)
     let jpeg = Data([0xFF, 0xD8, 0xFF, 0x01, 0x02])
     do {
-        let result = try await client.analyze(jpeg: jpeg, caption: "@pasa what is this")
+        let result = try await client.analyze(jpeg: jpeg, caption: "@libre what is this")
         check(poster.urls.first?.absoluteString == "http://127.0.0.1:11434/api/chat", "vision posts to local /api/chat")
         let json = poster.bodies.first.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let messages = json?["messages"] as? [[String: Any]]
@@ -346,7 +346,7 @@ func runChatLayoutTests() {
     check(l[a1.id]?.timestamp == "Today 8:33 PM" && l[a1.id]?.showName == true, "layout: first row gets a timestamp and the sender name")
     check(l[a2.id]?.timestamp == nil && l[a2.id]?.showName == false && l[a1.id]?.lastInGroup == false && l[a2.id]?.lastInGroup == true, "layout: same sender groups, name once")
     check(l[me1.id]?.showName == false && l[me1.id]?.statusWord == nil, "layout: never a name for self; status only on the last own message")
-    check(l[ai.id]?.showName == true && l[ai.id]?.firstInGroup == true && l[ai.id]?.lastInGroup == true, "layout: Pasa AI is its own sender")
+    check(l[ai.id]?.showName == true && l[ai.id]?.firstInGroup == true && l[ai.id]?.lastInGroup == true, "layout: Libre AI is its own sender")
     check(l[me2.id]?.timestamp != nil && l[me2.id]?.statusWord == "Queued", "layout: gap over 15 min shows a timestamp; last own message says Queued")
     check(ChatLayout.statusWord(.answered) == "Answered" && ChatLayout.statusWord(.sent) == "Delivered" && ChatLayout.statusWord(.received) == nil, "layout: status words")
     let yesterday = ChatLayout.timestampText(t0 - 86_400, now: t0, calendar: cal)

@@ -152,7 +152,7 @@ func run(_ cases: Set<String>) async {
     let all = cases.contains("all")
     func on(_ c: String) -> Bool { all || cases.contains(c) }
     let started = Date()
-    line("Pasa QA harness, model \(client.modelName), started \(started)")
+    line("Libre QA harness, model \(client.modelName), started \(started)")
     if let v = try? await client.serverVersion() { line("Ollama \(v)") }
     if let d = try? await client.installedModelDigests() { line("digests: \(d.mapValues { String($0.prefix(12)) })") }
 
@@ -306,7 +306,7 @@ func run(_ cases: Set<String>) async {
             let vc = VisionClient(model: model, keepAlive: VisionPolicy.keepAlive(physicalMemory: ProcessInfo.processInfo.physicalMemory))
             let t = Date()
             do {
-                let r = try await vc.analyze(jpeg: jpeg, caption: label == "wall" ? "@pasa what is this?" : nil)
+                let r = try await vc.analyze(jpeg: jpeg, caption: label == "wall" ? "@libre what is this?" : nil)
                 let ms = Int(Date().timeIntervalSince(t) * 1000)
                 line("  [\(label)] model=\(r.model) \(ms) ms tok/s=\(r.tokensPerSecond.map { String(format: "%.1f", $0) } ?? "-") jpeg=\(jpeg.count) B")
                 if let f = VisionPrompt.parse(r.text) {

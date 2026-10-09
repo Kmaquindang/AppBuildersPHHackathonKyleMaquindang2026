@@ -55,7 +55,7 @@ public enum KnowledgeRetriever {
         "a", "an", "the", "is", "are", "am", "be", "to", "of", "and", "or", "in", "on", "at", "for", "with",
         "can", "i", "we", "you", "it", "do", "does", "did", "what", "when", "where", "who", "how", "why",
         "my", "our", "your", "this", "that", "there", "after", "before", "about", "should", "would", "could",
-        "please", "pasa", "rule", "rules", "any", "if", "me", "us", "allowed", "ok", "okay", "pm", "am",
+        "please", "pasa", "libre", "rule", "rules", "any", "if", "me", "us", "allowed", "ok", "okay", "pm", "am",
         "ang", "ng", "sa", "ba", "na", "po", "ko", "mo", "ka", "ako", "kami", "tayo", "si", "ni", "kay", "mga",
         "ano", "pwede", "puwede", "ba", "lang", "naman", "ug", "nga", "ang", "unsa", "pila"
     ]

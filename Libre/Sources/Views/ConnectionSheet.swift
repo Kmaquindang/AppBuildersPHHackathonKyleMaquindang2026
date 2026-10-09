@@ -18,7 +18,7 @@ struct ConnectionSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Pasa AI") {
+                Section("Libre AI") {
                     TintedLabel(text: StatusWords.aiWords(isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability),
                                 symbol: "circle.fill",
                                 tint: StatusWords.aiReady(isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability) ? .green : .gray,
@@ -39,7 +39,7 @@ struct ConnectionSheet: View {
 
                 Section {
                     if mesh.peers.isEmpty {
-                        Text("No one nearby yet. Teammates show up here when they open Pasa within Wi-Fi range.")
+                        Text("No one nearby yet. Teammates show up here when they open Libre within Wi-Fi range.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(mesh.peers) { peer in

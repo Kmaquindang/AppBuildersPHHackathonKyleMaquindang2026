@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pasa benchmark: 20 fixed questions (English, Tagalog, Cebuano) over fixed synthetic team memory,
+# Libre benchmark: 20 fixed questions (English, Tagalog, Cebuano) over fixed synthetic team memory,
 # through the app's real answer pipeline, against LOCAL Ollama only (127.0.0.1:11434).
 # Never pulls models: models that are not installed are listed as skipped.
 # Output: docs/benchmarks/benchmark-<date>.md and one CSV per model.

@@ -103,7 +103,7 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     /// MCPeerID crashes on an empty name or one longer than 63 UTF-8 bytes.
     static func sanitize(_ raw: String) -> String {
         var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty { name = "Pasa device" }
+        if name.isEmpty { name = "Libre device" }
         while name.utf8.count > maxNameBytes { name.removeLast() }
         return name
     }

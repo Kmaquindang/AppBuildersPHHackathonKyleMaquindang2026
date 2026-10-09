@@ -67,9 +67,9 @@ func runRound2UITests() {
 
     // 2. "@" suggestions and starter chips.
     check(MentionSuggest.suggestions(for: "@") == MentionSuggest.items && MentionSuggest.suggestions(for: "@pa").count == 4, "round2: '@' at the start lists ready asks")
-    check(MentionSuggest.suggestions(for: "hi @p") == ["@pasa"], "round2: mid-sentence offers only @pasa")
-    check(MentionSuggest.suggestions(for: "@pasa ").isEmpty && MentionSuggest.suggestions(for: "@bob").isEmpty && MentionSuggest.suggestions(for: "hello").isEmpty, "round2: no list after a space or for other words")
-    check(MentionSuggest.apply("@pasa", to: "@p") == "@pasa " && MentionSuggest.apply("@pasa my tasks", to: "@") == "@pasa my tasks", "round2: picking a suggestion fills the field")
+    check(MentionSuggest.suggestions(for: "hi @p") == ["@libre"], "round2: mid-sentence offers only @libre")
+    check(MentionSuggest.suggestions(for: "@libre ").isEmpty && MentionSuggest.suggestions(for: "@bob").isEmpty && MentionSuggest.suggestions(for: "hello").isEmpty, "round2: no list after a space or for other words")
+    check(MentionSuggest.apply("@libre", to: "@p") == "@libre " && MentionSuggest.apply("@libre my tasks", to: "@") == "@libre my tasks", "round2: picking a suggestion fills the field")
     check(StarterChipPolicy.visible(entriesEmpty: true, afterOnboarding: false, canSend: true, typing: false), "round2: chips in an empty chat")
     check(!StarterChipPolicy.visible(entriesEmpty: false, afterOnboarding: false, canSend: true, typing: false), "round2: chips hidden once the chat has messages")
     check(!StarterChipPolicy.visible(entriesEmpty: false, afterOnboarding: true, canSend: true, typing: false) && !StarterChipPolicy.visible(entriesEmpty: true, afterOnboarding: true, canSend: true, typing: true), "ui pass: chips only in an empty chat, hidden while typing")
@@ -94,14 +94,14 @@ func runRound2UITests() {
     let k3 = row("KYLE", .ask, t0 + 50, mine: true)
     let p3 = row("MAC", .answer, t0 + 52, mine: false, replyTo: k3.id)
     let l = ChatLayout.layout([k1, p1, k2, p2, ana, k3, p3], statuses: [:], now: t0 + 60)
-    check(l[p1.id]?.showName == true && l[p2.id]?.showName == false, "round2: 'Pasa AI' once across a Q and A run")
+    check(l[p1.id]?.showName == true && l[p2.id]?.showName == false, "round2: 'Libre AI' once across a Q and A run")
     check(l[ana.id]?.showName == true && l[p3.id]?.showName == true, "round2: name again after someone else spoke")
-    check(l[p2.id]?.lastInGroup == true && l[k2.id]?.showName == false, "round2: avatar on the last Pasa bubble; never a name for self")
+    check(l[p2.id]?.lastInGroup == true && l[k2.id]?.showName == false, "round2: avatar on the last Libre bubble; never a name for self")
 
     // 7. Live info prompt.
     let system = AssistantPrompts.answerSystem
     check(system.contains("cannot get live or real-time information") && system.contains("weather") && system.contains("can't get live info while offline"), "round2: prompt says no live info offline")
-    check(system.contains("Never tell them to check an app, a website or the internet") && system.contains("team's notes"), "round2: prompt offers what Pasa can do instead")
+    check(system.contains("Never tell them to check an app, a website or the internet") && system.contains("team's notes"), "round2: prompt offers what Libre can do instead")
     check(LiveInfo.looksLive("what's the weather looking like?") && LiveInfo.looksLive("Any news today?") && LiveInfo.looksLive("presyo ngayon ng semento?"), "round2: live questions detected")
     check(!LiveInfo.looksLive("can I put a Christmas tree up in October?") && !LiveInfo.looksLive("what are our rules?") && !LiveInfo.looksLive("renews the permit?"), "round2: normal questions are not live")
     let weatherPrompt = AssistantPrompts.answerUser(question: "what's the weather looking like?", asker: "Kyle", rules: [], notes: [], openTasks: [])
@@ -158,8 +158,8 @@ func runStagingTests() {
     d.removePhoto(second)
     check(d.photos.count == 3 && !d.photos.contains { $0.id == second } && d.photoSlots == 1, "staging: X removes that photo")
     check(d.plan.text == nil && d.plan.photos.count == 3 && !d.plan.isAsk, "staging: photos without a caption")
-    d.text = "  @pasa what is this? "
-    check(d.plan.isAsk && d.plan.text == "@pasa what is this?" && d.plan.photos.count == 3, "staging: @pasa caption is one ask with the photos")
+    d.text = "  @libre what is this? "
+    check(d.plan.isAsk && d.plan.text == "@libre what is this?" && d.plan.photos.count == 3, "staging: @libre caption is one ask with the photos")
     d.text = "new rebar delivery"
     check(!d.plan.isAsk && d.plan.text == "new rebar delivery", "staging: plain caption goes as chat")
     d.clear()

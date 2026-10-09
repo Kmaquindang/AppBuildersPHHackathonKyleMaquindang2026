@@ -46,11 +46,11 @@ enum VoiceTranscriber {
         let status = await authorize()
         guard status == .authorized else {
             return TranscriptPayload(text: "", locale: localeID,
-                                     note: "No transcript: allow Speech Recognition for Pasa in System Settings > Privacy & Security.")
+                                     note: "No transcript: allow Speech Recognition for Libre in System Settings > Privacy & Security.")
         }
         guard let (recognizer, used, fallbackNote) = onDeviceRecognizer(localeID) else {
             return TranscriptPayload(text: "", locale: localeID,
-                                     note: "No transcript: on-device speech recognition for \(localeID) is not available on this Mac. Turn on Dictation in System Settings > Keyboard to download it. Pasa never sends audio to a server.")
+                                     note: "No transcript: on-device speech recognition for \(localeID) is not available on this Mac. Turn on Dictation in System Settings > Keyboard to download it. Libre never sends audio to a server.")
         }
         guard recognizer.isAvailable else {
             return TranscriptPayload(text: "", locale: used, note: "No transcript: speech recognition is busy or unavailable right now.")

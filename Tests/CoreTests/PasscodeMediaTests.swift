@@ -237,16 +237,18 @@ func runMediaTests() {
 
     // Transcripts and voice asks.
     do {
-        let t = TranscriptPayload(text: "At Pasa remind Ana to order cement Friday", locale: "en-US")
+        let t = TranscriptPayload(text: "At Libre remind Ana to order cement Friday", locale: "en-US")
         check(TranscriptPayload.decode(t.encoded()!) == t, "transcript: round trip")
         check(TranscriptPayload(text: "", locale: "fil-PH", note: "No on-device model").displayLine == "No on-device model", "transcript: note shown when no text")
-        check(VoiceAsk.extract("At Pasa, remind Ana to order cement Friday.") == "remind Ana to order cement Friday.", "voice ask: 'At Pasa,' routes to the AI")
-        check(VoiceAsk.extract("@Pasa can I visit the site at 6 PM?") == "can I visit the site at 6 PM?", "voice ask: '@Pasa'")
-        check(VoiceAsk.extract("Pasa, what did I miss?") == "what did I miss?", "voice ask: 'Pasa,'")
+        check(VoiceAsk.extract("At Libre, remind Ana to order cement Friday.") == "remind Ana to order cement Friday.", "voice ask: 'At Libre,' routes to the AI")
+        check(VoiceAsk.extract("@Libre can I visit the site at 6 PM?") == "can I visit the site at 6 PM?", "voice ask: '@Libre'")
+        check(VoiceAsk.extract("Libre, what did I miss?") == "what did I miss?", "voice ask: 'Libre,'")
         check(VoiceAsk.extract("hey pasa my tasks") == "my tasks", "voice ask: 'hey pasa'")
-        check(VoiceAsk.extract("Pasa lang ang message sa lahat") == nil, "voice ask: plain Tagalog 'Pasa lang' is not a call")
+        check(VoiceAsk.extract("Libre lang ang message sa lahat") == nil, "voice ask: plain Tagalog 'Libre lang' is not a call")
+        check(VoiceAsk.extract("At Pasa, remind Ana to order cement Friday.") == "remind Ana to order cement Friday.", "voice ask: old 'At Pasa,' still routes")
+        check(VoiceAsk.extract("Pasa lang ang message") == nil, "voice ask: plain Tagalog 'Pasa lang' is not a call")
         check(VoiceAsk.extract("At pasalubong time we leave") == nil, "voice ask: 'at pasalubong' is not a call")
-        check(VoiceAsk.extract("At Pasa.") == nil, "voice ask: a call with no question is ignored")
+        check(VoiceAsk.extract("At Libre.") == nil, "voice ask: a call with no question is ignored")
         check(VoiceAsk.extract("The truck is at the gate") == nil, "voice ask: ordinary voice note stays chat")
     }
 

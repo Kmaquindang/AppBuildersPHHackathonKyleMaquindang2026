@@ -33,8 +33,8 @@ struct TasksView: View {
             Section {
                 if board.open.isEmpty && board.overdue.isEmpty {
                     Text(mesh.isAIPeer
-                         ? "No open tasks. Phones add them with \"@pasa remind Ana to ...\"."
-                         : "No open tasks yet. Tasks for you arrive from the AI Mac. Try \"@pasa remind me to check the generator Friday\" in the chat.")
+                         ? "No open tasks. Phones add them with \"@libre remind Ana to ...\"."
+                         : "No open tasks yet. Tasks for you arrive from the AI Mac. Try \"@libre remind me to check the generator Friday\" in the chat.")
                         .foregroundStyle(.secondary)
                 }
                 rows(board.open, now: now)

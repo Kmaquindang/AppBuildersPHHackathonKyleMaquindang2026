@@ -30,7 +30,7 @@ struct PhoneKnowledgeSection: View {
         } header: {
             Text("Knowledge")
         } footer: {
-            Text("Ask @pasa about these documents. Answers show the page they came from; tap it to read the quoted passage.")
+            Text("Ask @libre about these documents. Answers show the page they came from; tap it to read the quoted passage.")
         }
     }
 }
@@ -128,7 +128,7 @@ struct KnowledgeView: View {
             }
         }
         .fileExporter(isPresented: Binding(get: { exportDoc != nil }, set: { if !$0 { exportDoc = nil } }),
-                      document: exportDoc, contentType: .json, defaultFilename: "Pasa Knowledge \(mesh.activeRoom.displayName)") { _ in exportDoc = nil }
+                      document: exportDoc, contentType: .json, defaultFilename: "Libre Knowledge \(mesh.activeRoom.displayName)") { _ in exportDoc = nil }
         .confirmationDialog("Remove \(confirmRemove?.title ?? "")? Its passages and vectors are deleted from this Mac.",
                             isPresented: Binding(get: { confirmRemove != nil }, set: { if !$0 { confirmRemove = nil } }),
                             titleVisibility: .visible) {

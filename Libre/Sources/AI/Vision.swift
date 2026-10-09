@@ -179,7 +179,7 @@ public struct VisionClient: Sendable {
 
     /// Sends one photo (already downscaled JPEG) and returns the model's raw reply and timings.
     public func analyze(jpeg: Data, caption: String? = nil) async throws -> LLMResult {
-        guard OllamaClient.isLoopback(baseURL) else { throw LLMError.badResponse("Pasa only talks to Ollama on this Mac") }
+        guard OllamaClient.isLoopback(baseURL) else { throw LLMError.badResponse("Libre only talks to Ollama on this Mac") }
         let body = try requestBody(jpeg: jpeg, caption: caption)
         let (data, status) = try await poster.post(baseURL.appendingPathComponent("api/chat"), body: body, timeout: timeout)
         let decoded = try? JSONDecoder().decode(OllamaClient.ChatResponse.self, from: data)

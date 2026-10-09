@@ -67,7 +67,7 @@ public struct OllamaResponder: AIResponder {
     public func respond(to question: String, from asker: String) async throws -> AIReply {
         let started = Date()
         let result = try await client.chat([
-            .system("You are Pasa, a helpful assistant running offline on a laptop for people with no internet. Answer in plain text, at most 3 short sentences."),
+            .system("You are Libre, a helpful assistant running offline on a laptop for people with no internet. Answer in plain text, at most 3 short sentences."),
             .user(question)
         ], json: false)
         let parts = Compactor.split(result.text)

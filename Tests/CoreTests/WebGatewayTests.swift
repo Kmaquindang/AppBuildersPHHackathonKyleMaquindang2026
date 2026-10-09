@@ -17,7 +17,7 @@ final class FakeGatewayBackend: GatewayBackend {
         let all = posted.enumerated().map { i, p in
             GatewayMessage(id: "m\(i)", seq: i + 1, from: p.1.displayName, text: p.0, mine: p.1.token == session.token, pasa: false, kind: "chat", at: Date(timeIntervalSince1970: 0))
         }
-        return GatewayState(room: "R", seq: all.count, messages: all.filter { $0.seq > since }, tasks: [], ai: "Pasa is on")
+        return GatewayState(room: "R", seq: all.count, messages: all.filter { $0.seq > since }, tasks: [], ai: "Libre is on")
     }
     func gatewayJoined(_ session: GatewaySession) { joined.append(session) }
 }
@@ -68,7 +68,7 @@ func runWebGatewayTests() async {
     check(url == "http://172.20.10.3:8787/join?room=BOHOL%207", "gateway: browser QR url \(url)")
     check(!url.contains(code) && !url.contains("K7QM") && !url.contains("code"), "gateway: code never in the browser QR")
     let app = GatewayNet.appURL(room: "BOHOL 7")
-    check(app.hasPrefix("pasa://join?room=BOHOL%207") && !app.contains("code"), "gateway: app button carries the room only")
+    check(app.hasPrefix("libre://join?room=BOHOL%207") && !app.contains("code"), "gateway: app button carries the room only")
     if case .success = JoinLink.parse(app) { check(false, "gateway: app link without a code is not a full join link") }
     else { check(true, "gateway: app link without a code is not a full join link") }
 
@@ -83,7 +83,7 @@ func runWebGatewayTests() async {
     let page = GatewayPage.html
     check(!page.contains("http://") && !page.contains("https://") && !page.contains("//cdn"), "gateway: page loads nothing from the internet")
     check(!page.contains("innerHTML"), "gateway: page never sets user text as HTML")
-    check(page.contains("same Wi-Fi") && page.contains("not encrypted") && page.contains("Open in Pasa app"), "gateway: page tells the truth")
+    check(page.contains("same Wi-Fi") && page.contains("not encrypted") && page.contains("Open in Libre app"), "gateway: page tells the truth")
 
     // Join check (same derivation as the app)
     let rounds = 1000
@@ -135,7 +135,7 @@ func runWebGatewayTests() async {
     router.rounds = rounds
     router.now = { t0 }
     var r = await router.handle(req("GET", "/join?room=BOHOL%207"), from: "192.168.1.9")
-    check(r.status == 200 && r.contentType.hasPrefix("text/html") && String(data: r.body, encoding: .utf8)!.contains("Join a Pasa room"), "gateway: join page served")
+    check(r.status == 200 && r.contentType.hasPrefix("text/html") && String(data: r.body, encoding: .utf8)!.contains("Join a Libre room"), "gateway: join page served")
     r = await router.handle(req("GET", "/join"), from: "8.8.8.8")
     check(r.status == 403, "gateway: internet address refused")
     r = await router.handle(req("GET", "/api/state"), from: "192.168.1.9")
@@ -155,8 +155,8 @@ func runWebGatewayTests() async {
     let token = json(r)["token"] as? String ?? ""
     check(r.status == 200 && token.count == 64 && json(r)["name"] as? String == "Ana (via Mac)" && fake.joined.count == 1, "gateway: right code joins")
     check(!String(data: r.body, encoding: .utf8)!.contains("K7QM"), "gateway: reply never echoes the code")
-    r = await router.handle(req("POST", "/api/send", body: #"{"text":"  @pasa what is the curfew?  "}"#, token: token), from: "192.168.1.10")
-    check(r.status == 200 && fake.posted.first?.0 == "@pasa what is the curfew?" && fake.posted.first?.1.roomID == "B7", "gateway: send reaches the room")
+    r = await router.handle(req("POST", "/api/send", body: #"{"text":"  @libre what is the curfew?  "}"#, token: token), from: "192.168.1.10")
+    check(r.status == 200 && fake.posted.first?.0 == "@libre what is the curfew?" && fake.posted.first?.1.roomID == "B7", "gateway: send reaches the room")
     r = await router.handle(req("GET", "/api/state?since=0", token: token), from: "192.168.1.10")
     let msgs = json(r)["messages"] as? [[String: Any]] ?? []
     check(r.status == 200 && msgs.count == 1 && msgs[0]["mine"] as? Bool == true, "gateway: state lists messages")
@@ -176,6 +176,6 @@ func runWebGatewayTests() async {
 
     // Doc excerpts stay capped on the wire
     let long = DocRef(title: "Guide", page: 2, version: 1, excerpt: String(repeating: "a", count: 2000))
-    let gm = GatewayMessage(id: "x", seq: 1, from: "Pasa", text: "t", mine: false, pasa: true, kind: "answer", at: t0, docs: [long])
+    let gm = GatewayMessage(id: "x", seq: 1, from: "Libre", text: "t", mine: false, pasa: true, kind: "answer", at: t0, docs: [long])
     check((gm.docs?.first?.excerpt.count ?? 0) <= 600, "gateway: excerpt cap 600")
 }

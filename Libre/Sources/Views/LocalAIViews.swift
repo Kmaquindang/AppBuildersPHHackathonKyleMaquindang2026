@@ -141,7 +141,7 @@ struct LocalAISettingsSection: View {
         } header: {
             Text("Daily summary and photos")
         } footer: {
-            Text("The summary goes to everyone in the room at \(mesh.digestSchedule.clockLabel), once a day. If this Mac was asleep then, it is sent when it wakes. Anyone can also type \"@pasa summary\". Photo checks and summaries run on this Mac only.")
+            Text("The summary goes to everyone in the room at \(mesh.digestSchedule.clockLabel), once a day. If this Mac was asleep then, it is sent when it wakes. Anyone can also type \"@libre summary\". Photo checks and summaries run on this Mac only.")
         }
     }
 }

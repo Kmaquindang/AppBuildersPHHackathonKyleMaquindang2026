@@ -356,9 +356,9 @@ struct NameOnboardingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Welcome to Pasa")
+            Text("Welcome to Libre")
                 .font(.title2.weight(.bold))
-            Text("What should your team call you? Your name shows on your messages, and \"@pasa remind \(draft.isEmpty ? "Ana" : draft) ...\" sends tasks to this device.")
+            Text("What should your team call you? Your name shows on your messages, and \"@libre remind \(draft.isEmpty ? "Ana" : draft) ...\" sends tasks to this device.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             TextField("Your name, for example Kyle", text: $draft)
@@ -398,7 +398,7 @@ struct NameOnboardingView: View {
             case .join:
                 if !joinText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     guard mesh.joinRoom(joinText) else {
-                        roomError = "That is not a Pasa room join string. Copy the whole PASA1... text."
+                        roomError = "That is not a Libre room join string. Copy the whole PASA1... text."
                         return
                     }
                 } else {

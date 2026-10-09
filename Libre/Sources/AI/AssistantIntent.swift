@@ -69,14 +69,14 @@ public struct NotesExtraction: Equatable, Sendable {
     public var actionItems: [NoteActionItem]
 }
 
-/// How a chat message calls the assistant. "@pasa" is the name since Oct 9 2026; "@libre" (the
-/// working name) stays as an alias so old habits and demo notes keep working.
+/// How a chat message calls the assistant. "@libre" is the name again since Oct 9 2026, 11:01 PM;
+/// "@pasa" (the name used earlier that day) stays as an alias so old habits and demo notes keep working.
 public enum AssistantMention {
-    public static let primary = "@pasa"
-    public static let aliases = ["@pasa", "@libre"]
+    public static let primary = "@libre"
+    public static let aliases = ["@libre", "@pasa"]
 
     /// Returns the text after a leading mention (trimmed, may be empty), or nil when the message
-    /// does not start with one. The mention must end at a word boundary, so "@pasaway" is not a call.
+    /// does not start with one. The mention must end at a word boundary, so "@pasaway" or "@libreng" is not a call.
     public static func strip(_ raw: String) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()

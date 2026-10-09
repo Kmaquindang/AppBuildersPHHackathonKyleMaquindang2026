@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pasa latency probe: a few fixed asks through the app's real answer pipeline against LOCAL
+# Libre latency probe: a few fixed asks through the app's real answer pipeline against LOCAL
 # Ollama only (127.0.0.1:11434). Prints every model call with token counts and timings.
 # Usage: scripts/ask-probe.sh [runs] [question ...]
 set -euo pipefail

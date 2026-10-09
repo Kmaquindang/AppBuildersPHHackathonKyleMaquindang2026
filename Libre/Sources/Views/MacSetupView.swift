@@ -24,7 +24,7 @@ struct MacSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Set up the AI Mac").font(.title.weight(.bold)).padding(.top, 8)
-            Text("This Mac answers \"@pasa\" for the team, offline. One-time downloads need internet; after that Pasa runs with none.")
+            Text("This Mac answers \"@libre\" for the team, offline. One-time downloads need internet; after that Libre runs with none.")
                 .foregroundStyle(.secondary)
 
             checklist
@@ -59,7 +59,7 @@ struct MacSetupView: View {
                         TintedLabel(text: blocked, symbol: "externaldrive.badge.xmark", tint: .red)
                     }
                     if plan.totalBytes > 0 && mesh.internetState == .offline {
-                        TintedLabel(text: "Connect to internet once for setup, then Pasa runs offline.", symbol: "wifi.slash", tint: .orange)
+                        TintedLabel(text: "Connect to internet once for setup, then Libre runs offline.", symbol: "wifi.slash", tint: .orange)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -92,7 +92,7 @@ struct MacSetupView: View {
                     Button(SetupChecklist.ready(items) ? "Continue" : "Later") { onDone() }
                 }
             }
-            Text("Pasa stays sandboxed. It saves the Ollama download in your Downloads folder and opens it, so macOS shows its usual security and Move to Applications prompts. Models download through Ollama on this Mac (127.0.0.1).")
+            Text("Libre stays sandboxed. It saves the Ollama download in your Downloads folder and opens it, so macOS shows its usual security and Move to Applications prompts. Models download through Ollama on this Mac (127.0.0.1).")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .task { await setup.detect() }

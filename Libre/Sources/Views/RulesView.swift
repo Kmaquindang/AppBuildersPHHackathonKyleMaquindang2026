@@ -32,7 +32,7 @@ struct RulesSection: View {
     var body: some View {
         Section {
             if rules.isEmpty {
-                Text("No rules yet. Try \"@pasa save rule: No site visits after 5 PM\".")
+                Text("No rules yet. Try \"@libre save rule: No site visits after 5 PM\".")
                     .foregroundStyle(.secondary)
             }
             ForEach(rules) { rule in
@@ -59,7 +59,7 @@ struct RulesSection: View {
             #if os(macOS)
             Text("Anyone can add a rule. Only admins (\(adminList)) can edit, lock or delete. Older versions are kept.")
             #else
-            Text("Add one with \"@pasa save rule: ...\". Admins can swipe left to delete, lock or unlock.")
+            Text("Add one with \"@libre save rule: ...\". Admins can swipe left to delete, lock or unlock.")
             #endif
         }
     }

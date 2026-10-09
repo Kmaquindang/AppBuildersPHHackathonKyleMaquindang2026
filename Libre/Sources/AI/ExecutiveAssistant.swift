@@ -362,7 +362,7 @@ public final class ExecutiveAssistant {
             if let device = who.device, device != asker {
                 line += " Sent to \(PeopleDirectory.label(for: device, directory: directory))."
             } else if who.name != nil && who.device == nil {
-                line += " I do not know \(who.name ?? "them")'s device yet; ask them to open Pasa and set their name, or add them to the roster on the Mac."
+                line += " I do not know \(who.name ?? "them")'s device yet; ask them to open Libre and set their name, or add them to the roster on the Mac."
             }
             reply = line
 
@@ -518,8 +518,9 @@ public final class ExecutiveAssistant {
                 // [Doc N] tags become chips only for passages that were shown.
                 let cited = LibraryCitations.extract(result.text, shown: hits)
                 docRefs = cited.refs
-                let styled = AnswerStyle.restrict(AnswerStyle.style(cited.text, rules: memory.rules, notes: memory.notes),
-                                                  shown: selection.checkedTitles)
+                let styled = AnswerStyle.dropContradictedCitations(
+                    AnswerStyle.restrict(AnswerStyle.style(cited.text, rules: memory.rules, notes: memory.notes), shown: selection.checkedTitles),
+                    noRelevantKnowledge: selection.relevantCount == 0 && hits.isEmpty)
                 reply = styled.text
                 if !docRefs.isEmpty, reply == AnswerStyle.noRuleFallback, cited.text.isEmpty { reply = AnswerStyle.emptyFallback }
                 rulesUsed = styled.rulesUsed
