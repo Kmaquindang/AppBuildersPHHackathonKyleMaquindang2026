@@ -203,6 +203,10 @@ final class MeshService: ObservableObject {
     @Published private(set) var showStarterChips = false
     /// One-line note under the composer (for example a coalesced duplicate ask).
     @Published var composerNote: String?
+    /// Round 2: the same question was answered in the last 10 minutes ("Answered above", "Ask again").
+    @Published var answeredHint: AnsweredHint?
+    /// Round 2: asks the timeline to scroll to a row (the answer above).
+    @Published var scrollRequest: ScrollRequest?
     /// Mac: vision model chosen by Set up AI (used first when installed).
     @Published private(set) var preferredVisionModel: String?
 
@@ -311,7 +315,14 @@ final class MeshService: ObservableObject {
         let model = store.string(forKey: Keys.model) ?? OllamaClient.recommendedModel(physicalMemory: ProcessInfo.processInfo.physicalMemory)
         let fallback = store.string(forKey: Keys.fallback) ?? OllamaClient.defaultFallbackModel
         let rosterMap = (store.dictionary(forKey: Keys.roster) as? [String: String]) ?? [:]
-        let person = PeopleDirectory.clean(store.string(forKey: Keys.personName) ?? "")
+        let savedPerson = PeopleDirectory.clean(store.string(forKey: Keys.personName) ?? "")
+        #if os(macOS)
+        // Round 2: an AI Mac nobody named shows as "Kyle's Mac" (first word of the macOS user name),
+        // not the raw computer name. Not saved, so a name typed later (or already saved) always wins.
+        let person = savedPerson.isEmpty ? MacName.suggested(fullUserName: NSFullUserName(), hostName: Host.current().localizedName) : savedPerson
+        #else
+        let person = savedPerson
+        #endif
         var dir = (store.dictionary(forKey: Keys.directory) as? [String: String]) ?? [:]
         if !person.isEmpty { dir[name] = person }
         let admins: [String]
@@ -391,7 +402,7 @@ final class MeshService: ObservableObject {
                                         hour: store.object(forKey: Keys.digestHour) as? Int ?? 17,
                                         minute: store.object(forKey: Keys.digestMinute) as? Int ?? 0)
         // Existing users (a saved name, or rooms beyond Default) skip onboarding.
-        onboardingDone = store.object(forKey: Keys.onboarded) as? Bool ?? (!person.isEmpty || roomStore.rooms.contains { !$0.isDefault })
+        onboardingDone = store.object(forKey: Keys.onboarded) as? Bool ?? (!savedPerson.isEmpty || roomStore.rooms.contains { !$0.isDefault })
         entries = TimelineStore.dropping(saved.entries, before: cleared)
         outboxCount = relay.outbox.count
         identity = ident
@@ -642,6 +653,7 @@ final class MeshService: ObservableObject {
     /// Saves the current room, applies `change`, then loads the (new) active room's chat and
     /// memory. Outbox packets are already sealed for the room they were written in.
     private func switchRoom(_ change: () -> Void) {
+        answeredHint = nil
         saveNow()
         _ = memory.save()
         let oldID = activeRoom.id
@@ -1382,7 +1394,8 @@ final class MeshService: ObservableObject {
 
     /// One chat for everything: a line starting with "@pasa" (or the old "@libre") is an ask for
     /// the AI peer, anything else is team chat.
-    func send(_ rawText: String) {
+    /// `force` skips the "Answered above" check (the composer's "Ask again").
+    func send(_ rawText: String, force: Bool = false) {
         var text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         if let blocker = activeRoom.sendBlocker {
@@ -1400,8 +1413,15 @@ final class MeshService: ObservableObject {
                 composerNote = "You already asked that. It sends once and Pasa answers once."
                 return
             }
+            // Answered in the last 10 minutes: point at the answer instead of asking again.
+            if !force, let hit = AskCoalescer.recentAnswer(of: text, in: entries) {
+                composerNote = nil
+                answeredHint = AnsweredHint(question: text, answerID: hit.answer.id)
+                return
+            }
         }
         composerNote = nil
+        answeredHint = nil
 
         let destination: MeshDestination? = kind == .ask ? .role(MeshDestination.aiRole) : nil
         var message = engine.makeOutgoing(kind: kind, body: text, destination: destination)

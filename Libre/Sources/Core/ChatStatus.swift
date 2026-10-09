@@ -34,6 +34,89 @@ public enum AskCoalescer {
     }
 }
 
+extension AskCoalescer {
+    /// How long an answered question counts as "Answered above" (round 2, Kyle's 8:55 PM screenshot:
+    /// the same Christmas tree question was sent and answered twice).
+    public static let answeredWindow: TimeInterval = 10 * 60
+
+    /// The newest answer (younger than `window`) to an ask in this room's timeline with the same
+    /// text, from anyone. Returns the ask and its answer so the UI can scroll to the answer.
+    public static func recentAnswer(of question: String, in entries: [ChatEntry], now: Date = Date(),
+                                    window: TimeInterval = answeredWindow) -> (ask: ChatEntry, answer: ChatEntry)? {
+        let key = normalize(question)
+        guard !key.isEmpty else { return nil }
+        for answer in entries.reversed() where answer.message.kind == .answer {
+            let age = now.timeIntervalSince(answer.message.createdAt)
+            guard age < window, age > -window, let reply = answer.message.replyTo else { continue }
+            if let ask = entries.last(where: { $0.message.kind == .ask && ($0.message.askKey == reply || $0.id == reply) }),
+               normalize(ask.message.body) == key {
+                return (ask, answer)
+            }
+        }
+        return nil
+    }
+}
+
+/// Composer hint after a repeat question: "Answered above" (scrolls to it) or "Ask again".
+public struct AnsweredHint: Equatable, Sendable {
+    public var question: String
+    public var answerID: UUID
+    public init(question: String, answerID: UUID) {
+        self.question = question
+        self.answerID = answerID
+    }
+}
+
+/// A request for the timeline to scroll to a row. `token` makes repeated taps on the same row work.
+public struct ScrollRequest: Equatable, Sendable {
+    public var id: UUID
+    public var token = UUID()
+    public init(id: UUID) { self.id = id }
+}
+
+/// Typing "@" in the composer: an inline list of ready asks (round 2).
+public enum MentionSuggest {
+    public static let items = ["@pasa", "@pasa my tasks", "@pasa what did I miss?", "@pasa summary"]
+
+    /// The "@..." word being typed at the end of the text, when it can still become "@pasa"
+    /// (including "@pasa" itself, before a space).
+    public static func partial(in text: String) -> String? {
+        guard let last = text.split(separator: " ", omittingEmptySubsequences: false).last else { return nil }
+        let word = String(last).lowercased()
+        guard word.hasPrefix("@"), "@pasa".hasPrefix(word) else { return nil }
+        return String(last)
+    }
+
+    /// Suggestions for the current text: only while an "@" word is being typed at the very start
+    /// of the message (asks must start with @pasa). Mid-sentence it offers just "@pasa".
+    public static func suggestions(for text: String) -> [String] {
+        guard let partial = partial(in: text) else { return [] }
+        let before = text.dropLast(partial.count).trimmingCharacters(in: .whitespaces)
+        return before.isEmpty ? items : ["@pasa"]
+    }
+
+    /// The new composer text after picking `item`. "@pasa" alone leaves a space to keep typing.
+    public static func apply(_ item: String, to text: String) -> String {
+        guard let partial = partial(in: text) else { return text }
+        let head = String(text.dropLast(partial.count))
+        return item == "@pasa" ? head + "@pasa " : head + item
+    }
+}
+
+/// Starter chips: shown only in an empty timeline or right after onboarding (round 2).
+public enum StarterChipPolicy {
+    public static let asks: [(title: String, ask: String)] = [
+        ("What did I miss?", "what did I miss?"),
+        ("My tasks", "my tasks"),
+        ("Summary", "summary"),
+        ("Our rules", "what are our rules?"),
+    ]
+
+    public static func visible(entriesEmpty: Bool, afterOnboarding: Bool, canSend: Bool, typing: Bool) -> Bool {
+        canSend && !typing && (entriesEmpty || afterOnboarding)
+    }
+}
+
 public enum BubbleStatus: Equatable, Sendable {
     case queued, sent, waiting, answered, received, synced
 

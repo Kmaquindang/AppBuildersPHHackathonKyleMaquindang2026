@@ -70,3 +70,36 @@ public enum MarkdownLite {
         return text
     }
 }
+
+/// Default name for an AI Mac whose owner never typed one (round 2): "Kyle's Mac" from the first
+/// word of the macOS full user name, else the computer name cleaned up ("kyles-macbook-air" ->
+/// "Kyles MacBook Air", "Kyle's MaC" -> "Kyle's Mac"). An explicitly set name always wins; the
+/// caller only uses this when the saved name is empty.
+public enum MacName {
+    public static func suggested(fullUserName: String?, hostName: String?) -> String {
+        let first = (fullUserName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? ""
+        if !first.isEmpty, first.rangeOfCharacter(from: .letters) != nil {
+            return PeopleDirectory.clean(first + "'s Mac")
+        }
+        let host = cleanHost(hostName ?? "")
+        return host.isEmpty ? "Mac" : host
+    }
+
+    public static func cleanHost(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.lowercased().hasSuffix(".local") { text = String(text.dropLast(6)) }
+        text = text.replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+        let fixed: [String: String] = ["mac": "Mac", "macbook": "MacBook", "imac": "iMac", "mini": "mini",
+                                       "air": "Air", "pro": "Pro", "studio": "Studio"]
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map { raw -> String in
+            let word = String(raw)
+            if let known = fixed[word.lowercased()] { return known }
+            if word == word.lowercased(), let head = word.first { return head.uppercased() + word.dropFirst() }
+            return word
+        }
+        return PeopleDirectory.clean(words.joined(separator: " "))
+    }
+}
