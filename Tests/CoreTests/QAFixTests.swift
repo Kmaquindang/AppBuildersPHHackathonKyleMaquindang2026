@@ -55,3 +55,17 @@ func runQAFixTests() async {
         check(first.rulesUsed.count == 1 && math.reply == "79." && math.rulesUsed.isEmpty && math.noRule == true, "qa: math after a rule question has no chip: \(math.rulesUsed)")
     }
 }
+
+/// Mac crash follow-up (Oct 9, 9:25 PM PHT report): the Mac never restarts a quiet mesh.
+func runMacStaleRestartTests() {
+    let t0 = Date(timeIntervalSince1970: 1_000_000)
+    var mac = DiscoveryRestartPolicy(allowsStaleRestart: false)
+    _ = mac.begin(now: t0)
+    let later = t0.addingTimeInterval(3_600)
+    check(!mac.isStale(linked: 0, discovered: 0, lastFound: .distantPast, now: later), "qa: Mac policy never reports a stale mesh, even after an hour alone")
+    check(mac.request(.wake, now: later) == .stop(settle: DiscoveryRestartPolicy.settleDelay), "qa: Mac still restarts once after wake")
+    var phone = DiscoveryRestartPolicy()
+    _ = phone.begin(now: t0)
+    check(phone.isStale(linked: 0, discovered: 0, lastFound: .distantPast, now: t0.addingTimeInterval(121)), "qa: phone policy still restarts a stale mesh")
+    check(!phone.isStale(linked: 1, discovered: 0, lastFound: .distantPast, now: t0.addingTimeInterval(121)), "qa: never stale with a link")
+}

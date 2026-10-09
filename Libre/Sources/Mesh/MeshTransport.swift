@@ -75,7 +75,11 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     private var watchdog: DispatchSourceTimer?
 
     // Restart state machine: main thread only.
+    #if os(macOS)
+    private var policy = DiscoveryRestartPolicy(allowsStaleRestart: false)   // see DiscoveryRestartPolicy.allowsStaleRestart
+    #else
     private var policy = DiscoveryRestartPolicy()
+    #endif
     private var deferredRestart: DispatchWorkItem?
     /// Clock (tests and debugging).
     var now: () -> Date = { Date() }
