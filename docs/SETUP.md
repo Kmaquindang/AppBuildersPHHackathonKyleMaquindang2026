@@ -43,8 +43,9 @@ Use this if XcodeGen is not available.
 6. **Info** tab, under Custom iOS Target Properties (click + to add a row):
    - `Privacy - Local Network Usage Description` (raw key `NSLocalNetworkUsageDescription`), value: `Pasa connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.`
    - `Bonjour services` (raw key `NSBonjourServices`), type Array, with two String items: `_libre-mesh._tcp` and `_libre-mesh._udp`.
+   - `Privacy - Microphone Usage Description` (`NSMicrophoneUsageDescription`) and `Privacy - Photo Library Usage Description` (`NSPhotoLibraryUsageDescription`), for voice notes and photos. On the Mac also `Privacy - Speech Recognition Usage Description` (`NSSpeechRecognitionUsageDescription`) for on-device voice note transcripts. The texts used are in `Libre/Resources/Info-iOS.plist` and `Info-macOS.plist`.
 7. **Signing & Capabilities** tab: pick your Team (Personal Team is fine). Set a unique bundle id such as `com.kmaquindang.libre`.
-8. Still in Signing & Capabilities, find **App Sandbox** (shown for the macOS destination). Tick **Incoming Connections (Server)** and **Outgoing Connections (Client)** under Network. Without these the Mac cannot join the mesh.
+8. Still in Signing & Capabilities, find **App Sandbox** (shown for the macOS destination). Tick **Incoming Connections (Server)** and **Outgoing Connections (Client)** under Network, and **Audio Input** under Hardware (voice notes). Without the network boxes the Mac cannot join the mesh.
 9. Run on **My Mac**, then on each iPhone. Follow steps 6 and 7 from the common steps for the iPhone trust and Local Network prompts.
 
 ## Run the milestone 1 demo
