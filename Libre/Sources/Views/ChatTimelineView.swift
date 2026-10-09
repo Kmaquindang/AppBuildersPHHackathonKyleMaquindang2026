@@ -743,7 +743,7 @@ struct ChatEmptyState: View {
             Text("No messages yet")
                 .font(.headline)
             Text(mesh.connectedCount == 0
-                 ? "Say hi now. It sends when a teammate is in range. Ask a teammate to open Pasa nearby with Wi-Fi on."
+                 ? "Say hi now. It sends by itself when a teammate with \(AppBrand.name) open comes near. No signal or internet needed. Start with @pasa to ask the AI."
                  : "Say hi to the team, or start a message with @pasa to ask the AI.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

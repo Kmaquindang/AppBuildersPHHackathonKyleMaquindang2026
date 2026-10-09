@@ -23,12 +23,6 @@ struct TasksView: View {
     @ViewBuilder
     private func content(board: TaskBoard, now: Date) -> some View {
         List {
-            #if os(iOS)
-            Section {
-                Button("Ask the AI peer: my tasks") { mesh.quickAsk("my tasks") }
-                Button("Ask the AI peer: team tasks") { mesh.quickAsk("team tasks") }
-            }
-            #endif
             if !board.overdue.isEmpty {
                 Section {
                     rows(board.overdue, now: now)

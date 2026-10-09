@@ -72,7 +72,12 @@ func runRound2UITests() {
     check(MentionSuggest.apply("@pasa", to: "@p") == "@pasa " && MentionSuggest.apply("@pasa my tasks", to: "@") == "@pasa my tasks", "round2: picking a suggestion fills the field")
     check(StarterChipPolicy.visible(entriesEmpty: true, afterOnboarding: false, canSend: true, typing: false), "round2: chips in an empty chat")
     check(!StarterChipPolicy.visible(entriesEmpty: false, afterOnboarding: false, canSend: true, typing: false), "round2: chips hidden once the chat has messages")
-    check(StarterChipPolicy.visible(entriesEmpty: false, afterOnboarding: true, canSend: true, typing: false) && !StarterChipPolicy.visible(entriesEmpty: true, afterOnboarding: true, canSend: true, typing: true), "round2: chips right after onboarding, hidden while typing")
+    check(!StarterChipPolicy.visible(entriesEmpty: false, afterOnboarding: true, canSend: true, typing: false) && !StarterChipPolicy.visible(entriesEmpty: true, afterOnboarding: true, canSend: true, typing: true), "ui pass: chips only in an empty chat, hidden while typing")
+    check(StarterChipPolicy.asks.count <= StarterChipPolicy.maxChips && StarterChipPolicy.maxChips == 3, "ui pass: at most 3 chips")
+    check(StatusWords.linkDot(linked: 0, nearby: 0) == .searching, "ui pass: dot gray while searching")
+    check(StatusWords.linkDot(linked: 0, nearby: 2) == .connecting, "ui pass: dot amber while connecting (never green)")
+    check(StatusWords.linkDot(linked: 1, nearby: 2) == .connected, "ui pass: dot green when linked")
+    check(StatusWords.subtitle(linked: 0, nearby: 2, isAIPeer: true, ai: .unknown, aiMac: nil, firstPeer: nil) == "Connecting..." && StatusWords.linkDot(linked: 0, nearby: 2) != .connected, "ui pass: the Mac screenshot case (Connecting with a green dot) is fixed")
     check(!StarterChipPolicy.asks.contains { $0.title == "More" }, "round2: no 'More' chip")
 
     // 4. Pasa's name once, not after every question.

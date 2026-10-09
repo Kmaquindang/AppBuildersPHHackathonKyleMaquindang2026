@@ -74,7 +74,11 @@ struct ComposerView: View {
             }
 
             HStack(alignment: .bottom, spacing: 6) {
+                #if os(macOS)
+                macPlusButton
+                #else
                 plusMenu
+                #endif
                 field
             }
         }
@@ -113,6 +117,55 @@ struct ComposerView: View {
     private var isAsk: Bool { AssistantMention.strip(draft.text) != nil }
 
     // MARK: Input row
+
+    #if os(macOS)
+    @State private var showPlus = false
+
+    /// Mac: a real 44 pt button inside the composer row (a borderless Menu dropped its frame and
+    /// drew the "+" clipped at the window's bottom-left corner). Opens a small popover.
+    private var macPlusButton: some View {
+        Button { showPlus = true } label: {
+            Group {
+                if preparingPhoto {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(Color.secondary.opacity(0.18), in: Circle())
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(preparingPhoto || recorder.isRecording || voiceDraft != nil || !mesh.activeRoom.canSend)
+        .accessibilityLabel("Add photo or voice note")
+        .help("Add a photo or voice note")
+        .popover(isPresented: $showPlus, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Button {
+                    showPlus = false
+                    if mesh.primerNeeded("photos") { primer = "photos" } else { showPicker = true }
+                } label: { Label(draft.photoSlots == 0 ? "Photo (4 max)" : "Photo", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity, alignment: .leading) }
+                .disabled(draft.photoSlots == 0)
+                Button {
+                    showPlus = false
+                    if mesh.primerNeeded("mic") {
+                        primerStartsRecording = true
+                        primer = "mic"
+                    } else {
+                        startTapRecording()
+                    }
+                } label: { Label("Voice note", systemImage: "mic").frame(maxWidth: .infinity, alignment: .leading) }
+            }
+            .buttonStyle(.borderless)
+            .padding(12)
+            .frame(minWidth: 160)
+        }
+    }
+    #endif
 
     /// "+" opens Photo and Voice note.
     private var plusMenu: some View {
@@ -157,7 +210,7 @@ struct ComposerView: View {
     /// Rounded field with the mic (empty) or the send arrow (any text) inside, trailing.
     private var field: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            TextField(draft.photos.isEmpty ? "Message, or @pasa to ask" : "Add a caption, or @pasa what is this?", text: $draft.text, axis: .vertical)
+            TextField(draft.photos.isEmpty ? "Message" : "Add a caption", text: $draft.text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($fieldFocused)
@@ -340,11 +393,18 @@ struct ComposerView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.secondary.opacity(0.25), lineWidth: 0.5))
     }
 
-    /// Small, quiet chips: caption text, secondary fill, scroll sideways, never truncated.
+    /// At most 3 quiet chips, only in an empty chat: one row when they fit, stacked at large text.
     private var starterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(StarterChipPolicy.asks, id: \.title) { item in
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { chipButtons }
+            VStack(alignment: .leading, spacing: 2) { chipButtons }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    @ViewBuilder
+    private var chipButtons: some View {
+                ForEach(StarterChipPolicy.asks.prefix(StarterChipPolicy.maxChips), id: \.title) { item in
                     let pending = mesh.isAskPending(item.ask)
                     Button {
                         mesh.quickAsk(item.ask)
@@ -367,12 +427,9 @@ struct ComposerView: View {
                     .buttonStyle(.plain)
                     .disabled(pending)
                     .opacity(pending ? 0.5 : 1)
-                    .accessibilityLabel("Ask Pasa: \(item.title)")
+                    .accessibilityLabel("Ask \(AppBrand.name): \(item.title)")
                     .accessibilityHint(pending ? "Already asked, waiting for the answer" : "Sends this question to the AI Mac")
                 }
-            }
-            .padding(.horizontal, 2)
-        }
     }
 
     // MARK: Sending
