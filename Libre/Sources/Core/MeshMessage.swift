@@ -74,6 +74,8 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     /// For asks: the asker was away (app in the background or no links) since this time, so
     /// "what did I miss" can summarize only what came after it.
     public var since: Date?
+    /// For answers: titles of the rules and notes the AI checked for this answer.
+    public var checked: [String]?
 
     public init(
         id: UUID = UUID(),

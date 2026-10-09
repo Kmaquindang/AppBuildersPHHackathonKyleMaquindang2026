@@ -48,6 +48,9 @@ struct AssistantLogEntry: Identifiable, Equatable {
     var tokensPerSecond: Double?
     var compact: Bool
     var error: String?
+    var checked: [String] = []
+    var promptTokensEstimate: Int?
+    var promptEvalCount: Int?
 }
 
 @MainActor
@@ -86,6 +89,8 @@ final class MeshService: ObservableObject {
     @Published private(set) var assistantLog: [AssistantLogEntry] = []
     @Published private(set) var ollamaStatus = "Not checked yet"
     @Published private(set) var modelWarm = false
+    /// Digest (sha256) of the model Ollama serves, for pinning. Empty until checked.
+    @Published private(set) var modelDigest = ""
 
     // MARK: Internals
 
@@ -146,7 +151,8 @@ final class MeshService: ObservableObject {
         #endif
 
         let engineChoice = AIEngine(rawValue: store.string(forKey: Keys.engine) ?? "") ?? .assistant
-        let model = store.string(forKey: Keys.model) ?? OllamaClient.defaultModel
+        // Macs with less than 12 GB of memory default to qwen3:4b-instruct.
+        let model = store.string(forKey: Keys.model) ?? OllamaClient.recommendedModel(physicalMemory: ProcessInfo.processInfo.physicalMemory)
         let fallback = store.string(forKey: Keys.fallback) ?? OllamaClient.defaultFallbackModel
         let rosterMap = (store.dictionary(forKey: Keys.roster) as? [String: String]) ?? [:]
         let person = PeopleDirectory.clean(store.string(forKey: Keys.personName) ?? "")
@@ -633,6 +639,8 @@ final class MeshService: ObservableObject {
             var canWarm = false
             do {
                 let models = try await client.installedModels()
+                let digests = (try? await client.installedModelDigests()) ?? [:]
+                self?.modelDigest = digests[client.model] ?? digests[client.model + ":latest"] ?? ""
                 let has = models.contains(client.model) || models.contains(client.model + ":latest")
                 if has {
                     status = "Ollama running. Using \(client.model)."
@@ -678,6 +686,21 @@ final class MeshService: ObservableObject {
         assistantLog.removeAll()
         refreshOrg()
         pushManifestToLinkedPeers()
+    }
+
+    // MARK: Backup
+
+    func exportMemoryData() throws -> Data { try memory.exportData() }
+
+    /// Replaces team memory with a backup file (Settings asks for confirmation first). Linked
+    /// phones get the new rules and drop the old ones right away.
+    func importMemory(_ data: Data) throws {
+        let backup = try OrgMemory.decodeBackup(data)
+        memory.replace(with: backup)
+        refreshOrg()
+        for (name, state) in peerStates where state == .connected && !blocked.contains(name) {
+            syncMemory(to: name)
+        }
     }
 
     private func pushManifestToLinkedPeers() {
@@ -957,8 +980,10 @@ final class MeshService: ObservableObject {
                 guard let self else { return }
                 let outcome = await self.assistant.handle(ask.body, from: ask.origin, since: ask.since)
                 let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
-                                    latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond)
-                self.sendAnswer(reply, to: ask, intent: outcome.intent.rawValue, error: outcome.error)
+                                    latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond,
+                                    checked: outcome.intent == .answer ? outcome.checked : nil)
+                self.sendAnswer(reply, to: ask, intent: outcome.intent.rawValue, error: outcome.error,
+                                promptTokens: outcome.promptTokensEstimate, promptEval: outcome.promptEvalCount)
                 for task in outcome.taskUpdates { self.notifyTask(task) }
                 for rule in outcome.ruleUpdates { self.broadcastRule(rule) }
                 self.refreshOrg()
@@ -984,7 +1009,8 @@ final class MeshService: ObservableObject {
         }
     }
 
-    private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, intent: String, error: String?) {
+    private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, intent: String, error: String?,
+                            promptTokens: Int? = nil, promptEval: Int? = nil) {
         var message = engine.makeOutgoing(
             kind: .answer,
             body: reply.text,
@@ -996,6 +1022,7 @@ final class MeshService: ObservableObject {
         message.model = reply.model
         message.latencyMs = reply.latencyMs
         message.tokensPerSecond = reply.tokensPerSecond
+        message.checked = reply.checked
 
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         if ask.origin == displayName {
@@ -1013,7 +1040,8 @@ final class MeshService: ObservableObject {
         assistantLog.append(AssistantLogEntry(
             id: message.id, at: Date(), asker: ask.origin, question: ask.body, askHops: ask.hopCount,
             intent: intent, reply: reply.text, model: reply.model, latencyMs: reply.latencyMs,
-            tokensPerSecond: reply.tokensPerSecond, compact: reply.compact, error: error
+            tokensPerSecond: reply.tokensPerSecond, compact: reply.compact, error: error,
+            checked: reply.checked ?? [], promptTokensEstimate: promptTokens, promptEvalCount: promptEval
         ))
         if assistantLog.count > 200 { assistantLog.removeFirst(assistantLog.count - 200) }
     }

@@ -14,6 +14,8 @@ runPeopleTests()
 await runNameAssistantTests()
 runReviewFixTests()
 await runCatchUpAssistantTests()
+runRobustnessTests()
+await runRobustnessAssistantTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

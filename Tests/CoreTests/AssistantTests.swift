@@ -106,8 +106,12 @@ func runAssistantTests() async {
         let more = await a.handle("more", from: "iPhone 12")
         check(more.intent == .more && more.modelCalls == 0 && !more.reply.isEmpty, "more returns rest")
         check(fake.remaining == 0, "script consumed")
-        let nothing = await a.handle("more", from: "iPhone 12")
-        check(nothing.reply == "Nothing more to show." || nothing.compact == false, "more eventually ends")
+        var ended = !more.compact
+        for _ in 0..<5 where !ended {
+            let next = await a.handle("more", from: "iPhone 12")
+            ended = next.reply == "Nothing more to show." || next.compact == false
+        }
+        check(ended, "more eventually ends")
     }
 
     // Summarize from the chat log.

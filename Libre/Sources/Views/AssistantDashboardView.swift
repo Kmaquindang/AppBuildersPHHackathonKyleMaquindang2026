@@ -33,8 +33,14 @@ struct AssistantDashboardView: View {
                             .font(.headline)
                         Text(mesh.ollamaStatus)
                             .font(.caption)
-                            .foregroundStyle(mesh.ollamaStatus.hasPrefix("Ollama running. Using") ? Color.green : Color.orange)
+                            .foregroundStyle(mesh.modelWarm ? Color.green : Color.orange)
                             .textSelection(.enabled)
+                        if !mesh.modelDigest.isEmpty {
+                            Text("Model digest \(String(mesh.modelDigest.prefix(12)))\(mesh.modelDigest == OllamaClient.testedModelDigest ? " (the build we tested)" : " (differs from the tested 500a1f067a9f)"), context \(PromptBudget.contextTokens) tokens")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
                     }
                     Spacer()
                     Button("Check Ollama") { mesh.checkOllama() }
@@ -125,6 +131,16 @@ struct AssistantLogRow: View {
         parts.append("\(entry.latencyMs) ms")
         if let tps = entry.tokensPerSecond { parts.append(String(format: "%.1f tok/s", tps)) }
         if entry.compact { parts.append("compact") }
+        if let est = entry.promptTokensEstimate {
+            var prompt = "prompt ~\(est) tok est"
+            if let real = entry.promptEvalCount { prompt += ", \(real) read" }
+            prompt += " of \(PromptBudget.contextTokens)"
+            if PromptBudget.isNearLimit(max(est, entry.promptEvalCount ?? 0)) { prompt += " WARNING: over 80% of context" }
+            parts.append(prompt)
+        }
+        if entry.intent == "answer" {
+            parts.append(entry.checked.isEmpty ? "checked: no matching rule" : "checked: " + entry.checked.joined(separator: "; "))
+        }
         return parts.joined(separator: ", ")
     }
 }

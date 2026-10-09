@@ -26,6 +26,12 @@ public struct AssistantOutcome: Sendable {
     /// Rules created or changed: broadcast a summary so phones cache it.
     public var ruleUpdates: [RuleEntry]
     public var error: String?
+    /// Rule and note titles shown to the model for an answer (empty when none were relevant).
+    public var checked: [String] = []
+    /// Estimated prompt tokens of the largest model call (about 4 characters per token).
+    public var promptTokensEstimate: Int?
+    /// Prompt tokens Ollama reported reading (prompt_eval_count) for that call.
+    public var promptEvalCount: Int?
 }
 
 @MainActor
@@ -103,11 +109,12 @@ public final class ExecutiveAssistant {
             plan = fast
         } else {
             do {
-                let result = try await llm.chat([
+                let turns: [ChatTurn] = [
                     .system(AssistantPrompts.classify(rules: memory.rules, people: people, openTasks: memory.openTasks)),
                     .user(AssistantPrompts.classifyUser(text: text, asker: asker))
-                ], json: true)
-                tracker.add(result)
+                ]
+                let result = try await llm.chat(turns, json: true)
+                tracker.add(result, prompt: turns)
                 plan = IntentParser.decodePlan(from: result.text, original: text)
             } catch {
                 return failure(error, intent: .answer, started: started, tracker: tracker)
@@ -118,6 +125,7 @@ public final class ExecutiveAssistant {
         var reply = ""
         var taskUpdates: [TaskItem] = []
         var ruleUpdates: [RuleEntry] = []
+        var checked: [String] = []
 
         switch plan.kind {
         case .more:
@@ -214,18 +222,19 @@ public final class ExecutiveAssistant {
 
         case .summarize:
             let window = CatchUp.window(since: since, clearedAt: clearedAt)
-            let lines = window.since != nil
+            let lines = PromptBudget.trimChat(window.since != nil
                 ? memory.recentChat(limit: sinceContextLimit, after: window.floor)
-                : memory.recentChat(limit: chatContextLimit, after: window.floor)
+                : memory.recentChat(limit: chatContextLimit, after: window.floor))
             if lines.isEmpty {
                 reply = window.since.map { "Nothing new in team chat since \(CatchUp.clock($0))." } ?? "No team chat has reached me yet."
             } else {
                 do {
-                    let result = try await llm.chat([
+                    let turns: [ChatTurn] = [
                         .system(AssistantPrompts.summarizeSystem),
                         .user(AssistantPrompts.summarizeUser(lines: lines, asker: asker))
-                    ], json: false)
-                    tracker.add(result)
+                    ]
+                    let result = try await llm.chat(turns, json: false)
+                    tracker.add(result, prompt: turns)
                     reply = CatchUp.header(since: window.since, count: lines.count) + "\n" + result.text
                 } catch {
                     return failure(error, intent: .summarize, started: started, tracker: tracker)
@@ -260,15 +269,21 @@ public final class ExecutiveAssistant {
             }
 
         case .answer:
+            let question = plan.question ?? text
+            // Only relevant knowledge goes in (locked rules always), within a token budget.
+            let selection = KnowledgeRetriever.select(question: question, rules: memory.rules, notes: memory.notes)
+            checked = selection.checkedTitles
             do {
-                let result = try await llm.chat([
+                let turns: [ChatTurn] = [
                     .system(AssistantPrompts.answerSystem),
-                    .user(AssistantPrompts.answerUser(question: plan.question ?? text, asker: asker, rules: memory.rules, notes: memory.notes, openTasks: memory.openTasks))
-                ], json: false)
-                tracker.add(result)
+                    .user(AssistantPrompts.answerUser(question: question, asker: asker, rules: selection.rules, notes: selection.notes,
+                                                      openTasks: memory.openTasks, noRelevantKnowledge: selection.relevantCount == 0))
+                ]
+                let result = try await llm.chat(turns, json: false)
+                tracker.add(result, prompt: turns)
                 // Never pass on a citation that is not in memory: fix versions, flag the rest.
-                let checked = CitationGuard.validate(result.text, rules: memory.rules, notes: memory.notes)
-                reply = checked.text.isEmpty ? "I do not have an answer for that." : checked.text
+                let guarded = CitationGuard.validate(result.text, rules: memory.rules, notes: memory.notes)
+                reply = Grounding.finalize(guarded, relevantCount: selection.relevantCount)
             } catch {
                 return failure(error, intent: .answer, started: started, tracker: tracker)
             }
@@ -277,6 +292,7 @@ public final class ExecutiveAssistant {
         var outcome = finish(reply, intent: plan.kind, started: started, tracker: tracker, asker: asker)
         outcome.taskUpdates = taskUpdates
         outcome.ruleUpdates = ruleUpdates
+        outcome.checked = checked
         return outcome
     }
 
@@ -287,10 +303,17 @@ public final class ExecutiveAssistant {
         var model: String?
         var evalCount = 0
         var evalNs: Int64 = 0
+        var promptEstimate: Int?
+        var promptEval: Int?
 
-        mutating func add(_ result: LLMResult) {
+        mutating func add(_ result: LLMResult, prompt: [ChatTurn] = []) {
             calls += 1
             model = result.model
+            let estimate = PromptBudget.tokens(prompt)
+            if estimate >= (promptEstimate ?? 0) {
+                promptEstimate = estimate
+                promptEval = result.promptEvalCount
+            }
             if let c = result.evalCount, let d = result.evalDurationNs {
                 evalCount += c
                 evalNs += d
@@ -325,7 +348,9 @@ public final class ExecutiveAssistant {
             modelCalls: tracker.calls,
             taskUpdates: [],
             ruleUpdates: [],
-            error: nil
+            error: nil,
+            promptTokensEstimate: tracker.promptEstimate,
+            promptEvalCount: tracker.promptEval
         )
     }
 
@@ -342,7 +367,9 @@ public final class ExecutiveAssistant {
             modelCalls: tracker.calls,
             taskUpdates: [],
             ruleUpdates: [],
-            error: message
+            error: message,
+            promptTokensEstimate: tracker.promptEstimate,
+            promptEvalCount: tracker.promptEval
         )
     }
 }
@@ -371,5 +398,20 @@ public enum CatchUp {
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "h:mm a"
         return f.string(from: date)
+    }
+}
+
+/// No guessing: when no saved rule or note matched the question and the answer cites nothing
+/// real, the reply must say so plainly.
+public enum Grounding {
+    public static let noRuleLine = "No saved team rule covers this."
+
+    public static func finalize(_ guarded: CitationGuard.Result, relevantCount: Int) -> String {
+        let text = guarded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return relevantCount == 0 ? noRuleLine : "I do not have an answer for that." }
+        guard relevantCount == 0, guarded.verified.isEmpty else { return text }
+        let lower = text.lowercased()
+        if lower.contains("no saved team rule") || lower.contains("no saved rule") { return text }
+        return noRuleLine + " " + text
     }
 }

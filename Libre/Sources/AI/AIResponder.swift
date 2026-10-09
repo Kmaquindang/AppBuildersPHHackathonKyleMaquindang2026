@@ -14,8 +14,11 @@ public struct AIReply: Sendable {
     public var model: String?
     public var latencyMs: Int
     public var tokensPerSecond: Double?
+    /// Rule and note titles the model was shown for this answer.
+    public var checked: [String]?
 
-    public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil) {
+    public init(text: String, compact: Bool = false, model: String? = nil, latencyMs: Int = 0, tokensPerSecond: Double? = nil, checked: [String]? = nil) {
+        self.checked = checked
         self.text = text
         self.compact = compact
         self.model = model

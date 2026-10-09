@@ -2,6 +2,23 @@
 // Device name, AI peer settings (Mac only: engine, model, admins, roster), and the forced-relay block list.
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Team memory backup file for the Mac's Export and Import buttons.
+struct MemoryBackupDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var data: Data
+
+    init(data: Data) { self.data = data }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
 
 struct SettingsView: View {
     @EnvironmentObject private var mesh: MeshService
@@ -14,6 +31,11 @@ struct SettingsView: View {
     @State private var fallbackDraft = ""
     @State private var rosterDraft = ""
     @State private var confirmReset = false
+    @State private var exportDoc: MemoryBackupDocument?
+    @State private var showExporter = false
+    @State private var showImporter = false
+    @State private var pendingImport: Data?
+    @State private var backupMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -75,13 +97,27 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                    HStack {
+                        Button("Export team memory...") {
+                            do {
+                                exportDoc = MemoryBackupDocument(data: try mesh.exportMemoryData())
+                                showExporter = true
+                            } catch {
+                                backupMessage = "Export failed: \(error.localizedDescription)"
+                            }
+                        }
+                        Button("Import team memory...") { showImporter = true }
+                    }
+                    if let backupMessage {
+                        Text(backupMessage).font(.caption).foregroundStyle(.secondary)
+                    }
                     Button("Reset team memory...", role: .destructive) {
                         confirmReset = true
                     }
                 } header: {
                     Text("AI peer")
                 } footer: {
-                    Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). While this Mac is the AI peer it does not idle-sleep and keeps the model warm; keep the lid open and the charger in.")
+                    Text("Runs on this Mac through Ollama at 127.0.0.1:11434. No internet needed after the model is downloaded (ollama pull \(OllamaClient.defaultModel)). Macs with less than 12 GB of memory default to \(OllamaClient.lowMemoryModel) (this Mac has \(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB). While this Mac is the AI peer it does not idle-sleep and keeps the model warm; keep the lid open and the charger in.")
                 }
 
                 Section {
@@ -159,6 +195,43 @@ struct SettingsView: View {
             #if os(macOS)
             .confirmationDialog("Erase all tasks, notes, rules and the chat log on this Mac?", isPresented: $confirmReset) {
                 Button("Erase team memory", role: .destructive) { mesh.resetMemory() }
+            }
+            .fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .json,
+                          defaultFilename: "pasa-team-memory-\(Date().formatted(.iso8601.year().month().day())).json") { result in
+                switch result {
+                case .success(let url): backupMessage = "Saved \(url.lastPathComponent)."
+                case .failure(let error): backupMessage = "Export failed: \(error.localizedDescription)"
+                }
+            }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url):
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        let data = try Data(contentsOf: url)
+                        _ = try OrgMemory.decodeBackup(data)   // check it is Pasa team memory before asking
+                        pendingImport = data
+                    } catch {
+                        backupMessage = "That file is not a Pasa team memory backup."
+                    }
+                case .failure(let error):
+                    backupMessage = "Import failed: \(error.localizedDescription)"
+                }
+            }
+            .confirmationDialog("Replace this Mac's team memory with the backup? Current rules, tasks, notes and chat log are replaced.",
+                                isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
+                Button("Replace team memory", role: .destructive) {
+                    if let data = pendingImport {
+                        do {
+                            try mesh.importMemory(data)
+                            backupMessage = "Imported. Linked phones were updated."
+                        } catch {
+                            backupMessage = "Import failed: \(error.localizedDescription)"
+                        }
+                    }
+                    pendingImport = nil
+                }
             }
             #endif
         }
