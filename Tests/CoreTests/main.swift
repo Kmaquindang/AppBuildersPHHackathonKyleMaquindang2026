@@ -42,6 +42,7 @@ await runTaskDetailsTests()
 runJoinCodeTests()
 await runLibraryTests()
 runTownSquareTests()
+runNoAIHostTests()
 
 print("Pasa core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

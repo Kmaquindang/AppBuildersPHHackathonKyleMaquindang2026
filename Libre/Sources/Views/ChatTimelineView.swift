@@ -32,7 +32,9 @@ struct ChatTimelineView: View {
         })
         let layout = ChatLayout.layout(entries, statuses: statuses)
         let pending = ChatLayout.pendingAsks(entries, device: mesh.displayName).count
-        let typing = TypingState.of(pending: pending, isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability)
+        let waiting = ChatLayout.unansweredAsks(entries, device: mesh.displayName)
+        let typing = TypingState.of(pending: pending, isAIPeer: mesh.isAIPeer, ai: mesh.aiAvailability,
+                                    waiting: waiting.count, queued: mesh.asksQueued(waiting.map(\.id)))
         let names = nameMap
 
         ScrollViewReader { proxy in

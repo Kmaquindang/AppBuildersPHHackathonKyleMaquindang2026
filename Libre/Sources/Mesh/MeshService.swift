@@ -165,6 +165,8 @@ final class MeshService: ObservableObject {
     @Published private(set) var nearbyRooms: [BeaconRegistry.Heard] = []
     /// AI Mac status for the active room (phones from signed status beacons; the Mac itself).
     @Published private(set) var aiAvailability: AIAvailability = .unknown
+    /// Phones: one notice after a voice note sent with no AI Mac nearby (cleared when one is back).
+    @Published private(set) var aiNotice: String?
     /// Queue depth and model of the AI Mac serving the active room, when heard.
     @Published private(set) var aiDetail: AIStatus?
     /// Mac: true between willSleep and didWake.
@@ -546,6 +548,11 @@ final class MeshService: ObservableObject {
         return "\(m.members.count)/\(m.cap)"
     }
 
+    /// True when every one of these asks is saved in the resend book (answered when a Mac is back).
+    func asksQueued(_ ids: [UUID], now: Date = Date()) -> Bool {
+        !ids.isEmpty && ids.allSatisfy { pendingAsks.isQueued($0, now: now) }
+    }
+
     /// Text under an unanswered ask, by AI status.
     var waitingText: String {
         switch aiAvailability {
@@ -554,7 +561,7 @@ final class MeshService: ObservableObject {
         case .awake:
             if let q = aiDetail?.queue, q > 1 { return "Waiting for the AI Mac (\(q) questions in line, rooms take turns)." }
             return "Waiting for the AI Mac..."
-        case .offline, .unknown: return "Waiting for the AI Mac... It answers when it is in range."
+        case .offline, .unknown: return NoAIHost.queuedLine
         }
     }
 
@@ -918,6 +925,7 @@ final class MeshService: ObservableObject {
             detail = aiTracker.detail(room: activeRoom.id, now: now)
         }
         if availability != aiAvailability { aiAvailability = availability }
+        if !NoAIHost.isAway(availability), aiNotice != nil { aiNotice = nil }
         if detail?.queue != aiDetail?.queue || detail?.model != aiDetail?.model || detail?.internet != aiDetail?.internet || (detail == nil) != (aiDetail == nil) { aiDetail = detail }
     }
 
@@ -1785,6 +1793,7 @@ final class MeshService: ObservableObject {
         entries.append(entry)
         mediaRoom[manifest.mediaId] = activeRoom.id
         queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true, room: activeRoom.id)
+        if kind == .audio, !isAIPeer, NoAIHost.isAway(aiAvailability) { aiNotice = NoAIHost.voiceLine }
         #if os(macOS)
         if kind == .audio { transcribeIfNeeded(manifest.mediaId) }
         if kind == .image { photoArrived(manifest.mediaId) }

@@ -190,6 +190,7 @@ struct ChatNotices: View {
             banner.map { ($0, "clock", Color.orange) },
             mesh.activeRoom.sendBlocker.map { ($0, "lock", Color.orange) },
             mesh.forcedRelayBadge.map { ($0, "arrow.triangle.branch", Color.orange) },
+            mesh.aiNotice.map { ($0, "desktopcomputer", Color.orange) },
             mesh.lastProblem.map { ($0, "exclamationmark.triangle.fill", Color.red) }
         ].compactMap { $0 }
         if !items.isEmpty {

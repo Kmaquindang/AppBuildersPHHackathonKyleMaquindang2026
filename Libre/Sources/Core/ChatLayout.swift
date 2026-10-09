@@ -108,6 +108,17 @@ public enum ChatLayout {
     }
 
     /// Asks from this device that went out (not queued) and have no answer yet.
+    /// Our own unanswered asks of the last day, whether or not any device took them yet (an ask
+    /// sent with nobody nearby waits in the outbox with no recipients). Drives the no-AI line.
+    public static func unansweredAsks(_ entries: [ChatEntry], device: String, now: Date = Date()) -> [ChatEntry] {
+        let done = AskCoalescer.answered(entries)
+        return entries.filter { e in
+            e.message.kind == .ask && e.direction == .sent && e.message.origin == device
+                && !done.contains(e.message.askKey) && !done.contains(e.id)
+                && now.timeIntervalSince(e.message.createdAt) < NoAIHost.window
+        }
+    }
+
     public static func pendingAsks(_ entries: [ChatEntry], device: String, now: Date = Date()) -> [ChatEntry] {
         let done = AskCoalescer.answered(entries)
         return entries.filter { e in
@@ -127,10 +138,18 @@ public enum TypingState: Equatable, Sendable {
     case note(String)
 
     public static let asleepLine = "Pasa is asleep. Your question will be answered when the Mac wakes."
-    public static let awayLine = "Pasa will answer when the AI Mac is in range."
+    public static let awayLine = NoAIHost.queuedLine
     public static let notServingLine = "The AI Mac nearby is not in this room. Ask the room admin to add it."
 
-    public static func of(pending: Int, isAIPeer: Bool, ai: AIAvailability) -> TypingState {
+    /// - waiting: our unanswered asks of the last day (including ones nobody has taken yet).
+    /// - queued: every waiting ask is still in the phone's resend book (saved, resent when an AI
+    ///   Mac serving the room is heard awake again). Only then does the line promise an answer.
+    /// The no-AI line comes only from the AI status heartbeat: an awake Mac that is slow keeps
+    /// sending status every 10 s, so it stays "awake" (typing dots) until 35 s of silence.
+    public static func of(pending: Int, isAIPeer: Bool, ai: AIAvailability, waiting: Int = 0, queued: Bool = true) -> TypingState {
+        if !isAIPeer, NoAIHost.isAway(ai), max(pending, waiting) > 0 {
+            return .note(queued ? NoAIHost.queuedLine : NoAIHost.askAgainLine)
+        }
         guard pending > 0 else { return .none }
         if isAIPeer { return .typing }
         switch ai {
@@ -140,4 +159,18 @@ public enum TypingState: Equatable, Sendable {
         case .offline, .unknown: return .note(awayLine)
         }
     }
+}
+
+
+/// No AI host Mac reachable in the room (Kyle, Oct 9 2026, 10:42 PM PHT).
+public enum NoAIHost {
+    public static let queuedLine = "No AI computer nearby. Your question is saved and will be answered when the Mac is back."
+    public static let askAgainLine = "No AI computer nearby. Ask again when the Mac is nearby."
+    public static let voiceLine = "No AI computer nearby. Your voice note reached the room, but transcripts and spoken questions need the Mac. Ask again when the Mac is nearby."
+    /// How long an unanswered ask keeps the line up (same as the resend book's lifetime).
+    public static let window: TimeInterval = PendingAskBook.lifetime
+
+    /// No AI Mac heard in the last 35 s (offline), or never heard (unknown). Asleep and
+    /// "not in this room" keep their own lines.
+    public static func isAway(_ ai: AIAvailability) -> Bool { ai == .offline || ai == .unknown }
 }
