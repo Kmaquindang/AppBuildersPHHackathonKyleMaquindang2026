@@ -291,6 +291,13 @@ Photos and voice notes travel over the same offline mesh. Code: `Libre/Sources/C
 - If the transcript starts by calling Pasa ("@pasa", "At Pasa", "Hey Pasa", or "Pasa," with a comma), the rest is handled as an `@pasa` ask from the person who recorded it, for example "At Pasa, remind Ana to order cement Friday". A sentence that just begins with the word "pasa" is not an ask.
 - Disclosure: transcription is Apple's on-device model, not ours, and accuracy for Tagalog, Cebuano and Taglish has not been measured.
 
+## Accessibility
+- Text uses system text styles (Dynamic Type up to the accessibility sizes) and the system label colors, so it keeps contrast in light and dark mode. Status color is on icons, not text.
+- The chat header wraps instead of truncating and says the status in words ("No devices nearby · AI Mac asleep"). One banner says how many of your messages are waiting for a teammate. Each bubble has a status icon (queued, sent, waiting, answered) that VoiceOver reads in words, in the order sender, time, text, status.
+- Buttons are at least 44 by 44 points on iPhone, and icon buttons have VoiceOver labels and hints. Reduce Motion turns off the scroll and expand animations.
+- The same unanswered `@pasa` question is not queued twice; quick buttons go gray while it waits.
+- Not yet checked on a device with VoiceOver or at the largest text size; SwiftUI previews at AX5 are in `Libre/Sources/Views/Accessibility.swift`.
+
 ## Privacy permissions
 - **Local Network** (iPhone and Mac): to find nearby devices and pass messages.
 - **Microphone** (iPhone and Mac, `NSMicrophoneUsageDescription`; the Mac sandbox also has the audio input entitlement): only while you hold the mic button.
