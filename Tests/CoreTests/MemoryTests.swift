@@ -125,6 +125,13 @@ func runMemoryTests() {
         check(NameMatcher.match("Ana Reyes", in: ["Ana", "Ben"]) == "Ana", "prefix match")
     }
 
+    // Roster.
+    do {
+        let roster = Roster.parse("Ana = iPhone 12\nBen: iPhone 14 Pro Max\n\nbad line\n = x")
+        check(roster == ["Ana": "iPhone 12", "Ben": "iPhone 14 Pro Max"], "roster parse")
+        check(Roster.parse(Roster.format(roster)) == roster, "roster format round trip")
+    }
+
     // Compactor.
     do {
         let short = Compactor.split("Short answer.")

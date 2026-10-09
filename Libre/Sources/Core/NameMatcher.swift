@@ -45,3 +45,22 @@ public enum NameMatcher {
         return nil
     }
 }
+
+/// Team roster: person -> mesh device, written one per line as "Ana = iPhone 12" (or "Ana: iPhone 12").
+public enum Roster {
+    public static func parse(_ text: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for rawLine in text.split(whereSeparator: { $0 == "\n" || $0 == ";" }) {
+            let line = String(rawLine)
+            guard let sep = line.firstIndex(where: { $0 == "=" || $0 == ":" }) else { continue }
+            let person = line[..<sep].trimmingCharacters(in: .whitespaces)
+            let device = line[line.index(after: sep)...].trimmingCharacters(in: .whitespaces)
+            if !person.isEmpty && !device.isEmpty { result[person] = device }
+        }
+        return result
+    }
+
+    public static func format(_ roster: [String: String]) -> String {
+        roster.keys.sorted().map { "\($0) = \(roster[$0] ?? "")" }.joined(separator: "\n")
+    }
+}

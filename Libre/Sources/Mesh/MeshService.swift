@@ -1,6 +1,7 @@
 // MeshService.swift
-// Libre: glue between the link layer (MeshTransport), our relay layer (RelayEngine), the AI seam
-// (AIResponder) and the SwiftUI views. Everything here runs on the main actor.
+// Libre: glue between the link layer (MeshTransport), our relay layer (RelayEngine), team memory
+// (OrgMemory), the AI peer (ExecutiveAssistant / AIResponder) and the SwiftUI views.
+// Everything here runs on the main actor.
 
 import Foundation
 import SwiftUI
@@ -9,6 +10,14 @@ import SwiftUI
 enum ComposeMode: String, CaseIterable, Identifiable {
     case chat = "Chat"
     case ask = "Ask AI"
+    var id: String { rawValue }
+}
+
+/// Which brain the Mac AI peer uses.
+enum AIEngine: String, CaseIterable, Identifiable {
+    case assistant = "Executive assistant"
+    case plain = "Plain model"
+    case echo = "Echo stub"
     var id: String { rawValue }
 }
 
@@ -38,6 +47,22 @@ struct PeerInfo: Identifiable, Equatable {
     var id: String { name }
 }
 
+/// One AI peer request, for the Mac dashboard.
+struct AssistantLogEntry: Identifiable, Equatable {
+    let id: UUID
+    var at: Date
+    var asker: String
+    var question: String
+    var askHops: Int
+    var intent: String
+    var reply: String
+    var model: String?
+    var latencyMs: Int
+    var tokensPerSecond: Double?
+    var compact: Bool
+    var error: String?
+}
+
 @MainActor
 final class MeshService: ObservableObject {
     // MARK: Published state
@@ -51,35 +76,87 @@ final class MeshService: ObservableObject {
     @Published private(set) var relayedCount = 0
     @Published private(set) var lastProblem: String?
 
+    /// Team memory: source of truth on the AI Mac, read-only cache on phones.
+    @Published private(set) var org: OrgSnapshot
+
+    // AI peer settings and dashboard (used on macOS; harmless defaults elsewhere).
+    @Published private(set) var aiEngine: AIEngine
+    @Published private(set) var ollamaModel: String
+    @Published private(set) var ollamaFallbackModel: String
+    @Published private(set) var adminNames: [String]
+    @Published private(set) var roster: [String: String]
+    @Published private(set) var assistantLog: [AssistantLogEntry] = []
+    @Published private(set) var ollamaStatus = "Not checked yet"
+
     // MARK: Internals
 
     private let engine: RelayEngine
     private var transport: MeshTransport?
     private var sentAsks: [UUID: Date] = [:]
     private let defaults = UserDefaults.standard
-    private let responder: any AIResponder = EchoResponder()
+    private let memory: OrgMemory
+    #if os(macOS)
+    private let assistant: ExecutiveAssistant
+    #endif
 
     private enum Keys {
         static let name = "libre.displayName"
         static let blocked = "libre.blocked"
         static let aiPeer = "libre.isAIPeer"
+        static let engine = "libre.aiEngine"
+        static let model = "libre.ollamaModel"
+        static let fallback = "libre.ollamaFallbackModel"
+        static let admins = "libre.adminNames"
+        static let roster = "libre.roster"
     }
 
+    static let defaultAdmins = ["iPhone 14 Pro Max"]
+
     init() {
-        let storedName = UserDefaults.standard.string(forKey: Keys.name)
-        let name = MeshTransport.sanitize(storedName ?? MeshService.defaultDeviceName())
-        let storedBlocked = UserDefaults.standard.stringArray(forKey: Keys.blocked) ?? []
+        let store = UserDefaults.standard
+        let name = MeshTransport.sanitize(store.string(forKey: Keys.name) ?? MeshService.defaultDeviceName())
+        let storedBlocked = store.stringArray(forKey: Keys.blocked) ?? []
 
         #if os(macOS)
-        let ai = UserDefaults.standard.object(forKey: Keys.aiPeer) as? Bool ?? true
+        let ai = store.object(forKey: Keys.aiPeer) as? Bool ?? true
         #else
         let ai = false
         #endif
 
+        let engineChoice = AIEngine(rawValue: store.string(forKey: Keys.engine) ?? "") ?? .assistant
+        let model = store.string(forKey: Keys.model) ?? OllamaClient.defaultModel
+        let fallback = store.string(forKey: Keys.fallback) ?? OllamaClient.defaultFallbackModel
+        let admins = store.stringArray(forKey: Keys.admins) ?? MeshService.defaultAdmins
+        let rosterMap = (store.dictionary(forKey: Keys.roster) as? [String: String]) ?? [:]
+
+        #if os(macOS)
+        let fileName = "org-memory.json"   // source of truth
+        #else
+        let fileName = "org-cache.json"    // read-only cache from the mesh
+        #endif
+        let mem = OrgMemory(fileURL: MeshService.storageURL(fileName), admins: Set(admins).union([name]))
+
         displayName = name
         blocked = Set(storedBlocked)
         isAIPeer = ai
+        aiEngine = engineChoice
+        ollamaModel = model
+        ollamaFallbackModel = fallback
+        adminNames = admins
+        roster = rosterMap
+        memory = mem
+        org = mem.snapshot
         engine = RelayEngine(selfName: name, roles: ai ? [MeshDestination.aiRole] : [])
+
+        #if os(macOS)
+        assistant = ExecutiveAssistant(
+            memory: mem,
+            llm: OllamaClient(model: model, fallbackModel: fallback.isEmpty ? nil : fallback),
+            selfName: name,
+            roster: rosterMap,
+            knownDevices: Array(Set(rosterMap.values))
+        )
+        #endif
     }
 
     static func defaultDeviceName() -> String {
@@ -90,6 +167,12 @@ final class MeshService: ObservableObject {
         #else
         return "iPhone \(suffix)"
         #endif
+    }
+
+    /// Application Support/Libre/<file>. Inside the app sandbox container on macOS.
+    static func storageURL(_ fileName: String) -> URL? {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return base.appendingPathComponent("Libre", isDirectory: true).appendingPathComponent(fileName)
     }
 
     // MARK: Derived
@@ -106,7 +189,20 @@ final class MeshService: ObservableObject {
         peerStates.filter { $0.value == .connected && !blocked.contains($0.key) }.count
     }
 
-    var aiResponderName: String { responder.name }
+    var aiResponderName: String {
+        switch aiEngine {
+        case .assistant: return "Executive assistant (\(ollamaModel))"
+        case .plain: return "Plain model (\(ollamaModel))"
+        case .echo: return "Echo stub"
+        }
+    }
+
+    /// Tasks for this device (phones) from the cached memory.
+    var myTasks: [TaskItem] {
+        memory.tasks(forDevice: displayName, roster: roster, includeDone: true)
+    }
+
+    var rosterText: String { Roster.format(roster) }
 
     // MARK: Lifecycle
 
@@ -123,6 +219,9 @@ final class MeshService: ObservableObject {
         }
         transport = newTransport
         newTransport.start()
+        #if os(macOS)
+        checkOllama()
+        #endif
     }
 
     func stop() {
@@ -140,6 +239,10 @@ final class MeshService: ObservableObject {
         displayName = clean
         defaults.set(clean, forKey: Keys.name)
         engine.rename(to: clean)
+        memory.admins = Set(adminNames).union([clean])
+        #if os(macOS)
+        assistant.selfName = clean
+        #endif
         start()
     }
 
@@ -151,17 +254,94 @@ final class MeshService: ObservableObject {
         transport?.setBlocked(blocked)
     }
 
+    func clearTimeline() {
+        entries.removeAll()
+        sentAsks.removeAll()
+    }
+
     #if os(macOS)
     func setAIPeer(_ on: Bool) {
         isAIPeer = on
         defaults.set(on, forKey: Keys.aiPeer)
         engine.roles = on ? [MeshDestination.aiRole] : []
     }
+
+    func updateAssistantSettings(engine newEngine: AIEngine, model: String, fallback: String, admins adminText: String, rosterText: String) {
+        let cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        aiEngine = newEngine
+        ollamaModel = cleanModel.isEmpty ? OllamaClient.defaultModel : cleanModel
+        ollamaFallbackModel = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        adminNames = adminText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        roster = Roster.parse(rosterText)
+
+        defaults.set(newEngine.rawValue, forKey: Keys.engine)
+        defaults.set(ollamaModel, forKey: Keys.model)
+        defaults.set(ollamaFallbackModel, forKey: Keys.fallback)
+        defaults.set(adminNames, forKey: Keys.admins)
+        defaults.set(roster, forKey: Keys.roster)
+
+        memory.admins = Set(adminNames).union([displayName])
+        assistant.llm = makeClient()
+        assistant.roster = roster
+        refreshKnownDevices()
+        checkOllama()
+    }
+
+    private func makeClient() -> OllamaClient {
+        OllamaClient(model: ollamaModel, fallbackModel: ollamaFallbackModel.isEmpty ? nil : ollamaFallbackModel)
+    }
+
+    private func refreshKnownDevices() {
+        assistant.knownDevices = Array(Set(peerStates.keys).union(roster.values)).sorted()
+    }
+
+    /// Health check: is Ollama up and is the model installed?
+    func checkOllama() {
+        let client = makeClient()
+        ollamaStatus = "Checking Ollama..."
+        Task { [weak self] in
+            let status: String
+            do {
+                let models = try await client.installedModels()
+                let has = models.contains(client.model) || models.contains(client.model + ":latest")
+                if has {
+                    status = "Ollama running. Using \(client.model)."
+                } else if let fb = client.fallbackModel, models.contains(fb) {
+                    status = "Ollama running. \(client.model) not installed, falling back to \(fb). Run: ollama pull \(client.model)"
+                } else {
+                    status = "Ollama running, but \(client.model) is not installed. Run: ollama pull \(client.model)"
+                }
+            } catch {
+                status = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+            }
+            self?.ollamaStatus = status
+        }
+    }
+
+    // MARK: Mac dashboard actions (the Mac acts as an admin)
+
+    func setTaskDone(_ id: UUID, done: Bool) {
+        let updated = done ? memory.markDone(id, by: displayName) : memory.reopen(id, by: displayName)
+        if let updated { notifyTask(updated) }
+        refreshOrg()
+    }
+
+    func setRuleLocked(_ rule: RuleEntry, locked: Bool) {
+        if case .updated(let changed) = memory.setLocked(title: rule.title, locked: locked, by: displayName) {
+            broadcastRule(changed)
+        }
+        refreshOrg()
+    }
+
+    func resetMemory() {
+        memory.reset()
+        assistantLog.removeAll()
+        refreshOrg()
+    }
     #endif
 
-    func clearTimeline() {
-        entries.removeAll()
-        sentAsks.removeAll()
+    private func refreshOrg() {
+        org = memory.snapshot
     }
 
     // MARK: Sending
@@ -185,6 +365,9 @@ final class MeshService: ObservableObject {
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
 
         #if os(macOS)
+        if kind == .chat {
+            memory.recordChat(from: displayName, text: text, at: message.createdAt)
+        }
         if kind == .ask && isAIPeer {
             // This Mac is the AI peer: answer locally, no mesh needed (Mac-only path for judges).
             entry.sentTo = ["this Mac (AI peer)"]
@@ -196,6 +379,11 @@ final class MeshService: ObservableObject {
 
         entry.sentTo = transmit(message, excluding: [])
         entries.append(entry)
+    }
+
+    /// Quick actions on phones: "What did I miss?", "My tasks", "More".
+    func quickAsk(_ text: String) {
+        send(text, mode: .ask)
     }
 
     /// Hands a message to the transport. Parks it in the outbox if nobody can take it.
@@ -249,7 +437,13 @@ final class MeshService: ObservableObject {
             peerStates[name] = state
             if state == .connected && !blocked.contains(name) {
                 flushOutbox()
+                #if os(macOS)
+                syncMemory(to: name)
+                #endif
             }
+            #if os(macOS)
+            refreshKnownDevices()
+            #endif
         case .received(let data, let from):
             receive(data, from: from)
         case .problem(let text):
@@ -281,40 +475,81 @@ final class MeshService: ObservableObject {
         }
         entries.append(entry)
 
-        #if os(macOS)
-        if delivered.kind == .ask && isAIPeer {
-            answer(delivered)
+        switch delivered.kind {
+        case .task, .rule:
+            // Phones cache what the AI peer shares. The AI peer itself is the source of truth.
+            if !isAIPeer {
+                if delivered.kind == .task, let task = MeshPayload.decodeTask(delivered.body) {
+                    memory.mergeTask(task)
+                } else if delivered.kind == .rule, let rule = MeshPayload.decodeRule(delivered.body) {
+                    memory.mergeRule(rule)
+                }
+                refreshOrg()
+            }
+        case .chat:
+            #if os(macOS)
+            memory.recordChat(from: delivered.origin, text: delivered.body, at: delivered.createdAt)
+            #endif
+        case .ask:
+            #if os(macOS)
+            if isAIPeer { answer(delivered) }
+            #endif
+        case .answer, .ack:
+            break
         }
-        #endif
     }
 
-    // MARK: AI peer (macOS only in milestone 1)
+    // MARK: AI peer (macOS)
 
     #if os(macOS)
     private func answer(_ ask: MeshMessage) {
-        let responder = self.responder
-        let question = ask.body
-        let asker = ask.origin
-        Task { [weak self] in
-            let text: String
-            do {
-                text = try await responder.respond(to: question, from: asker)
-            } catch {
-                text = "AI peer error: \(error.localizedDescription)"
+        switch aiEngine {
+        case .assistant:
+            Task { [weak self] in
+                guard let self else { return }
+                let outcome = await self.assistant.handle(ask.body, from: ask.origin)
+                let reply = AIReply(text: outcome.reply, compact: outcome.compact, model: outcome.model,
+                                    latencyMs: outcome.latencyMs, tokensPerSecond: outcome.tokensPerSecond)
+                self.sendAnswer(reply, to: ask, intent: outcome.intent.rawValue, error: outcome.error)
+                for task in outcome.taskUpdates { self.notifyTask(task) }
+                for rule in outcome.ruleUpdates { self.broadcastRule(rule) }
+                self.refreshOrg()
             }
-            self?.sendAnswer(text, to: ask)
+        case .plain, .echo:
+            let responder: any AIResponder = aiEngine == .echo ? EchoResponder() : OllamaResponder(client: makeClient())
+            let question = ask.body
+            let asker = ask.origin
+            Task { [weak self] in
+                let started = Date()
+                var reply: AIReply
+                var failure: String? = nil
+                do {
+                    reply = try await responder.respond(to: question, from: asker)
+                } catch {
+                    let message = (error as? LLMError)?.errorDescription ?? error.localizedDescription
+                    failure = message
+                    reply = AIReply(text: message)
+                }
+                if reply.latencyMs == 0 { reply.latencyMs = Int(Date().timeIntervalSince(started) * 1000) }
+                self?.sendAnswer(reply, to: ask, intent: "answer", error: failure)
+            }
         }
     }
 
-    private func sendAnswer(_ text: String, to ask: MeshMessage) {
-        let reply = engine.makeOutgoing(
+    private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, intent: String, error: String?) {
+        var message = engine.makeOutgoing(
             kind: .answer,
-            body: text,
+            body: reply.text,
             destination: .peer(ask.origin),
             replyTo: ask.id,
             replyPath: ask.hops
         )
-        var entry = ChatEntry(id: reply.id, message: reply, direction: .sent, receivedAt: Date())
+        message.compact = reply.compact
+        message.model = reply.model
+        message.latencyMs = reply.latencyMs
+        message.tokensPerSecond = reply.tokensPerSecond
+
+        var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         if ask.origin == displayName {
             // Local ask on the AI Mac: show the answer as received with a local round trip.
             entry.direction = .received
@@ -322,9 +557,52 @@ final class MeshService: ObservableObject {
                 entry.roundTripMs = Int((Date().timeIntervalSince(askedAt) * 1000).rounded())
             }
         } else {
-            entry.sentTo = transmit(reply, excluding: [])
+            entry.sentTo = transmit(message, excluding: [])
         }
         entries.append(entry)
+
+        assistantLog.append(AssistantLogEntry(
+            id: message.id, at: Date(), asker: ask.origin, question: ask.body, askHops: ask.hopCount,
+            intent: intent, reply: reply.text, model: reply.model, latencyMs: reply.latencyMs,
+            tokensPerSecond: reply.tokensPerSecond, compact: reply.compact, error: error
+        ))
+        if assistantLog.count > 200 { assistantLog.removeFirst(assistantLog.count - 200) }
+    }
+
+    /// Sends a task to its assignee's device (and its creator, when the task is finished).
+    private func notifyTask(_ task: TaskItem) {
+        guard let body = MeshPayload.encode(task) else { return }
+        var targets: [String] = []
+        if let device = task.assigneeDevice { targets.append(device) }
+        if task.status == .done, !targets.contains(task.createdBy) { targets.append(task.createdBy) }
+        for device in targets where device != displayName {
+            let message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
+            var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
+            entry.sentTo = transmit(message, excluding: [])
+            entries.append(entry)
+        }
+    }
+
+    /// Broadcasts a rule summary (no history) so every phone caches a read-only copy.
+    private func broadcastRule(_ rule: RuleEntry) {
+        guard let body = MeshPayload.encode(rule.meshSummary) else { return }
+        let message = engine.makeOutgoing(kind: .rule, body: body, destination: nil)
+        var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
+        entry.sentTo = transmit(message, excluding: [])
+        entries.append(entry)
+    }
+
+    /// When a device links, send it the rules and its open tasks so its cache catches up.
+    private func syncMemory(to device: String) {
+        guard isAIPeer else { return }
+        for rule in memory.rules.prefix(30) {
+            guard let body = MeshPayload.encode(rule.meshSummary) else { continue }
+            transmit(engine.makeOutgoing(kind: .rule, body: body, destination: .peer(device)), excluding: [])
+        }
+        for task in memory.tasks(forDevice: device, roster: roster).prefix(30) {
+            guard let body = MeshPayload.encode(task) else { continue }
+            transmit(engine.makeOutgoing(kind: .task, body: body, destination: .peer(device)), excluding: [])
+        }
     }
     #endif
 }
