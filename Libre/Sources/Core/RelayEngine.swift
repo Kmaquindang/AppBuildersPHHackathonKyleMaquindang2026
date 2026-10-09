@@ -26,8 +26,8 @@ public struct RelayDecision: Sendable {
     public static let duplicate = RelayDecision(isDuplicate: true, deliver: nil, forward: nil, forwardExcluding: [])
 }
 
-/// A message waiting for a peer to connect.
-public struct OutboxItem: Sendable {
+/// A message waiting for a peer to connect. Codable so the outbox survives an app restart.
+public struct OutboxItem: Codable, Equatable, Sendable {
     public var message: MeshMessage
     public var excluding: Set<String>
     public var queuedAt: Date
@@ -36,6 +36,8 @@ public struct OutboxItem: Sendable {
 public final class RelayEngine {
     public private(set) var selfName: String
     public var roles: Set<String>
+    /// Chosen display name stamped on every outgoing message (nil until the person picks one).
+    public var senderName: String?
 
     public let seenLifetime: TimeInterval
     public let maxSeen: Int
@@ -50,7 +52,7 @@ public final class RelayEngine {
         roles: Set<String> = [],
         seenLifetime: TimeInterval = 300,
         maxSeen: Int = 1000,
-        outboxLifetime: TimeInterval = 900,
+        outboxLifetime: TimeInterval = 86_400,   // a day: queued messages survive restarts and wait for a link
         maxOutbox: Int = 200
     ) {
         self.selfName = selfName
@@ -100,7 +102,8 @@ public final class RelayEngine {
             hops: [selfName],
             createdAt: now,
             replyTo: replyTo,
-            replyPath: replyPath
+            replyPath: replyPath,
+            senderName: senderName
         )
         markSeen(message.id, now: now)
         return message
@@ -168,6 +171,16 @@ public final class RelayEngine {
         if outbox.count > maxOutbox {
             outbox.removeFirst(outbox.count - maxOutbox)
         }
+    }
+
+    /// Puts saved outbox items back after a restart, keeping their original queue time.
+    public func restoreOutbox(_ items: [OutboxItem], now: Date = Date()) {
+        for item in items where !outbox.contains(where: { $0.message.id == item.message.id }) {
+            outbox.append(item)
+            markSeen(item.message.id, now: now)
+        }
+        pruneOutbox(now: now)
+        if outbox.count > maxOutbox { outbox.removeFirst(outbox.count - maxOutbox) }
     }
 
     /// Returns every unexpired queued item and empties the outbox.

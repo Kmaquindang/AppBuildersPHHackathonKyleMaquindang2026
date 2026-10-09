@@ -7,6 +7,12 @@
 // Threading: MultipeerConnectivity calls delegates on its own private queues. This class keeps
 // its small mutable state behind a lock and reports everything through a @Sendable callback.
 // MeshService hops those events to the main actor.
+//
+// Reconnect: links drop (phone screen off, app backgrounded, Wi-Fi hiccup, an invite that times
+// out, or a session stuck in "connecting"). A watchdog timer re-invites nearby peers with
+// exponential backoff, cancels links stuck in "connecting", and restarts advertising and browsing
+// so peers that went quiet are found again. The app also calls restartDiscovery() when it comes
+// back to the foreground.
 
 import Foundation
 import MultipeerConnectivity
@@ -30,6 +36,16 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     static let serviceType = "libre-mesh"   // must match NSBonjourServices (_libre-mesh._tcp / _udp)
     static let maxNameBytes = 63            // MCPeerID displayName limit (UTF-8 bytes)
 
+    // Reconnect tuning (seconds).
+    static let inviteTimeout: TimeInterval = 12
+    static let connectingLimit: TimeInterval = 20      // cancel a link stuck in "connecting" after this
+    static let watchdogInterval: TimeInterval = 3
+    static let maxBackoff: TimeInterval = 30
+    static let restartWhenIdleEvery: TimeInterval = 30 // restart discovery this often while links are missing
+    static let minRestartGap: TimeInterval = 5
+    static let bothSidesInviteAfter = 3                // after this many failures, either side may invite
+    static let passiveSideWaits: TimeInterval = 15     // or once a peer has sat unlinked this long
+
     let displayName: String
 
     private let myPeerID: MCPeerID
@@ -42,6 +58,16 @@ final class MeshTransport: NSObject, @unchecked Sendable {
     private var blocked: Set<String>
     private var discovered: [String: MCPeerID] = [:]
     private var running = false
+
+    // Reconnect state, all guarded by `lock`.
+    private var failures: [String: Int] = [:]          // consecutive failed link attempts per peer
+    private var nextInviteAt: [String: Date] = [:]     // backoff: do not invite before this time
+    private var inviteSentAt: [String: Date] = [:]     // invite in flight
+    private var connectingSince: [String: Date] = [:]
+    private var unlinkedSince: [String: Date] = [:]    // first seen nearby without a link
+    private var lastRestart = Date.distantPast
+    private var watchdog: DispatchSourceTimer?
+    private let watchdogQueue = DispatchQueue(label: "pasa.mesh.watchdog")
 
     init(displayName: String, blocked: Set<String>, onEvent: @escaping @Sendable (TransportEvent) -> Void) {
         let name = MeshTransport.sanitize(displayName)
@@ -73,20 +99,61 @@ final class MeshTransport: NSObject, @unchecked Sendable {
         lock.lock()
         let wasRunning = running
         running = true
+        lastRestart = Date()
         lock.unlock()
         guard !wasRunning else { return }
         advertiser.startAdvertisingPeer()
         browser.startBrowsingForPeers()
+        startWatchdog()
     }
 
     func stop() {
         lock.lock()
         running = false
         discovered.removeAll()
+        failures.removeAll()
+        nextInviteAt.removeAll()
+        inviteSentAt.removeAll()
+        connectingSince.removeAll()
+        unlinkedSince.removeAll()
+        let timer = watchdog
+        watchdog = nil
         lock.unlock()
+        timer?.cancel()
         advertiser.stopAdvertisingPeer()
         browser.stopBrowsingForPeers()
         session.disconnect()
+    }
+
+    /// Stops and restarts advertising and browsing so nearby peers are found again.
+    /// Called when a link drops, when the app returns to the foreground, and by the watchdog.
+    /// Connected links are kept. Discovered-but-unlinked peers are forgotten until the browser
+    /// reports them again, so a device that left (or an old install) is not invited forever.
+    func restartDiscovery(force: Bool = false) {
+        // Read MultipeerConnectivity state before taking our lock (never call into MC while holding it).
+        let linked = Set(session.connectedPeers.map { $0.displayName })
+        lock.lock()
+        let now = Date()
+        guard running, force || now.timeIntervalSince(lastRestart) >= MeshTransport.minRestartGap else {
+            lock.unlock()
+            return
+        }
+        lastRestart = now
+        discovered = discovered.filter { linked.contains($0.key) }
+        inviteSentAt.removeAll()
+        lock.unlock()
+
+        advertiser.stopAdvertisingPeer()
+        browser.stopBrowsingForPeers()
+        watchdogQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let stillRunning = self.running
+            self.lock.unlock()
+            guard stillRunning else { return }
+            self.advertiser.startAdvertisingPeer()
+            self.browser.startBrowsingForPeers()
+        }
     }
 
     func setBlocked(_ names: Set<String>) {
@@ -136,28 +203,93 @@ final class MeshTransport: NSObject, @unchecked Sendable {
         currentBlocked().contains(name)
     }
 
-    /// Only one side invites, so two devices do not race to open two links.
-    /// The device whose name sorts first invites. Equal names (avoid them) both invite.
+    /// Normally only one side invites, so two devices do not race to open two links: the device
+    /// whose name sorts first invites. If that keeps failing, either side may invite.
     private func shouldInvite(_ peer: MCPeerID) -> Bool {
         if isBlocked(peer.displayName) { return false }
-        if session.connectedPeers.contains(peer) { return false }
+        if session.connectedPeers.contains(where: { $0.displayName == peer.displayName }) { return false }
+        lock.lock()
+        let failed = failures[peer.displayName] ?? 0
+        let waiting = unlinkedSince[peer.displayName].map { Date().timeIntervalSince($0) } ?? 0
+        lock.unlock()
         return myPeerID.displayName <= peer.displayName
+            || failed >= MeshTransport.bothSidesInviteAfter
+            || waiting >= MeshTransport.passiveSideWaits
     }
 
     private func invite(_ peer: MCPeerID) {
-        browser.invitePeer(peer, to: session, withContext: nil, timeout: 15)
+        lock.lock()
+        inviteSentAt[peer.displayName] = Date()
+        lock.unlock()
+        browser.invitePeer(peer, to: session, withContext: nil, timeout: MeshTransport.inviteTimeout)
     }
 
-    /// After a link drops or an invite fails, try again while the peer is still nearby.
-    private func scheduleRetry(for name: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            let peer = self.discovered[name]
-            let running = self.running
-            self.lock.unlock()
-            guard running, let peer, self.shouldInvite(peer) else { return }
-            self.invite(peer)
+    /// Counts a failed attempt and pushes the next invite out: 2, 4, 8, 16, then 30 s.
+    /// Caller must hold `lock`.
+    private func noteFailureLocked(_ name: String, now: Date) {
+        let count = (failures[name] ?? 0) + 1
+        failures[name] = count
+        let delay = min(MeshTransport.maxBackoff, pow(2, Double(min(count, 5))))
+        nextInviteAt[name] = now.addingTimeInterval(delay)
+        inviteSentAt.removeValue(forKey: name)
+        connectingSince.removeValue(forKey: name)
+    }
+
+    private func startWatchdog() {
+        let timer = DispatchSource.makeTimerSource(queue: watchdogQueue)
+        timer.schedule(deadline: .now() + MeshTransport.watchdogInterval, repeating: MeshTransport.watchdogInterval)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        lock.lock()
+        watchdog?.cancel()
+        watchdog = timer
+        lock.unlock()
+        timer.resume()
+    }
+
+    /// Watchdog: re-invite unlinked peers whose backoff expired, cancel stuck "connecting" links,
+    /// expire invites that never answered, and restart discovery while links are missing.
+    private func tick() {
+        let now = Date()
+        let linked = Set(session.connectedPeers.map { $0.displayName })
+
+        lock.lock()
+        guard running else { lock.unlock(); return }
+        var toCancel: [MCPeerID] = []
+        var candidates: [MCPeerID] = []
+        for (name, peer) in discovered where !linked.contains(name) && !blocked.contains(name) {
+            if let since = connectingSince[name] {
+                if now.timeIntervalSince(since) > MeshTransport.connectingLimit {
+                    toCancel.append(peer)
+                    noteFailureLocked(name, now: now)
+                }
+                continue
+            }
+            if let sent = inviteSentAt[name] {
+                if now.timeIntervalSince(sent) < MeshTransport.inviteTimeout + 3 { continue }
+                noteFailureLocked(name, now: now)   // invite never answered
+                continue
+            }
+            if now >= (nextInviteAt[name] ?? .distantPast) {
+                candidates.append(peer)
+            }
+        }
+        for name in linked {
+            connectingSince.removeValue(forKey: name)
+            unlinkedSince.removeValue(forKey: name)
+        }
+        let unlinkedNearby = discovered.keys.contains { !linked.contains($0) && !blocked.contains($0) }
+        let restartDue = (linked.isEmpty || unlinkedNearby)
+            && now.timeIntervalSince(lastRestart) >= MeshTransport.restartWhenIdleEvery
+        lock.unlock()
+
+        for peer in toCancel {
+            session.cancelConnectPeer(peer)
+        }
+        for peer in candidates where shouldInvite(peer) {
+            invite(peer)
+        }
+        if restartDue {
+            restartDiscovery()
         }
     }
 }
@@ -170,9 +302,14 @@ extension MeshTransport: MCNearbyServiceBrowserDelegate {
         guard name != myPeerID.displayName else { return }
         lock.lock()
         discovered[name] = peerID
+        if unlinkedSince[name] == nil { unlinkedSince[name] = Date() }
+        // A fresh sighting is a new chance: invite now unless an invite is already in flight
+        // or the peer is mid-connect. Backoff still applies to repeated failures.
+        let busy = inviteSentAt[name] != nil || connectingSince[name] != nil
+        let waitUntil = nextInviteAt[name] ?? .distantPast
         lock.unlock()
         onEvent(.found(name))
-        if shouldInvite(peerID) {
+        if !busy, Date() >= waitUntil, shouldInvite(peerID) {
             invite(peerID)
         }
     }
@@ -180,7 +317,10 @@ extension MeshTransport: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         let name = peerID.displayName
         lock.lock()
-        if discovered[name] == peerID { discovered.removeValue(forKey: name) }
+        if discovered[name] == peerID {
+            discovered.removeValue(forKey: name)
+            unlinkedSince.removeValue(forKey: name)
+        }
         lock.unlock()
         onEvent(.lost(name))
     }
@@ -221,9 +361,26 @@ extension MeshTransport: MCSessionDelegate {
         case .notConnected: linkState = .disconnected
         @unknown default: linkState = .disconnected
         }
+        let now = Date()
+        lock.lock()
+        switch linkState {
+        case .connected:
+            unlinkedSince.removeValue(forKey: name)
+            failures.removeValue(forKey: name)
+            nextInviteAt.removeValue(forKey: name)
+            inviteSentAt.removeValue(forKey: name)
+            connectingSince.removeValue(forKey: name)
+        case .connecting:
+            if connectingSince[name] == nil { connectingSince[name] = now }
+        case .disconnected, .discovered:
+            noteFailureLocked(name, now: now)
+            if unlinkedSince[name] == nil { unlinkedSince[name] = now }
+        }
+        lock.unlock()
         onEvent(.state(name, linkState))
         if linkState == .disconnected {
-            scheduleRetry(for: name)
+            // Find the peer again; the watchdog re-invites it once its backoff expires.
+            restartDiscovery()
         }
     }
 

@@ -10,6 +10,7 @@ public enum IntentKind: String, CaseIterable, Sendable {
     case editRule = "edit_rule"
     case lockRule = "lock_rule"
     case unlockRule = "unlock_rule"
+    case deleteRule = "delete_rule"
     case addTask = "add_task"
     case listMyTasks = "list_my_tasks"
     case listTeamTasks = "list_team_tasks"
@@ -121,6 +122,11 @@ public enum IntentParser {
             let (title, body) = splitTitleBody(rest)
             return AssistantPlan(kind: command.kind, title: title, body: body, ruleKind: command.ruleKind, fromFastPath: true)
         }
+        for prefix in ["delete rule", "remove rule", "retire rule", "delete skill", "remove skill", "retire skill"] where lower.hasPrefix(prefix) {
+            let rest = remainder(of: text, after: prefix)
+            guard !rest.isEmpty else { return nil }
+            return AssistantPlan(kind: .deleteRule, title: rest, fromFastPath: true)
+        }
         for (prefix, kind) in [("unlock rule", IntentKind.unlockRule), ("lock rule", .lockRule), ("unlock skill", .unlockRule), ("lock skill", .lockRule)] where lower.hasPrefix(prefix) {
             let rest = remainder(of: text, after: prefix)
             guard !rest.isEmpty else { return nil }
@@ -206,6 +212,7 @@ public enum IntentParser {
         let aliases: [String: IntentKind] = [
             "rule": .saveRule, "save_skill": .saveRule, "add_rule": .saveRule, "skill": .saveRule,
             "update_rule": .editRule, "lock": .lockRule, "unlock": .unlockRule,
+            "delete": .deleteRule, "remove_rule": .deleteRule, "retire_rule": .deleteRule, "delete_skill": .deleteRule,
             "task": .addTask, "create_task": .addTask, "remind": .addTask, "reminder": .addTask, "todo": .addTask,
             "my_tasks": .listMyTasks, "list_tasks": .listTeamTasks, "team_tasks": .listTeamTasks,
             "done": .markDone, "complete_task": .markDone, "complete": .markDone,

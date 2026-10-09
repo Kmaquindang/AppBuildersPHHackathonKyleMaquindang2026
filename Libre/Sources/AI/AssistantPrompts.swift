@@ -6,7 +6,7 @@ import Foundation
 
 enum AssistantPrompts {
     static func classify(rules: [RuleEntry], people: [String], openTasks: [TaskItem]) -> String {
-        let ruleTitles = rules.prefix(30).map { $0.title }.joined(separator: "; ")
+        let ruleTitles = rules.filter { !$0.isRetired }.prefix(30).map { $0.title }.joined(separator: "; ")
         let taskTitles = openTasks.prefix(20).map { $0.title }.joined(separator: "; ")
         return """
         You route messages for Pasa, the offline executive assistant of a work team.
@@ -16,6 +16,7 @@ enum AssistantPrompts {
         - save_rule: the user shares a rule, policy, procedure or skill for the team to remember. title = short name, body = the rule, kind = rule or skill.
         - edit_rule: the user changes an existing rule. title = the existing rule's title, body = new text.
         - lock_rule / unlock_rule: title = rule title.
+        - delete_rule: the user wants a rule or skill removed. title = the existing rule's title.
         - add_task: a to-do, reminder or assignment. task_title = the action in a few words, assignee = person or device (empty if none, "me" if the sender), due = when, as said.
         - list_my_tasks: the sender asks for their own tasks.
         - list_team_tasks: asks for everyone's tasks or the team to-do list.
@@ -43,7 +44,8 @@ enum AssistantPrompts {
     Plain text, no markdown, at most 3 short sentences.
     """
 
-    static func answerUser(question: String, asker: String, rules: [RuleEntry], notes: [Note], openTasks: [TaskItem]) -> String {
+    static func answerUser(question: String, asker: String, rules allRules: [RuleEntry], notes: [Note], openTasks: [TaskItem]) -> String {
+        let rules = allRules.filter { !$0.isRetired }   // deleted rules never reach the model
         var lines: [String] = ["Team knowledge:"]
         if rules.isEmpty && notes.isEmpty { lines.append("(none saved yet)") }
         for rule in rules.prefix(40) {

@@ -99,6 +99,11 @@ public struct RuleEntry: Codable, Identifiable, Hashable, Sendable {
     public var locked: Bool
     /// Older versions, oldest first. The current version lives in title/body/version.
     public var history: [RuleVersion]
+    /// Tombstone fields. A deleted rule is kept as a retired entry (version + 1) so the deletion
+    /// travels over the mesh and stale phone caches drop it. Optional so older JSON still decodes.
+    public var retired: Bool?
+    public var retiredBy: String?
+    public var retiredAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -111,7 +116,10 @@ public struct RuleEntry: Codable, Identifiable, Hashable, Sendable {
         updatedBy: String? = nil,
         updatedAt: Date? = nil,
         locked: Bool = false,
-        history: [RuleVersion] = []
+        history: [RuleVersion] = [],
+        retired: Bool? = nil,
+        retiredBy: String? = nil,
+        retiredAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -124,7 +132,13 @@ public struct RuleEntry: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt ?? createdAt
         self.locked = locked
         self.history = history
+        self.retired = retired
+        self.retiredBy = retiredBy
+        self.retiredAt = retiredAt
     }
+
+    /// True for a deleted rule (tombstone). Retired rules are hidden and never sent to the model.
+    public var isRetired: Bool { retired == true }
 
     /// Citation tag used in answers, for example "[Rule: No site visits after 5 PM v2]".
     public var citation: String { "[\(kind.label): \(title) v\(version)]" }
@@ -188,4 +202,7 @@ public struct OrgSnapshot: Codable, Hashable, Sendable {
     public var chatLog: [ChatLogLine] = []
 
     public init() {}
+
+    /// Rules and skills still in force (tombstones of deleted rules left out).
+    public var activeRules: [RuleEntry] { rules.filter { !$0.isRetired } }
 }

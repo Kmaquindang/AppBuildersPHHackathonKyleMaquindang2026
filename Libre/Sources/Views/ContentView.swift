@@ -4,7 +4,18 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject private var mesh: MeshService
+
     var body: some View {
+        tabs
+            .sheet(isPresented: Binding(get: { mesh.needsPersonName }, set: { _ in })) {
+                NameOnboardingView()
+                    .environmentObject(mesh)
+                    .interactiveDismissDisabled()
+            }
+    }
+
+    private var tabs: some View {
         TabView {
             ChatScreen()
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
@@ -94,5 +105,38 @@ struct StatusHeader: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+}
+
+/// First launch: ask for the name everyone will see ("Kyle", "Ana").
+struct NameOnboardingView: View {
+    @EnvironmentObject private var mesh: MeshService
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Welcome to Pasa")
+                .font(.title2.weight(.bold))
+            Text("What should your team call you? Your name shows on your messages, and \"@pasa remind \(draft.isEmpty ? "Ana" : draft) ...\" sends tasks to this device.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            TextField("Your name, for example Kyle", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            Button("Continue", action: save)
+                .buttonStyle(.borderedProminent)
+                .disabled(PeopleDirectory.clean(draft).isEmpty)
+            Text("Device id: \(mesh.displayName). You can change your name later in Settings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        #if os(macOS)
+        .frame(width: 420)
+        #endif
+    }
+
+    private func save() {
+        mesh.setPersonName(draft)
     }
 }

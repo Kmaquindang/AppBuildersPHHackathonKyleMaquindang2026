@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject private var mesh: MeshService
     @Environment(\.dismiss) private var dismiss
     @State private var nameDraft = ""
+    @State private var personDraft = ""
     @State private var manualBlock = ""
     @State private var engineDraft: AIEngine = .assistant
     @State private var modelDraft = ""
@@ -19,8 +20,21 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Display name", text: $nameDraft)
-                    Button("Save name") {
+                    TextField("Your name", text: $personDraft)
+                    Button("Save your name") {
+                        mesh.setPersonName(personDraft)
+                        personDraft = mesh.personName
+                    }
+                    .disabled(PeopleDirectory.clean(personDraft).isEmpty || PeopleDirectory.clean(personDraft) == mesh.personName)
+                } header: {
+                    Text("You")
+                } footer: {
+                    Text("Shown on your messages. \"@pasa remind \(mesh.personName.isEmpty ? "Ana" : mesh.personName) ...\" sends tasks to this device. Pick a name nobody else on the team uses.")
+                }
+
+                Section {
+                    TextField("Device id", text: $nameDraft)
+                    Button("Save device id") {
                         mesh.rename(to: nameDraft)
                         nameDraft = mesh.displayName
                     }
@@ -28,7 +42,7 @@ struct SettingsView: View {
                 } header: {
                     Text("This device")
                 } footer: {
-                    Text("Use a unique name per device, for example iPhone 12, iPhone 14 Pro Max, MacBook Air. Saving restarts the mesh link.")
+                    Text("The mesh address of this device. It must be unique, and it stays the same unless you change it here. Saving restarts the mesh link. Admin devices can be listed by device id or by name.")
                 }
 
                 #if os(macOS)
@@ -44,9 +58,9 @@ struct SettingsView: View {
                     }
                     TextField("Ollama model", text: $modelDraft)
                     TextField("Fallback model (if the first is not installed)", text: $fallbackDraft)
-                    TextField("Admin devices, comma separated", text: $adminsDraft)
+                    TextField("Admins (device ids or names), comma separated", text: $adminsDraft)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Team roster (one per line: Ana = iPhone 12)")
+                        Text("Roster override, optional (one per line: Ana = iPhone 12). Names people pick on their phones work without it.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         TextEditor(text: $rosterDraft)
@@ -79,7 +93,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(knownPeers, id: \.self) { name in
-                        Toggle("Block direct link to \(name)", isOn: Binding(
+                        Toggle("Block direct link to \(mesh.label(for: name))\(mesh.label(for: name) == name ? "" : " (\(name))")", isOn: Binding(
                             get: { mesh.blocked.contains(name) },
                             set: { mesh.setBlocked(name, $0) }
                         ))
@@ -118,6 +132,7 @@ struct SettingsView: View {
             }
             .onAppear {
                 nameDraft = mesh.displayName
+                personDraft = mesh.personName
                 engineDraft = mesh.aiEngine
                 modelDraft = mesh.ollamaModel
                 fallbackDraft = mesh.ollamaFallbackModel

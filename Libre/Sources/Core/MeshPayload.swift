@@ -40,7 +40,10 @@ public enum MeshPayload {
             return task.status == .done ? "Task done: \(task.shortLine)" : "Task: \(task.shortLine)"
         case .rule:
             guard let rule = decodeRule(message.body) else { return message.body }
+            if rule.isRetired { return "\(rule.kind.label) deleted: \(rule.title) (by \(rule.retiredBy ?? rule.updatedBy))" }
             return "\(rule.citation)\(rule.locked ? " (locked)" : "") \(rule.body)"
+        case .sync:
+            return "Sync"
         default:
             return message.body
         }

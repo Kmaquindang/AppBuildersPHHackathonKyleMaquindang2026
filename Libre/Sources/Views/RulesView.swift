@@ -1,6 +1,7 @@
 // RulesView.swift
-// Team knowledge base: rules and skills with versions. The Mac can lock or unlock;
-// phones show the read-only copy cached from the mesh.
+// Team knowledge base: rules and skills with versions. The Mac can lock, unlock and delete;
+// phones show the read-only copy cached from the mesh and can ask the Mac to delete a rule
+// (admin devices only, the Mac checks). Deleted rules (tombstones) are hidden.
 
 import SwiftUI
 
@@ -8,7 +9,7 @@ struct RulesView: View {
     @EnvironmentObject private var mesh: MeshService
 
     private var rules: [RuleEntry] {
-        mesh.org.rules.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        mesh.org.activeRules.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     var body: some View {
@@ -21,12 +22,21 @@ struct RulesView: View {
                     }
                     ForEach(rules) { rule in
                         RuleRow(rule: rule)
+                            #if os(iOS)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    mesh.deleteRule(rule)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            #endif
                     }
                 } footer: {
                     #if os(macOS)
-                    Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(mesh.adminNames.joined(separator: ", ")) and this Mac) can edit, lock or unlock. Every change keeps the older version.")
+                    Text("This Mac is the source of truth. Anyone can add a rule; only admin devices (\(mesh.adminNames.joined(separator: ", ")) and this Mac) can edit, lock, unlock or delete. Every change keeps the older version, and a deleted rule is removed from every phone.")
                     #else
-                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\".")
+                    Text("Read-only copy from the AI peer. Add one with \"@pasa save rule: ...\". Swipe left to delete (admin devices only; the Mac checks).")
                     #endif
                 }
             }
@@ -60,6 +70,10 @@ struct RuleRow: View {
                 #if os(macOS)
                 Button(rule.locked ? "Unlock" : "Lock") {
                     mesh.setRuleLocked(rule, locked: !rule.locked)
+                }
+                .controlSize(.small)
+                Button("Delete", role: .destructive) {
+                    mesh.deleteRule(rule)
                 }
                 .controlSize(.small)
                 #endif

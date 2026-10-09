@@ -10,6 +10,7 @@ import UIKit
 @main
 struct LibreApp: App {
     @StateObject private var mesh = MeshService()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -21,6 +22,10 @@ struct LibreApp: App {
                     // Keep the screen awake during demos. iOS pauses peer links when the app leaves the foreground.
                     UIApplication.shared.isIdleTimerDisabled = true
                     #endif
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // iOS drops peer links in the background. Coming back: rediscover, flush, catch up.
+                    if phase == .active { mesh.appBecameActive() }
                 }
         }
         #if os(macOS)

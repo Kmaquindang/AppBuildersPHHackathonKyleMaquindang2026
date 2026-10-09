@@ -45,14 +45,14 @@ struct AssistantDashboardView: View {
                     StatTile(label: "Avg latency (model)", value: avgLatency)
                     StatTile(label: "Avg speed", value: avgSpeed)
                     StatTile(label: "Open tasks", value: "\(mesh.org.tasks.filter { $0.status == .open }.count)")
-                    StatTile(label: "Rules", value: "\(mesh.org.rules.count)")
+                    StatTile(label: "Rules", value: "\(mesh.org.activeRules.count)")
                     StatTile(label: "Chat lines seen", value: "\(mesh.org.chatLog.count)")
                 }
 
                 Divider()
 
                 if log.isEmpty {
-                    Text("No asks yet. From a phone, switch to Ask AI or type \"@pasa ...\". You can also ask from this Mac's Chat tab.")
+                    Text("No asks yet. From a phone, type \"@pasa ...\" in the chat. You can also ask from this Mac's Chat tab.")
                         .foregroundStyle(.secondary)
                     Spacer()
                 } else {

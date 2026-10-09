@@ -57,6 +57,33 @@ public struct OllamaClient: LLMClient {
         return tags.models.map { $0.name }
     }
 
+    /// Loads the model into memory ahead of the first question (POST /api/generate with an empty
+    /// prompt and keep_alive). The first load takes about 25 s on a MacBook Air M3; after that the
+    /// model stays loaded for `keepAlive`. Returns the model that was loaded.
+    public static let keepAlive = "30m"
+
+    @discardableResult
+    public func warmUp() async throws -> String {
+        let installed = (try? await installedModels()) ?? []
+        var target = model
+        if !installed.isEmpty, !installed.contains(model), !installed.contains(model + ":latest"),
+           let fallbackModel, installed.contains(fallbackModel) {
+            target = fallbackModel
+        }
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/generate"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = max(timeout, 180)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(WarmRequest(model: target, prompt: "", stream: false, keep_alive: OllamaClient.keepAlive))
+        let (data, response) = try await perform(request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 { throw LLMError.modelMissing(target) }
+        guard status == 200 else {
+            throw LLMError.badResponse(String((String(data: data, encoding: .utf8) ?? "HTTP \(status)").prefix(200)))
+        }
+        return target
+    }
+
     // MARK: Internals
 
     /// Qwen3 and other thinking models answer faster with thinking off.
@@ -89,7 +116,7 @@ public struct OllamaClient: LLMClient {
             think: OllamaClient.usesThinking(model) ? false : nil,
             format: json ? "json" : nil,
             options: ChatRequest.Options(temperature: temperature, num_ctx: 8192),
-            keep_alive: "30m"
+            keep_alive: OllamaClient.keepAlive
         )
         var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
         request.httpMethod = "POST"
@@ -147,6 +174,13 @@ public struct OllamaClient: LLMClient {
         var think: Bool?
         var format: String?
         var options: Options
+        var keep_alive: String
+    }
+
+    struct WarmRequest: Encodable {
+        var model: String
+        var prompt: String
+        var stream: Bool
         var keep_alive: String
     }
 

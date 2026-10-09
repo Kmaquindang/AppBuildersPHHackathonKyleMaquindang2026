@@ -6,6 +6,9 @@
 // - Anyone can add a new rule or skill.
 // - Only an admin device can edit an existing rule (new version, old one kept in history)
 //   or lock / unlock it. A locked rule cannot be edited by anyone until an admin unlocks it.
+// - Only an admin device can delete (retire) a rule. Deleting keeps a tombstone (version + 1,
+//   retired = true, who and when) so the deletion reaches phones over the mesh and the Mac's
+//   sync-on-link tells stale caches to drop it. Retired rules are never shown or sent to the model.
 // - When copies meet (mesh cache), the newest version wins; ties go to the latest update time.
 
 import Foundation
@@ -70,13 +73,19 @@ public final class OrgMemory {
 
     // MARK: Rules
 
-    public var rules: [RuleEntry] { snapshot.rules }
+    /// Rules and skills in force. Tombstones of deleted rules are left out.
+    public var rules: [RuleEntry] { snapshot.activeRules }
+    /// Everything, tombstones included. Used by sync-on-link so stale caches learn about deletions.
+    public var allRules: [RuleEntry] { snapshot.rules }
+    public var retiredRules: [RuleEntry] { snapshot.rules.filter { $0.isRetired } }
 
+    /// Finds an active rule by exact or fuzzy title.
     public func rule(titled title: String) -> RuleEntry? {
+        let active = rules
         let key = NameMatcher.normalize(title)
-        if let exact = snapshot.rules.first(where: { NameMatcher.normalize($0.title) == key }) { return exact }
-        guard let name = NameMatcher.match(title, in: snapshot.rules.map { $0.title }) else { return nil }
-        return snapshot.rules.first { $0.title == name }
+        if let exact = active.first(where: { NameMatcher.normalize($0.title) == key }) { return exact }
+        guard let name = NameMatcher.match(title, in: active.map { $0.title }) else { return nil }
+        return active.first { $0.title == name }
     }
 
     /// Adds a new rule, or edits an existing one with the same title (admin only, not locked).
@@ -86,7 +95,27 @@ public final class OrgMemory {
         guard !title.isEmpty, !body.isEmpty else { return .denied("A rule needs a title and a body.") }
 
         let key = NameMatcher.normalize(title)
-        if let index = snapshot.rules.firstIndex(where: { NameMatcher.normalize($0.title) == key }) {
+        if let index = snapshot.rules.firstIndex(where: { NameMatcher.normalize($0.title) == key && $0.isRetired }),
+           !snapshot.rules.contains(where: { NameMatcher.normalize($0.title) == key && !$0.isRetired }) {
+            // Same title as a deleted rule: bring it back as a new version of the same id, so phones
+            // holding the tombstone replace it (newest version wins). Anyone can add, as with a new rule.
+            var rule = snapshot.rules[index]
+            rule.history.append(RuleVersion(version: rule.version, title: rule.title, body: rule.body, editedBy: rule.updatedBy, editedAt: rule.updatedAt))
+            rule.version += 1
+            rule.title = title
+            rule.body = body
+            rule.kind = kind
+            rule.locked = false
+            rule.updatedBy = device
+            rule.updatedAt = now
+            rule.retired = nil
+            rule.retiredBy = nil
+            rule.retiredAt = nil
+            snapshot.rules[index] = rule
+            save()
+            return .created(rule)
+        }
+        if let index = snapshot.rules.firstIndex(where: { NameMatcher.normalize($0.title) == key && !$0.isRetired }) {
             var rule = snapshot.rules[index]
             guard isAdmin(device) else {
                 return .denied("Only an admin device can change \(rule.citation). Ask an admin, or save it under a new title.")
@@ -129,9 +158,60 @@ public final class OrgMemory {
         return .updated(rule)
     }
 
+    /// Deletes (retires) a rule. Admin only. Locked rules can be deleted by an admin too, since
+    /// deleting is itself an admin action. Keeps a tombstone: version + 1, retired, who and when.
+    /// If no rule has that title (for example it was removed from the Mac's file by hand but phones
+    /// still cache it), an admin still gets a title-only tombstone so phones drop their stale copy.
+    public func retireRule(title rawTitle: String, by device: String, now: Date = Date()) -> RuleChange {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return .denied("Which rule should I delete? Say: delete rule: <title>.") }
+        let found = rule(titled: title)
+        guard isAdmin(device) else {
+            let name = found?.citation ?? "a rule"
+            return .denied("Sorry, only an admin device can delete \(name). Ask an admin to remove it.")
+        }
+        if let found, let index = snapshot.rules.firstIndex(where: { $0.id == found.id }) {
+            var rule = snapshot.rules[index]
+            rule.history.append(RuleVersion(version: rule.version, title: rule.title, body: rule.body, editedBy: rule.updatedBy, editedAt: rule.updatedAt))
+            rule.version += 1
+            rule.body = ""
+            rule.locked = false
+            rule.updatedBy = device
+            rule.updatedAt = now
+            rule.retired = true
+            rule.retiredBy = device
+            rule.retiredAt = now
+            snapshot.rules[index] = rule
+            save()
+            return .updated(rule)
+        }
+        let key = NameMatcher.normalize(title)
+        if let existing = snapshot.rules.first(where: { $0.isRetired && NameMatcher.normalize($0.title) == key }) {
+            return .unchanged(existing)
+        }
+        let tombstone = RuleEntry(title: title, body: "", addedBy: device, createdAt: now, version: 1,
+                                  updatedBy: device, updatedAt: now, retired: true, retiredBy: device, retiredAt: now)
+        snapshot.rules.append(tombstone)
+        save()
+        return .created(tombstone)
+    }
+
     /// Cache merge: newest version wins, ties go to the later update. Keeps known history.
+    /// A tombstone also drops any cached copy with the same title that is not newer than the
+    /// deletion (covers copies with a different id, such as a rule removed from the Mac by hand).
     @discardableResult
     public func mergeRule(_ incoming: RuleEntry) -> Bool {
+        var changed = false
+        if incoming.isRetired {
+            let key = NameMatcher.normalize(incoming.title)
+            let cutoff = incoming.retiredAt ?? incoming.updatedAt
+            let before = snapshot.rules.count
+            snapshot.rules.removeAll { other in
+                other.id != incoming.id && !other.isRetired
+                    && NameMatcher.normalize(other.title) == key && other.updatedAt <= cutoff
+            }
+            changed = snapshot.rules.count != before
+        }
         guard let index = snapshot.rules.firstIndex(where: { $0.id == incoming.id }) else {
             snapshot.rules.append(incoming)
             save()
@@ -140,7 +220,10 @@ public final class OrgMemory {
         let current = snapshot.rules[index]
         let newer = incoming.version > current.version
             || (incoming.version == current.version && incoming.updatedAt > current.updatedAt)
-        guard newer else { return false }
+        guard newer else {
+            if changed { save() }
+            return changed
+        }
         var merged = incoming
         var byVersion: [Int: RuleVersion] = [:]
         for v in current.history + incoming.history { byVersion[v.version] = v }

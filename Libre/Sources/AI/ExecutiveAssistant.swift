@@ -38,6 +38,8 @@ public final class ExecutiveAssistant {
     public var roster: [String: String]
     /// Devices currently or recently seen on the mesh.
     public var knownDevices: [String]
+    /// Device id -> chosen display name ("iPhone 12" -> "Ana"), learned from messages.
+    public var directory: [String: String] = [:]
     public var chatContextLimit = 30
 
     private var pendingMore: [String: String] = [:]
@@ -51,17 +53,28 @@ public final class ExecutiveAssistant {
     }
 
     var people: [String] {
-        var names = Array(roster.keys) + knownDevices + [selfName]
+        var names = Array(roster.keys) + Array(directory.values).sorted() + knownDevices + [selfName]
         names = names.filter { !$0.isEmpty }
         var seen = Set<String>()
         return names.filter { seen.insert($0).inserted }
     }
 
     /// Resolves a spoken assignee to (display name, device).
+    /// Order: "me", the manual roster (optional override), people's chosen display names
+    /// (case-insensitive exact, must be unique), then fuzzy device names.
     public func resolveAssignee(_ raw: String?, asker: String) -> (name: String?, device: String?) {
         guard let raw = raw?.nilIfBlank else { return (nil, nil) }
         let lowered = raw.lowercased()
-        if ["me", "i", "myself", "sender"].contains(lowered) { return (asker, asker) }
+        if ["me", "i", "myself", "sender"].contains(lowered) {
+            return (directory[asker] ?? asker, asker)
+        }
+        let rosterExact = roster.keys.first { NameMatcher.normalize($0) == NameMatcher.normalize(raw) }
+        if let key = rosterExact { return (key, roster[key]) }
+        switch PeopleDirectory.resolve(raw, directory: directory) {
+        case .device(let name, let device): return (name, device)
+        case .ambiguous(let name, _): return (name, nil)
+        case .none: break
+        }
         if let rosterKey = NameMatcher.match(raw, in: Array(roster.keys)) {
             return (rosterKey, roster[rosterKey])
         }
@@ -136,16 +149,38 @@ public final class ExecutiveAssistant {
                 reply = why
             }
 
+        case .deleteRule:
+            let change = memory.retireRule(title: plan.title ?? text, by: asker)
+            switch change {
+            case .updated(let tombstone):
+                reply = "Deleted \(tombstone.kind.label.lowercased()) \"\(tombstone.title)\". Phones drop it from their copy, and I will not use it in answers."
+                ruleUpdates.append(tombstone)
+            case .created(let tombstone):
+                reply = "No rule called \"\(tombstone.title)\" here, so I told every phone to drop any old copy of it."
+                ruleUpdates.append(tombstone)
+            case .unchanged(let tombstone):
+                reply = "\"\(tombstone.title)\" was already deleted."
+                ruleUpdates.append(tombstone)
+            case .denied(let why):
+                reply = why
+            }
+
         case .addTask:
             let title = IntentParser.deriveTitle(from: plan.taskTitle ?? text)
+            if let spoken = plan.assignee?.nilIfBlank,
+               !roster.keys.contains(where: { NameMatcher.normalize($0) == NameMatcher.normalize(spoken) }),
+               case .ambiguous(let name, let devices) = PeopleDirectory.resolve(spoken, directory: directory) {
+                reply = "More than one person is called \(name) (\(devices.joined(separator: ", "))). Which one? Say it again with the device, or ask them to pick distinct names in Settings."
+                break
+            }
             let who = resolveAssignee(plan.assignee, asker: asker)
             let task = memory.addTask(title: title, assignee: who.name, assigneeDevice: who.device, due: plan.due, by: asker, source: "ask")
             taskUpdates.append(task)
             var line = "Task added: \(task.shortLine)."
             if let device = who.device, device != asker {
-                line += " Sent to \(device)."
+                line += " Sent to \(PeopleDirectory.label(for: device, directory: directory))."
             } else if who.name != nil && who.device == nil {
-                line += " I do not know \(who.name ?? "them")'s device yet; add them to the roster on the Mac."
+                line += " I do not know \(who.name ?? "them")'s device yet; ask them to open Pasa and set their name, or add them to the roster on the Mac."
             }
             reply = line
 

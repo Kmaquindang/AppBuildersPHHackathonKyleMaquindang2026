@@ -1,5 +1,6 @@
 // PeerStripView.swift
-// Horizontal list of nearby devices with their link state.
+// Horizontal list of nearby devices with their link state, shown by the person's chosen name.
+// Peers that are offline and unseen for over 60 s are dropped by MeshService.
 
 import SwiftUI
 
@@ -32,7 +33,7 @@ struct PeerChip: View {
             Circle()
                 .fill(color)
                 .frame(width: 8, height: 8)
-            Text(peer.name)
+            Text(peer.label)
                 .font(.caption)
                 .lineLimit(1)
             Text(label)

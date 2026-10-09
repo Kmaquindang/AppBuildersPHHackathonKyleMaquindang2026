@@ -12,6 +12,7 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case ack      // delivery receipt (reserved for later milestones)
     case rule     // team knowledge base entry (milestone 3)
     case task     // to-do item (milestone 3)
+    case sync     // timeline backfill: phone asks the AI Mac for missed messages, Mac replies in chunks
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.
@@ -59,6 +60,8 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     public var latencyMs: Int?
     /// For answers: generation speed reported by Ollama (eval_count / eval_duration).
     public var tokensPerSecond: Double?
+    /// Display name the sender chose ("Kyle", "Ana"). The UI shows it instead of the device id.
+    public var senderName: String?
 
     public init(
         id: UUID = UUID(),
@@ -74,7 +77,8 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         compact: Bool? = nil,
         model: String? = nil,
         latencyMs: Int? = nil,
-        tokensPerSecond: Double? = nil
+        tokensPerSecond: Double? = nil,
+        senderName: String? = nil
     ) {
         self.id = id
         self.origin = origin
@@ -90,6 +94,7 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
         self.model = model
         self.latencyMs = latencyMs
         self.tokensPerSecond = tokensPerSecond
+        self.senderName = senderName
     }
 
     /// Number of device-to-device hops travelled so far.
