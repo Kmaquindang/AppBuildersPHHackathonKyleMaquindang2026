@@ -219,7 +219,7 @@ The Mac's setup step (also Settings > Advanced > AI activity and proof > Set up 
 - iPhone 12 (relay and ask device). App installed and running Oct 9.
 
 ## Screenshots
-From the first 3-device run on Oct 9, 2026 at about 5:23 PM PHT (MacBook Air M3 as AI laptop, iPhone 14 Pro Max, iPhone 12). These were taken on an early build, before the one-chat, display-name and iMessage-style changes (Oct 9, 9 PM PHT): the chat now has grouped bubbles, rule chips, typing dots and a room-name title, and the proof badge moved into the long-press Details sheet. The iPhone screens after the final UI pass (Oct 9, about 11:20 PM PHT, taken just before the rename back to Libre, so the hint text still says @pasa) are below the early run.
+From the first 3-device run on Oct 9, 2026 at about 5:23 PM PHT (MacBook Air M3 as AI laptop, iPhone 14 Pro Max, iPhone 12), while the app was called Pasa. These were taken on an early build, before the one-chat, display-name and iMessage-style changes (Oct 9, 9 PM PHT): the chat now has grouped bubbles, rule chips, typing dots and a room-name title, and the proof badge moved into the long-press Details sheet. The iPhone screens after the final UI pass (Oct 9, about 11:20 PM PHT, taken just before the rename back to Libre, so the hint text still says @pasa) are below the early run.
 
 | Mac (AI laptop) | iPhone 14 Pro Max: rule arrives over 2 hops | iPhone 12: answer from the Mac's local AI |
 |---|---|---|
