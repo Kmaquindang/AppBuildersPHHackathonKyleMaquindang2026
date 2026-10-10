@@ -2,7 +2,7 @@
 
 *Walang signal? Libre lang.*
 
-<p align="center"><img src="docs/images/libre-icon.png" alt="Libre app icon" width="120"></p>
+<p align="center"><img src="docs/images/libre-logo.png" alt="Libre logo: signal bars with a sparkle. Walang signal? Libre lang." width="560"></p>
 
 ![Libre on iPhone after the UI pass](docs/screenshots/2026-10-09_2320_iphone_after_ui_pass.png)
 
