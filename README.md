@@ -6,7 +6,7 @@ Libre is multiplayer AI with no internet. One teacher's laptop runs a local AI m
 
 The same setup works for crews on a site with no signal and for barangay teams: one laptop, the phones they already own.
 
-Name note: the app was called Pasa for part of Oct 9, 2026 (from 5:18 PM PHT). At 11:01 PM PHT Kyle renamed it back to Libre. Old `@pasa` messages and `pasa://` join links still work.
+Name note: the app was briefly called Pasa on Oct 9, 2026, so old `@pasa` messages and `pasa://` links still work.
 
 > Status: milestone 2 (AI executive assistant). Milestone 1 proved the mesh: devices discover each other with no internet, messages travel through our own multi-hop relay layer, and every message shows its hop path and measured timing. Milestone 2 adds the team's executive assistant on the Mac, running a local model through Ollama: it saves rules and skills, turns plain sentences into tasks and pushes them to the assignee's phone, catches people up on what they missed, takes notes from transcripts, and answers questions grounded in the team's own rules with citations.
 
@@ -70,8 +70,8 @@ The two misses, as recorded: #8 ("Is smoking allowed near the cement and paint s
 - **Limits.** The Details sheet proves where the answer was made and whether the Mac had an internet route; it does not prove what other apps on the Mac do. Summaries can miss a decision the model did not read; done, open and rules lines are exact. The vision model can misread numbers, so the card says to check them. The benchmark's 20 questions are ours and small; they show the pipeline works in three languages on this Mac, not general quality.
 
 ## Demo
-- Demo video: <link>
-- X / LinkedIn post: <link>
+- Demo video: link added at submission (see the submission form).
+- X / LinkedIn post: link added at submission.
 
 ## What runs locally
 - **Mesh (all devices):** discovery, encrypted device-to-device links, and our multi-hop relay (dedup, hop budget, store and forward).
@@ -213,11 +213,13 @@ The Mac's setup step (also Settings > Advanced > AI activity and proof > Set up 
 - iPhone 12 (relay and ask device). App installed and running Oct 9.
 
 ## Screenshots
-From the first 3-device run on Oct 9, 2026 at about 5:23 PM PHT (MacBook Air M3 as AI peer, iPhone 14 Pro Max, iPhone 12). These were taken on an early build, before the one-chat, display-name and iMessage-style changes (Oct 9, 9 PM PHT): the chat now has grouped bubbles, rule chips, typing dots and a room-name title, and the proof badge moved into the long-press Details sheet. New screenshots are still to be taken.
+From the first 3-device run on Oct 9, 2026 at about 5:23 PM PHT (MacBook Air M3 as AI peer, iPhone 14 Pro Max, iPhone 12). These were taken on an early build, before the one-chat, display-name and iMessage-style changes (Oct 9, 9 PM PHT): the chat now has grouped bubbles, rule chips, typing dots and a room-name title, and the proof badge moved into the long-press Details sheet. The iPhone screens after the final UI pass (Oct 9, about 11:20 PM PHT, taken just before the rename back to Libre, so the hint text still says @pasa) are below the early run.
 
 | Mac AI peer | iPhone 14 Pro Max: rule arrives over 2 hops | iPhone 12: answer from the Mac's local AI |
 |---|---|---|
 | ![Mac AI peer](docs/screenshots/2026-10-09_1723_mac_ai_peer.jpg) | ![iPhone 14 Pro Max rules](docs/screenshots/2026-10-09_1723_iphone14_rules_2hop.png) | ![iPhone 12 answer](docs/screenshots/2026-10-09_1723_iphone12_answer_2hop.jpg) |
+
+![iPhone Chat, Tasks, Knowledge and Settings after the final UI pass](docs/screenshots/2026-10-09_2320_iphone_after_ui_pass.png)
 
 ## Measured performance
 Real numbers only, from the first 3-device run on Oct 9, 2026 (about 5:23 PM PHT). Devices: MacBook Air M3 16 GB (AI peer, Ollama), iPhone 14 Pro Max, iPhone 12. Everything offline, peer-to-peer Wi-Fi. Model times come from the Mac dashboard; the round trip is measured on the iPhone 12 with its own clock.
@@ -262,7 +264,7 @@ Notes:
 - Grok Bot (Remy): wrote and tested most of the code, the docs and the QA harness from Kyle's direction. Kyle directed the product, reviewed every UI round on his own devices, and tested on the Mac and iPhones.
 
 ## Team
-- Kyle Maquindang: product direction, device testing, demo. <role and contributions>
+- Kyle Maquindang (solo): picked the problem and pushed for research-backed framing, directed every product and design decision, reviewed each UI round on his own Mac and iPhones, ran all device and hop tests, and recorded the demo.
 
 ## Security
 Honest status for this prototype:
