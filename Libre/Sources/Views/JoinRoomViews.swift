@@ -14,6 +14,7 @@ import AppKit
 
 /// Name in, code out. Used as the last Mac onboarding step and from Settings.
 struct CreateCodeRoomView: View {
+    @Environment(\.onboardingBrand) private var onboardingBrand
     @EnvironmentObject private var mesh: MeshService
     var onDone: () -> Void = {}
     var showSkip = false
@@ -30,6 +31,7 @@ struct CreateCodeRoomView: View {
                 RoomShareView()
                 Button("Done") { onDone() }
                     .buttonStyle(.borderedProminent)
+                    .tint(onboardingBrand ? Brand.button : nil)
                     .controlSize(.large)
             } else {
                 Text("Give the room a name people can say out loud, like CLASS-7B. Libre makes a short code. Phones join by scanning the QR code or typing the name and code.")
@@ -57,6 +59,7 @@ struct CreateCodeRoomView: View {
                     BusyLabel(title: "Create room", busy: mesh.roomBusy).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                    .tint(onboardingBrand ? Brand.button : nil)
                 .controlSize(.large)
                 .disabled(mesh.roomBusy || Room.cleanLabel(name).isEmpty)
                 if showSkip {

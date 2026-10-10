@@ -76,3 +76,12 @@ enum Brand {
         #endif
     }
 }
+
+/// True inside the onboarding flow, so shared views (Create your room) use the brand button color there only.
+private struct OnboardingBrandKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var onboardingBrand: Bool {
+        get { self[OnboardingBrandKey.self] }
+        set { self[OnboardingBrandKey.self] = newValue }
+    }
+}
