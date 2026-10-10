@@ -55,3 +55,24 @@ struct TintedLabel: View {
     .environment(\.dynamicTypeSize, .accessibility5)
 }
 #endif
+
+
+/// Brand colors from the C4 logo (Oct 10, 2026). Used by onboarding and Get Started only.
+/// Contrast: #0B7A55 with white text is about 5.5:1 (filled buttons, both modes). Tinted text and
+/// icons use #0B7A55 on light backgrounds (about 5.5:1) and the lighter #12B886 in dark mode
+/// (about 8:1 on black), so both pass WCAG AA.
+enum Brand {
+    static let button = Color(red: 11 / 255, green: 122 / 255, blue: 85 / 255)
+    static var emerald: Color {
+        #if os(iOS)
+        Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 18 / 255, green: 184 / 255, blue: 134 / 255, alpha: 1)
+            : UIColor(red: 11 / 255, green: 122 / 255, blue: 85 / 255, alpha: 1) })
+        #else
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(red: 18 / 255, green: 184 / 255, blue: 134 / 255, alpha: 1)
+                : NSColor(red: 11 / 255, green: 122 / 255, blue: 85 / 255, alpha: 1) })
+        #endif
+    }
+}
