@@ -38,6 +38,7 @@ struct OnboardingFlow: View {
         #if os(macOS)
         .frame(width: 560, height: 640)
         #endif
+        .tint(Brand.emerald)
         .onAppear { nameDraft = mesh.personName }
     }
 
@@ -101,7 +102,7 @@ private struct WelcomeStep: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
             Button(action: next) { Text("Get started").frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(Brand.button)
                 .controlSize(.large)
                 .padding(.top, 12)
         }
@@ -121,7 +122,7 @@ private struct NameStep: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
             Button(action: save) { Text("Continue").frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(Brand.button)
                 .controlSize(.large)
                 .disabled(PeopleDirectory.clean(draft).isEmpty)
             Text("Device id: \(mesh.displayName). Change your name any time in Settings.")
@@ -158,7 +159,7 @@ private struct LocalNetworkStep: View {
                         waited = true
                     }
                 } label: { Text("Allow and look for teammates").frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(Brand.button)
                 .controlSize(.large)
             } else {
                 if foundSomeone {
@@ -169,7 +170,7 @@ private struct LocalNetworkStep: View {
                     HStack { ProgressView(); Text("Looking for teammates...") }
                 }
                 Button(action: next) { Text("Continue").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(Brand.button)
                     .controlSize(.large)
             }
         }
@@ -227,7 +228,7 @@ private struct RoomStep: View {
                     }
                 }
             } label: { BusyLabel(title: choice == .create ? "Create room" : (choice == .join ? "Join room" : "Use Town Square"), busy: mesh.roomBusy).frame(maxWidth: .infinity) }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).tint(Brand.button)
             .controlSize(.large)
             .disabled(mesh.roomBusy || !RoomOnboardingPicker.isReady(choice: choice, name: name, passcode: passcode, confirm: confirm, joinText: joinText))
             Button { showCodeJoin = true } label: {
@@ -289,13 +290,13 @@ private struct TourStep: View {
             Text(card.2).font(.title3).foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 ForEach(0..<cards.count, id: \.self) { i in
-                    Circle().fill(i == page ? Color.accentColor : Color.gray.opacity(0.3)).frame(width: 8, height: 8)
+                    Circle().fill(i == page ? Brand.emerald : Color.gray.opacity(0.3)).frame(width: 8, height: 8)
                 }
             }
             Button {
                 if page < cards.count - 1 { page += 1 } else { next() }
             } label: { Text(page < cards.count - 1 ? "Next" : "Done").frame(maxWidth: .infinity) }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).tint(Brand.button)
             .controlSize(.large)
         }
     }

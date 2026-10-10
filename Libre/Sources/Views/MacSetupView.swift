@@ -78,7 +78,7 @@ struct MacSetupView: View {
                     } label: {
                         Text(retryLabel).frame(minWidth: 160)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(Brand.button)
                     .controlSize(.large)
                     .disabled(plan.blocked != nil || (plan.totalBytes > 0 && mesh.internetState == .offline))
                 }
@@ -95,6 +95,7 @@ struct MacSetupView: View {
             Text("Libre stays sandboxed. It saves the Ollama download in your Downloads folder and opens it, so macOS shows its usual security and Move to Applications prompts. Models download through Ollama on this Mac (127.0.0.1).")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+        .tint(Brand.emerald)
         .task { await setup.detect() }
     }
 
@@ -157,7 +158,7 @@ struct MacSetupView: View {
 
     private func downloadRow(_ title: String, _ bytes: Int64, done: Bool) -> some View {
         HStack {
-            Image(systemName: done ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(done ? Color.green : Color.accentColor)
+            Image(systemName: done ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(done ? Color.green : Brand.emerald)
             Text(title).font(.callout.monospaced())
             Spacer()
             Text(done ? "installed" : (bytes > 0 ? ModelCatalog.label(bytes) : "size unknown")).font(.caption).foregroundStyle(.secondary)
