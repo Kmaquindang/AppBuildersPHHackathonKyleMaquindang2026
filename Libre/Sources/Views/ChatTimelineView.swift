@@ -189,7 +189,9 @@ struct MessageRow: View {
     private var message: MeshMessage { entry.message }
     private var isMine: Bool { ChatLayout.isMine(entry) }
     private var isPasa: Bool { message.kind == .answer }
-    private var isCard: Bool { message.kind == .rule || message.kind == .task || message.card != nil }
+    /// Photo answers ("vision") are plain Libre bubbles like any other answer; only the daily summary is a card.
+    private var isCard: Bool { message.kind == .rule || message.kind == .task || (message.card != nil && message.card != "vision") }
+    private var plainAnswer: Bool { isPasa && (message.card == nil || message.card == "vision") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -285,10 +287,10 @@ struct MessageRow: View {
     /// named nothing saved.
     @ViewBuilder
     private var chips: some View {
-        if isPasa, message.card == nil, !(styled.rulesUsed.isEmpty && styled.unverifiedRules.isEmpty) {
+        if plainAnswer, !(styled.rulesUsed.isEmpty && styled.unverifiedRules.isEmpty) {
             FlowChips(used: styled.rulesUsed, unverified: styled.unverifiedRules, onTap: onChip)
         }
-        if isPasa, message.card == nil, let refs = message.docRefs, !refs.isEmpty {
+        if plainAnswer, let refs = message.docRefs, !refs.isEmpty {
             DocChips(refs: refs, onTap: onDoc)
         }
     }
@@ -599,6 +601,7 @@ struct MessageDetailsSheet: View {
                             if let ms = message.latencyMs { row("\(ms) ms on the Mac", symbol: "timer") }
                         }
                         if message.compact == true { row("Shortened. Ask \(AssistantMention.primary) more for the rest.", symbol: "text.append") }
+                        if message.card == "vision" { row(VisionCard.caution, symbol: "exclamationmark.circle") }
                     }
                     let shown = AnswerStyle.display(body: message.body, rulesUsed: message.rulesUsed, unverified: message.unverifiedRules)
                     Section("Rules") {

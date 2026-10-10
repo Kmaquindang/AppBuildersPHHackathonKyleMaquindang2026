@@ -205,16 +205,19 @@ public enum VisionCard {
         return ids.compactMap { id in rules.first { $0.id == id } }
     }
 
+    /// Shown in the long-press Details sheet of a photo answer, not in the bubble.
+    public static let caution = "Read by a local model on this Mac. Check numbers before you rely on them."
+
+    /// A photo answer reads like any other Libre reply: plain sentences, rule tags at the end
+    /// (they become chips). No headers or meta lines; the caution lives in Details.
     public static func text(_ finding: VisionFinding, sender: String, related: [RuleEntry]) -> String {
-        var out = ["**Photo from \(sender)**", finding.description.isEmpty ? "(no description)" : finding.description]
-        if !finding.text.isEmpty { out.append("**Text seen:** " + finding.text.map { "\"\($0)\"" }.joined(separator: ", ")) }
-        if !finding.numbers.isEmpty { out.append("**Numbers:** " + finding.numbers.joined(separator: ", ")) }
+        var out = [finding.description.isEmpty ? "I could not describe \(sender)'s photo." : finding.description]
+        if !finding.text.isEmpty { out.append("It says " + finding.text.map { "\"\($0)\"" }.joined(separator: ", ") + ".") }
+        if !finding.numbers.isEmpty { out.append("Numbers I can see: " + finding.numbers.joined(separator: ", ") + ".") }
         if !finding.tasks.isEmpty {
-            out.append("**Suggested tasks** (an admin can add them):")
-            out += finding.tasks.enumerated().map { "\($0.offset + 1)) \($0.element)" }
+            out.append("Possible tasks: " + finding.tasks.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: " "))
         }
-        if !related.isEmpty { out.append("**Related rules:** " + related.map { $0.citation }.joined(separator: " ")) }
-        out.append("Read by a local model on this Mac. Check numbers before you rely on them.")
+        if !related.isEmpty { out.append(related.map { $0.citation }.joined(separator: " ")) }
         return out.joined(separator: "\n")
     }
 

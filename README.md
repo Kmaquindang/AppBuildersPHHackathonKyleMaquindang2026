@@ -1,6 +1,6 @@
 # Libre
 
-*Walang signal? Libre lang.*
+*Walang signal? Libre lang.* (Libre means "free" in Filipino.)
 
 <p align="center"><img src="docs/images/libre-logo.png" alt="Libre logo: signal bars with a sparkle. Walang signal? Libre lang." width="560"></p>
 
@@ -8,11 +8,22 @@
 
 No internet. No cost. Your own knowledge.
 
-Libre means "free" in Filipino: no signal, no data plan, no subscription, and every question costs nothing.
+## In one minute
 
-Libre is multiplayer AI with no internet. One teacher's laptop runs a local AI model, and every phone in the class joins it phone to phone: students and the teacher share one chat, one assistant and the class's own knowledge, with no signal, no data plan and no subscription. Messages hop from device to device until they reach everyone, and every question costs nothing.
+**The problem.** AI is becoming a basic tool for studying and working, but half of Filipino homes have no internet and paid AI costs more than a day's minimum wage each month. The students and workers who would gain the most are the ones locked out.
 
-The same setup works for crews on a site with no signal and for barangay teams: one laptop, the phones they already own.
+**What Libre does.** One laptop runs an AI model on its own chip. Every phone nearby joins it directly, phone to phone, and the whole group shares one chat with one AI assistant that knows their own lessons, rules and tasks.
+
+**Why it matters.**
+- **Free to use:** no data plan, no subscription, no per-question fee. The only cost is hardware people already own.
+- **Works with zero signal:** in a classroom, a barangay hall or a site with no cell towers. Turn Wi-Fi networks and mobile data off and it still answers.
+- **Private:** questions, lessons and team notes never leave the group's own devices.
+- **Grounded:** answers cite the class's or team's own documents and rules, and say "I don't know" when nothing matches.
+
+**Why local AI is the whole point.** Cloud AI needs exactly what these users do not have: a connection and money. Libre only works because the model runs locally:
+- The AI is `qwen3:8b` running in [Ollama](https://ollama.com) on a MacBook Air M3 (16 GB), plus a local vision model for photos and a local embedding model for document search. Nothing is sent to any server.
+- Measured on that laptop: 19 of 20 benchmark questions answered correctly in English, Tagalog and Cebuano, about 2.7 s typical, about 17 tokens per second. A question relayed from an iPhone 12 through an iPhone 14 got its answer in 6.7 s.
+- Every answer can show proof: long-press it to see which device made it, which model, and that the laptop had no internet route at the time.
 
 Name note: the app was briefly called Pasa on Oct 9, 2026, so old `@pasa` messages and `pasa://` links still work.
 

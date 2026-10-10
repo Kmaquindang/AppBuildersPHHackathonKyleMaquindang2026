@@ -184,8 +184,11 @@ func runVisionTests() async {
         let related = VisionCard.relatedRules(f!, rules: rules)
         check(related.map(\.title) == ["Report damaged walls"], "related rule found by keyword search, locked unrelated rule not forced in")
         let text = VisionCard.text(f!, sender: "Ana", related: related)
-        check(text.contains("Suggested tasks") && text.contains("1) Fix damaged wall at Block 3") && text.contains("[Rule: Report damaged walls v1]")
-              && text.contains("local model"), "photo card text")
+        check(text.contains("Possible tasks") && text.contains("1) Fix damaged wall at Block 3") && text.contains("[Rule: Report damaged walls v1]")
+              && !text.contains("**") && !text.contains("local model") && !text.contains("Photo from"), "photo answer reads like a normal reply: \(text)")
+        check(VisionCard.caution.contains("local model"), "photo caution kept for Details")
+        let shown = AnswerStyle.display(body: text, rulesUsed: nil, unverified: nil)
+        check(shown.rulesUsed == ["[Rule: Report damaged walls v1]"] && !shown.text.contains("[Rule:"), "photo answer rule tag becomes a chip")
         check(VisionCard.logLine(f!).hasPrefix("(photo) A cracked wall"), "photo log line for digests")
     } catch {
         check(false, "vision analyze threw \(error)")
