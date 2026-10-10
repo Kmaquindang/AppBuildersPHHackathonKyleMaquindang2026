@@ -413,6 +413,15 @@ One AI laptop can serve a whole class: every team gets its own room and the Mac 
 - **Phones keep questions.** A phone keeps each unanswered question for 24 hours and sends it again when the Mac wakes (and every 90 s, at most 8 times). The Mac answers each question once, and each answer shows once.
 - **Lid close.** Closing the lid sleeps the Mac and stops the AI, even on power. Libre only prevents idle sleep. Keep the lid open during class.
 
+## How big can a room be?
+- **People per room:** 12 by default. A room admin can set 2 to 30 (Settings > Advanced > Room). Joins over the cap are refused with "room full".
+- **Direct links:** Apple's peer-to-peer Wi-Fi links each device to at most 7 others. Bigger rooms work by hopping: each message is relayed phone to phone, up to 7 hops.
+- **AI laptops:** one AI laptop answers per room. Other Macs can join as normal members. If two Macs are both set to answer, both reply; automatic backup (one answers, one waits) is on the roadmap.
+- **AI speed:** the AI laptop answers one question at a time, about 3 to 6 s each on a MacBook Air M3 (qwen3:8b). If 30 people ask at the same moment, the last answer can take 2 to 3 minutes.
+- **Android and browsers:** with browser joins turned on, other phones join through the AI laptop's local page; they depend on that laptop being there.
+- **Tested so far:** 3 devices (MacBook Air M3, iPhone 14 Pro Max, iPhone 12), including a 2-hop relay. Rooms of 12 to 30 are the design limit, not a measured result.
+- **Roadmap:** raise the cap past 30, a backup AI laptop, and answering several questions in parallel on bigger machines.
+
 ## Member cap
 - Each room has a member cap, 12 by default, adjustable from 2 to 30 in Settings > Room (admins only).
 - Joins over the cap are refused ("room full (12/12)") and the beacon shows `Full 12/12`.
