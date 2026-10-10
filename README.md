@@ -16,7 +16,7 @@ No internet. No cost. Your own knowledge.
 
 **Why it matters.**
 - **Free to use:** no data plan, no subscription, no per-question fee. The only cost is hardware people already own.
-- **Works with zero signal:** in a classroom, a barangay hall or a site with no cell towers. Turn Wi-Fi networks and mobile data off and it still answers.
+- **Works with zero signal:** in a classroom, a barangay hall or a site with no cell towers. No Wi-Fi network, router or mobile data needed (Wi-Fi and Bluetooth just stay switched on so devices can find each other).
 - **Private:** questions, lessons and team notes never leave the group's own devices.
 - **Grounded:** answers cite the class's or team's own documents and rules, and say "I don't know" when nothing matches.
 
