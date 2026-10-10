@@ -2,6 +2,8 @@
 
 *Walang signal? Libre lang.*
 
+<p align="center"><img src="docs/images/libre-icon.png" alt="Libre app icon" width="120"></p>
+
 ![Libre on iPhone after the UI pass](docs/screenshots/2026-10-09_2320_iphone_after_ui_pass.png)
 
 No internet. No cost. Your own knowledge.
