@@ -32,10 +32,12 @@ targets:
     platform: iOS
     sources:
       - path: Libre/Sources
+      - path: Libre/Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_NAME: Libre
         PRODUCT_BUNDLE_IDENTIFIER: com.kmaquindang.libre
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: Libre/Resources/Info-iOS.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
@@ -46,10 +48,12 @@ targets:
     platform: macOS
     sources:
       - path: Libre/Sources
+      - path: Libre/Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_NAME: Libre
         PRODUCT_BUNDLE_IDENTIFIER: com.kmaquindang.libre.mac
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: Libre/Resources/Info-macOS.plist
         CODE_SIGN_ENTITLEMENTS: Libre/Resources/Libre-macOS.entitlements
     scheme: {}

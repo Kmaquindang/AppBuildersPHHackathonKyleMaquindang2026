@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C7AD194979B937705E014EE4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 431C4A30F2DC33FD33AA66BD /* Assets.xcassets */; };
+		13C59724DAE1557153DDC80B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 431C4A30F2DC33FD33AA66BD /* Assets.xcassets */; };
 		0588FD9683C894AB7F6787F3 /* AssistantDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A747142B00687F9DCAD177D /* AssistantDashboardView.swift */; };
 		1FE1C892708A4841F90E4737 /* MacSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73498396C3CAB6F3F557DCA9 /* MacSetupView.swift */; };
 		4AA148DAF26410B24F483004 /* LocalAIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C378A8D5512AF47750FA548 /* LocalAIViews.swift */; };
@@ -170,6 +172,7 @@
 		1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayEngine.swift; sourceTree = "<group>"; };
 		2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameMatcher.swift; sourceTree = "<group>"; };
 		30AE14CEF94F6031C7ECF593 /* Libre-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Libre-macOS.entitlements"; sourceTree = "<group>"; };
+		431C4A30F2DC33FD33AA66BD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3E3C46472A4C8518C4C814A3 /* MeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshService.swift; sourceTree = "<group>"; };
 		BD69A699F42264931D8F2F09 /* KnowledgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeService.swift; sourceTree = "<group>"; };
 		1AC21F74841AD398B070EE99 /* WebGatewayServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebGatewayServer.swift; sourceTree = "<group>"; };
@@ -277,6 +280,7 @@
 		45F2438452C1546EB903775B /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				431C4A30F2DC33FD33AA66BD /* Assets.xcassets */,
 				5B9288DEC8E589C86F79C39E /* Info-iOS.plist */,
 				D6FEB7041148C8E7236CCACB /* Info-macOS.plist */,
 				30AE14CEF94F6031C7ECF593 /* Libre-macOS.entitlements */,
@@ -413,6 +417,7 @@
 			buildConfigurationList = 18E93D4F6C2E2D3A50DD66CC /* Build configuration list for PBXNativeTarget "Libre-macOS" */;
 			buildPhases = (
 				B66E00011AD0771017ACEAE8 /* Sources */,
+				5DD4046711000F875027C55C /* Resources */,
 			);
 			buildRules = (
 			);
@@ -428,6 +433,7 @@
 			buildConfigurationList = 38A1203AC04ABF5F8A29B784 /* Build configuration list for PBXNativeTarget "Libre-iOS" */;
 			buildPhases = (
 				3F9AC7FD109B5ACCA42BED2E /* Sources */,
+				615FE301773CB88FD872FDCB /* Resources */,
 			);
 			buildRules = (
 			);
@@ -474,6 +480,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5DD4046711000F875027C55C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7AD194979B937705E014EE4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		615FE301773CB88FD872FDCB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				13C59724DAE1557153DDC80B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3F9AC7FD109B5ACCA42BED2E /* Sources */ = {
@@ -638,6 +663,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = "Libre/Resources/Info-iOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -721,6 +747,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "Libre/Resources/Libre-macOS.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = "Libre/Resources/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -809,6 +836,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "Libre/Resources/Libre-macOS.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = "Libre/Resources/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -825,6 +853,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = "Libre/Resources/Info-iOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
