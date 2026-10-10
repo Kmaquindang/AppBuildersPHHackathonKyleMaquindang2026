@@ -39,6 +39,7 @@ struct OnboardingFlow: View {
         .frame(width: 560, height: 640)
         #endif
         .tint(Brand.emerald)
+        .environment(\.onboardingBrand, true)
         .onAppear { nameDraft = mesh.personName }
     }
 
