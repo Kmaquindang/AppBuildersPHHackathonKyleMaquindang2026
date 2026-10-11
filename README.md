@@ -16,7 +16,7 @@ No internet. No cost. Your own knowledge.
 
 **Why it matters.**
 - **Free to use:** no data plan, no subscription, no per-question fee. The only cost is hardware people already own.
-- **Works with zero signal:** in a classroom, a barangay hall or a site with no cell towers. No Wi-Fi network, router or mobile data needed (Wi-Fi and Bluetooth just stay switched on so devices can find each other).
+- **Works with zero signal:** in a classroom, a barangay hall or a site with no cell towers. No Wi-Fi network, router or mobile data needed. With Wi-Fi switched on, devices link over fast peer-to-peer Wi-Fi; with Wi-Fi off, they fall back to a slower Bluetooth link (see Bluetooth mode).
 - **Private:** questions, lessons and team notes never leave the group's own devices.
 - **Grounded:** answers cite the class's or team's own documents and rules, and say "I don't know" when nothing matches.
 
@@ -145,7 +145,7 @@ Good to know: with a free Apple ID, the app on each iPhone stops opening after 7
 
 ### 2. Every day (no signal)
 1. Open the Mac, plug it in, and open Ollama, then Libre. Keep the lid open.
-2. On each phone, keep Wi-Fi and Bluetooth switched on. You do not need a Wi-Fi network or mobile data. Airplane mode is fine if you switch Wi-Fi back on.
+2. On each phone, keep Wi-Fi and Bluetooth switched on. You do not need a Wi-Fi network or mobile data. Airplane mode is fine if you switch Wi-Fi back on. If Wi-Fi has to stay off, Bluetooth alone still carries text and questions, more slowly (see Bluetooth mode).
 3. Open Libre on each phone and keep it on screen. Phones in a pocket with the screen off do not pass messages on.
 4. Pick a room: stay in Town Square (open to everyone nearby), or scan the room's QR code on the Mac.
 5. Chat. Start a message with `@libre` to ask the AI on the Mac.
@@ -213,7 +213,7 @@ The Mac's setup step (also Settings > Advanced > AI activity and proof > Set up 
 - **Tested how.** The plan, disk gate, download host check, pull progress parsing and checklist are unit tests. On the test Mac only the read-only detection ran (Ollama and qwen3:8b were already installed). The download, unzip, launch and pull path has not been run end to end.
 
 ## How it works
-- **Link layer:** Apple MultipeerConnectivity on service type `libre-mesh`. It opens encrypted links over peer-to-peer Wi-Fi with no router or internet. We describe this as an offline device-to-device mesh, not a Bluetooth mesh.
+- **Link layer:** two radios side by side. Apple MultipeerConnectivity on service type `libre-mesh` opens encrypted links over peer-to-peer Wi-Fi with no router or internet. A CoreBluetooth link (`BLETransport`) runs at the same time and carries the same room-sealed packets when there is no Wi-Fi link to a device. A device reachable on both gets each packet once, over Wi-Fi (`LinkHub`, `LinkRouter`). See Bluetooth mode.
 - **Relay layer (our code, `Libre/Sources/Core`):** every message carries an id, origin, destination (everyone, one device, or a role such as the AI), hop budget (ttl 7) and the path so far. Each device drops ids it has already seen, adds itself to the path, delivers the message if it is meant for it, and forwards a copy with ttl minus 1 to linked devices not already on the path. Messages with nobody to go to wait in an outbox and leave as soon as a device links.
 - **One chat:** there is no mode switch. Plain messages go to the team. A message that starts with `@libre` goes to the AI laptop. AI replies are Libre bubbles with basic Markdown (bold, italics, bullets, inline code). Long-press any bubble (or use the VoiceOver "Details" action) to see its hop path and timing.
 - **Names:** each person picks a display name on first launch. It travels on every message, so the UI shows "Ana", not "iPhone A8BE". The device id stays the mesh address. Admin rights follow the device id, never the display name, so renaming yourself "Kyle" does not make you an admin.
@@ -234,6 +234,18 @@ The Mac's setup step (also Settings > Advanced > AI activity and proof > Set up 
 - **Model pinning and low-memory Macs:** the dashboard shows the digest of the model Ollama is serving and says whether it is the build we tested. Macs with less than 12 GB of memory default to `qwen3:4b-instruct`; you can change the model in Settings.
 - **Backup:** on the Mac, Settings > Export saves the active room's rules, tasks, notes and chat log as a JSON file you choose. Import asks for confirmation, replaces only the active room's memory, and updates linked phones.
 - **Updates over the mesh:** a new task is sent as a `task` message to the assignee's device; a saved rule is broadcast as a `rule` message so every phone caches it, and shows as a card only when it changed the phone's copy. When a phone links, the Mac first sends a manifest of the rule and task ids it holds (the phone drops cached copies the Mac no longer has, for example after Reset team memory), then the current rules and the phone's open tasks as silent updates that refresh the cache without adding cards to the chat.
+
+## Bluetooth mode
+Added Oct 11, 2026, so Libre still works with Wi-Fi switched off.
+
+- **How it links.** Every iPhone and Mac both advertises a Libre Bluetooth service (one characteristic, write without response plus notify) and scans for it. When two devices find each other they open a Bluetooth Low Energy link and exchange a short hello with their device name. If both opened a link, one is dropped so each pair keeps one.
+- **Same messages, same encryption.** Bluetooth carries the exact room-sealed packets that peer-to-peer Wi-Fi carries. Messages still hop device to device, duplicates are still dropped by id (RelayEngine), and room keys are unchanged. Bluetooth is just another link.
+- **Wi-Fi first.** Both links always run. A device reachable over Wi-Fi gets every packet over Wi-Fi only. Bluetooth carries packets to devices that have no Wi-Fi link (Wi-Fi off, or out of Wi-Fi range).
+- **Framing.** A Bluetooth write holds only a few hundred bytes (the link's negotiated size, usually 182 to 512 bytes on iPhones). Each packet is cut into frames with an 11-byte header (message id, frame number, frame count) and put back together on the other side. Writes are paced by CoreBluetooth flow control, so nothing is dropped when the radio is busy. Packets over 256 KB are never sent over Bluetooth.
+- **Where you see it.** Message Details shows "Arrived via Bluetooth" or "Handed to ... via Bluetooth". The Connection sheet shows "linked via Bluetooth" for devices reached only that way, and its debug line shows the measured Bluetooth speed per device.
+- **Honest speeds (expected, not yet measured on our phones).** Bluetooth Low Energy between iPhones usually moves about 5 to 20 KB per second in practice, roughly a hundred times slower than peer-to-peer Wi-Fi. A text message or question (1 to 3 KB sealed) should arrive in well under a second per hop. An AI answer is similar. A photo (about 200 KB) takes roughly 15 to 60 seconds, and a voice note about the same or longer. Photos and voice notes are allowed over Bluetooth, and Libre shows a one-line warning that they are slow. Each link measures itself once (a 4 KB probe) and writes the result to the Connection sheet debug line and to `ble-log.txt` in Libre's Application Support folder (device names and numbers only, never message text).
+- **Limits.** Range is about 10 m indoors, less through walls. Libre must be open and on screen (no background Bluetooth yet). The Mac's Bluetooth must be switched on for the Mac to join over Bluetooth. Not yet tested phone to phone with Wi-Fi off.
+- **Test it (two phones).** Turn Wi-Fi off in Settings > Wi-Fi on both phones (Control Center only disconnects and keeps the radio for peer-to-peer use). Keep Bluetooth on. Open Libre on both, wait for "linked via Bluetooth" in the Connection sheet, send a text, then long-press it and check Details for "via Bluetooth".
 
 ## Hardware tested on
 - MacBook Air M3, 16 GB RAM (AI laptop and team memory, runs Ollama). Mac app built and running Oct 9.
@@ -308,11 +320,11 @@ Honest status for this prototype:
 - **Data stays local.** Nothing goes to the internet. Passcodes are never stored. Room keys (`rooms.json`), team memory, timelines and cached photos and voice notes are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected only by the device's own storage encryption. Device keys (`identity.json`) are not in the Keychain yet either.
 
 ## Limitations
-- **Bluetooth only does not work (tested Oct 11, 2026):** with Wi-Fi switched off, devices did not connect. Libre never joins a Wi-Fi network, but Apple's peer-to-peer link needs the Wi-Fi radio on. Roadmap: a slower Bluetooth-only transport, which would also help Android.
+- **Bluetooth only is slow and new (built Oct 11, 2026):** before the Bluetooth link was added, devices with Wi-Fi switched off did not connect at all (Kyle tested this on Oct 11). Libre now falls back to Bluetooth Low Energy. It is built and unit tested, but not yet tested phone to phone with Wi-Fi off. Expect text in about a second and photos or voice notes in a minute or more (see Bluetooth mode).
 - **Town Square moderation:** Town Square is open to everyone nearby and has no admin, so nobody can delete messages there yet. Roadmap: the AI laptop's owner can hide Town Square messages for everyone. Code rooms already have admins.
 - **Phones relay only while Libre is open and on screen.** iOS suspends Libre in the background and its links drop, so there is no pocket relaying yet. Keep the app in the foreground on every phone that should pass messages on.
 - The Mac must stay awake: lid open, plugged in, Ollama running. Libre prevents idle sleep while it is the AI laptop, but closing the lid still sleeps the Mac and stops the AI. Phones then say "AI Mac asleep" and keep their questions until it wakes (see Mac sleep).
-- Peer-to-peer Wi-Fi must be on (no network needs to be joined). Bluetooth-only behavior is untested.
+- Peer-to-peer Wi-Fi is the fast path (no network needs to be joined). Bluetooth-only works for text and questions but is much slower; range is shorter (about 10 m indoors).
 - One AI laptop answers every room it has joined, one question at a time, so a busy room makes the others wait (see Multi-room). A second Mac in the same room must turn "Act as AI peer" off. A MultipeerConnectivity session links at most 8 devices (the device plus 7 others) directly; relays extend reach beyond that.
 - Tagalog and Cebuano quality is measured only on our 20-question benchmark (latest run: 5/6 Tagalog, 3/3 Cebuano for grounding) and a few QA asks. Grounding is scored, reply language is not: in the 9:20 PM QA run `qwen3:8b` answered a Tagalog question ("Pwede ba akong pumunta sa site ng alas sais ng gabi?") in mixed Cebuano twice, and Cebuano replies were sometimes awkward. A per-language reply hint did not fix it, so we reverted it. Keyword retrieval does not match across languages: an English question can miss a rule titled in Tagalog (benchmark #8).
 - Due dates are free text, with no reminders or notifications.
@@ -485,6 +497,7 @@ The AI laptop keeps a per-room thread so follow-ups like "and Sunday?" or "what 
 
 ## Privacy permissions
 - **Local Network** (iPhone and Mac): to find nearby devices and pass messages.
+- **Bluetooth** (iPhone and Mac, `NSBluetoothAlwaysUsageDescription`; the Mac sandbox also has `com.apple.security.device.bluetooth`): to pass messages between nearby devices when Wi-Fi is off.
 - **Microphone** (iPhone and Mac, `NSMicrophoneUsageDescription`; the Mac sandbox also has the audio input entitlement): only while you hold the mic button.
 - **Photos** (`NSPhotoLibraryUsageDescription`): PhotosPicker shows your library in a system picker and Libre only gets the photo you choose.
 - **Speech Recognition** (Mac only, `NSSpeechRecognitionUsageDescription`): on-device voice note transcripts.
@@ -492,7 +505,7 @@ The AI laptop keeps a per-room thread so follow-ups like "and Sunday?" or "what 
 - Microphone and photos get a one-line Libre primer on first use, before the system prompt or picker.
 
 ## Roadmap
-- **Android (decided Oct 9, 9:10 PM PHT: roadmap only, not built tonight).** Add Bluetooth Low Energy to the iPhone and Mac apps next to MultipeerConnectivity, carrying the same sealed v2 packets, so the relay layer does not change. Then a native Android app (Kotlin) with the same rooms, passcode key derivation, ChaCha20-Poly1305 sealing, relay rules and `@libre` asks answered by the Mac. Text and small photos over BLE first; voice notes and bigger media stay on peer-to-peer Wi-Fi where both sides support it. Not started, and it would need a real Android phone to test.
+- **Android (decided Oct 9, 9:10 PM PHT: roadmap only, not built tonight).** Bluetooth Low Energy next to MultipeerConnectivity, carrying the same sealed v2 packets, is now in the iPhone and Mac apps (Oct 11, see Bluetooth mode). Next, a native Android app (Kotlin) with the same rooms, passcode key derivation, ChaCha20-Poly1305 sealing, relay rules and `@libre` asks answered by the Mac. Text and small photos over BLE first; voice notes and bigger media stay on peer-to-peer Wi-Fi where both sides support it. Not started, and it would need a real Android phone to test.
 - Measure photo checks on a real vision model and add them to the benchmark.
 - Join by scanning the QR code with the camera; room and device keys in the Keychain.
 - Beacons from co-admins too, and joining without an admin online.

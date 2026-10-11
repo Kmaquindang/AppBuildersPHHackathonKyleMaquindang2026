@@ -34,6 +34,8 @@ struct PeerInfo: Identifiable, Equatable {
     var label: String
     var state: PeerLinkState
     var isBlocked: Bool
+    /// Linked over Bluetooth only (no Wi-Fi link to this peer).
+    var viaBluetooth = false
     var id: String { name }
 }
 
@@ -197,6 +199,26 @@ final class MeshService: ObservableObject {
         guard let transport else { return }
         if transport.restartCount != discoveryRestarts { discoveryRestarts = transport.restartCount }
         if transport.coalescedRestarts != discoveryRestartsCoalesced { discoveryRestartsCoalesced = transport.coalescedRestarts }
+        let ble = transport.bluetoothOnlyPeers
+        if ble != bluetoothPeers { bluetoothPeers = ble }
+        let summary = Self.bluetoothSummary(state: transport.bluetoothState, probes: transport.bluetoothProbes,
+                                            stats: transport.bluetoothStats, tooBig: transport.packetsTooBigForBluetooth)
+        if summary != bluetoothSummary { bluetoothSummary = summary }
+    }
+
+    /// Peers reached over Bluetooth only (Wi-Fi off or out of Wi-Fi range).
+    @Published private(set) var bluetoothPeers: Set<String> = []
+    /// Debug line: radio state, measured speed per peer, bytes sent.
+    @Published private(set) var bluetoothSummary = ""
+
+    static func bluetoothSummary(state: String, probes: [String: BLEProbeResult], stats: (frames: Int, bytes: Int), tooBig: Int) -> String {
+        var parts = ["Bluetooth \(state)"]
+        for (name, p) in probes.sorted(by: { $0.key < $1.key }) {
+            parts.append("\(name): \(String(format: "%.1f", p.bytesPerSecond / 1024)) KB/s, MTU \(p.mtu)")
+        }
+        parts.append("\(stats.frames) frames, \(stats.bytes / 1024) KB sent")
+        if tooBig > 0 { parts.append("\(tooBig) packets too big for Bluetooth") }
+        return parts.joined(separator: " · ")
     }
 
     /// Mac: internet route state from NWPathMonitor (listens only, never sends).
@@ -238,7 +260,9 @@ final class MeshService: ObservableObject {
     // MARK: Internals
 
     private let engine: RelayEngine
-    private var transport: MeshTransport?
+    private var transport: LinkHub?
+    /// Which radio the packet being handled arrived on (set around receive()).
+    private var receivingLink: LinkKind?
     private var sentAsks: [UUID: Date] = [:]
     private var lastSeen: [String: Date] = [:]
     private var housekeeping: Timer?
@@ -482,7 +506,8 @@ final class MeshService: ObservableObject {
         var names = Set(peerStates.keys)
         names.formUnion(blocked)
         return names.sorted().map { name in
-            PeerInfo(name: name, label: label(for: name), state: peerStates[name] ?? .disconnected, isBlocked: blocked.contains(name))
+            PeerInfo(name: name, label: label(for: name), state: peerStates[name] ?? .disconnected, isBlocked: blocked.contains(name),
+                     viaBluetooth: bluetoothPeers.contains(name))
         }
     }
 
@@ -762,7 +787,7 @@ final class MeshService: ObservableObject {
 
     func start() {
         guard transport == nil else { return }
-        let newTransport = MeshTransport(displayName: displayName, blocked: blocked) { [weak self] event in
+        let newTransport = LinkHub(displayName: displayName, blocked: blocked) { [weak self] event in
             guard let service = self else { return }
             // Main queue keeps events in arrival order (unstructured Tasks do not promise that).
             DispatchQueue.main.async {
@@ -1694,6 +1719,7 @@ final class MeshService: ObservableObject {
         #endif
 
         entry.sentTo = transmit(message, excluding: [])
+        entry.link = transport?.linkLabel(for: entry.sentTo)
         entries.append(entry)
     }
 
@@ -1765,6 +1791,7 @@ final class MeshService: ObservableObject {
             let sentTo = transmit(item.message, excluding: item.excluding, foreign: item.foreign == true)
             if !sentTo.isEmpty, let index = entries.firstIndex(where: { $0.id == item.message.id && $0.direction == .sent }) {
                 entries[index].sentTo = sentTo
+                entries[index].link = transport?.linkLabel(for: sentTo)
             }
         }
         outboxCount = engine.outbox.count
@@ -1815,6 +1842,7 @@ final class MeshService: ObservableObject {
         let message = engine.makeOutgoing(kind: .media, body: body, destination: nil)
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         entry.sentTo = transmit(message, excluding: [])
+        entry.link = transport?.linkLabel(for: entry.sentTo)
         entries.append(entry)
         mediaRoom[manifest.mediaId] = activeRoom.id
         queueChunks(of: data, manifest: manifest, indexes: Array(0..<manifest.chunkCount), outgoing: true, room: activeRoom.id)
@@ -2097,6 +2125,7 @@ final class MeshService: ObservableObject {
         case .state(let name, let state):
             let linkedBefore = connectedCount
             peerStates[name] = state
+            refreshTransportStats()
             if state == .connected { lastSeen[name] = Date() }
             if state == .connected && !blocked.contains(name) {
                 isAway = false
@@ -2112,9 +2141,11 @@ final class MeshService: ObservableObject {
             #if os(macOS)
             refreshKnownDevices()
             #endif
-        case .received(let data, let from):
+        case .received(let data, let from, let link):
             lastSeen[from] = Date()
+            receivingLink = link
             receive(data, from: from)
+            receivingLink = nil
         case .problem(let text):
             lastProblem = text
             if text.contains("Local Network") { localNetworkDenied = true }
@@ -2257,6 +2288,7 @@ final class MeshService: ObservableObject {
         }
 
         var entry = ChatEntry(id: delivered.id, message: delivered, direction: .received, receivedAt: Date())
+        entry.link = receivingLink.map { $0 == .bluetooth ? "Bluetooth" : "Wi-Fi" }
         if delivered.kind == .answer, let askID = delivered.replyTo {
             // An answer re-delivered after a resend: show it once.
             if entriesFor(roomID).contains(where: { $0.message.kind == .answer && $0.message.replyTo == askID }) {
@@ -2559,6 +2591,7 @@ final class MeshService: ObservableObject {
             entry.sentTo = ["browser (via this Mac)"]
         } else if let room = rooms.room(withID: roomID) {
             entry.sentTo = transmit(message, room: room, excluding: [])
+            entry.link = transport?.linkLabel(for: entry.sentTo)
         }
         appendEntry(entry, room: roomID)
 
@@ -2586,6 +2619,7 @@ final class MeshService: ObservableObject {
             let message = engine.makeOutgoing(kind: .task, body: body, destination: .peer(device))
             var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
             entry.sentTo = transmit(message, room: room, excluding: [])
+            entry.link = transport?.linkLabel(for: entry.sentTo)
             appendEntry(entry, room: id)
         }
     }
@@ -2597,6 +2631,7 @@ final class MeshService: ObservableObject {
         let message = engine.makeOutgoing(kind: .rule, body: body, destination: nil)
         var entry = ChatEntry(id: message.id, message: message, direction: .sent, receivedAt: Date())
         entry.sentTo = transmit(message, room: room, excluding: [])
+        entry.link = transport?.linkLabel(for: entry.sentTo)
         appendEntry(entry, room: id)
     }
 
@@ -2711,6 +2746,7 @@ final class MeshService: ObservableObject {
             }
         }
         if let room = rooms.room(withID: roomID) { entry.sentTo = transmit(message, room: room, excluding: []) }
+        entry.link = transport?.linkLabel(for: entry.sentTo)
         if asker?.origin == displayName { entry.direction = .received }
         appendEntry(entry, room: roomID)
         logProof(cardProof, room: roomID, kind: card)
@@ -3022,6 +3058,7 @@ extension MeshService: GatewayBackend {
                 mem.recordChat(from: session.displayName, text: text, at: message.createdAt, device: session.device)
             }
             entry.sentTo = transmit(message, room: room, excluding: [])
+            entry.link = transport?.linkLabel(for: entry.sentTo)
             appendEntry(entry, room: room.id)
         } else {
             guard isAIPeer else { return false }
