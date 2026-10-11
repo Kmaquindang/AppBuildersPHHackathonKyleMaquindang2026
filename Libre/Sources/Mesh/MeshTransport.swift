@@ -34,7 +34,7 @@ enum TransportEvent: Sendable {
     case found(String)
     case lost(String)
     case state(String, PeerLinkState)
-    case received(Data, from: String)
+    case received(Data, from: String, link: LinkKind = .wifi)
     case problem(String)
 }
 

@@ -13,6 +13,7 @@
 		1FE1C892708A4841F90E4737 /* MacSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73498396C3CAB6F3F557DCA9 /* MacSetupView.swift */; };
 		4AA148DAF26410B24F483004 /* LocalAIViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C378A8D5512AF47750FA548 /* LocalAIViews.swift */; };
 		069737D7669061806B9C5A4D /* Timeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C632BFB760E3187EF396C9B /* Timeline.swift */; };
+		DC416857D3ADFF758A4F8E37 /* BLEFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */; };
 		06516754BFCE2F2238907FF7 /* ChatStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FABD538020A6189503AC0FB6 /* ChatStatus.swift */; };
 		15A07AAB052FFC1972322EAA /* ChatLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2694CED37C0024DBAD648594 /* ChatLayout.swift */; };
 		095F6D943987B5B3E62BE86E /* MeshPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F146780F3C887A53042E80 /* MeshPayload.swift */; };
@@ -79,6 +80,7 @@
 		613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */; };
 		630F9BF63AE308FFE4AB9D7B /* PeerStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */; };
 		64F48D4AA5857840CAD71DDF /* Timeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C632BFB760E3187EF396C9B /* Timeline.swift */; };
+		D8EE56D8CEC66DAC00C32A76 /* BLEFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */; };
 		C67026726C42445C6B2EA815 /* ChatStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FABD538020A6189503AC0FB6 /* ChatStatus.swift */; };
 		A70CDCC2DF79A62783F305B7 /* ChatLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2694CED37C0024DBAD648594 /* ChatLayout.swift */; };
 		69A5774AE1550EF4BBCC64DD /* LibreApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E755E8C81B55112D72A2D008 /* LibreApp.swift */; };
@@ -114,6 +116,8 @@
 		293CC09932D84BB92852E577 /* Accessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5508ABE4A9B8D2F7F0815D93 /* Accessibility.swift */; };
 		3355774A9D986EEB0241FD32 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C57F70BE8588E192C3D2A52 /* OnboardingView.swift */; };
 		A838AE099437F0066F6C2076 /* MeshTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */; };
+		B9DB47B44020E9CF957E89E8 /* LinkHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5C5D57E21C21698BEC8377 /* LinkHub.swift */; };
+		4B049D31AF166999BAA8E0C9 /* BLETransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6700A74783C9BE40291BD8 /* BLETransport.swift */; };
 		AD88362011456A08E76CC228 /* RelayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */; };
 		B4AD97EF952B86FB41C08179 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D22E702E09FB434DD2B72C3 /* ComposerView.swift */; };
 		B6AC3B8AA94B5FB7A1502FC4 /* AssistantPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */; };
@@ -129,6 +133,8 @@
 		2BE410E39BCF8155121927AF /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6566206FAB479DC9A1E2EBEB /* ConnectivityMonitor.swift */; };
 		CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */; };
 		D05A67DA3238A52419071E1B /* MeshTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */; };
+		CD935375CB8DFD60A01874D3 /* LinkHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5C5D57E21C21698BEC8377 /* LinkHub.swift */; };
+		ACCBD3855E844C07981BFFD4 /* BLETransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6700A74783C9BE40291BD8 /* BLETransport.swift */; };
 		D4DCCE15241436706548CB37 /* People.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68EB20852E75BC8350878E33 /* People.swift */; };
 		FA7A94B96EACF7E155C7200E /* MeshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F379B52A6BD676489720A926 /* MeshPolicy.swift */; };
 		ABBFCA312BA6ADE68ADF4F4C /* Rooms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C15F19562940628FE094226 /* Rooms.swift */; };
@@ -181,6 +187,7 @@
 		1669F4A3B97C826F6591D1AF /* VisionImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionImage.swift; sourceTree = "<group>"; };
 		6566206FAB479DC9A1E2EBEB /* ConnectivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityMonitor.swift; sourceTree = "<group>"; };
 		4C632BFB760E3187EF396C9B /* Timeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Timeline.swift; sourceTree = "<group>"; };
+		C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEFraming.swift; sourceTree = "<group>"; };
 		FABD538020A6189503AC0FB6 /* ChatStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStatus.swift; sourceTree = "<group>"; };
 		2694CED37C0024DBAD648594 /* ChatLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLayout.swift; sourceTree = "<group>"; };
 		5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStripView.swift; sourceTree = "<group>"; };
@@ -216,6 +223,8 @@
 		9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgMemory.swift; sourceTree = "<group>"; };
 		A1AA7A71FB7CD5DEE5608C8A /* 2026-10-09_1723_iphone12_answer_2hop.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "2026-10-09_1723_iphone12_answer_2hop.jpg"; sourceTree = "<group>"; };
 		A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshTransport.swift; sourceTree = "<group>"; };
+		8A5C5D57E21C21698BEC8377 /* LinkHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkHub.swift; sourceTree = "<group>"; };
+		1A6700A74783C9BE40291BD8 /* BLETransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLETransport.swift; sourceTree = "<group>"; };
 		A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantPrompts.swift; sourceTree = "<group>"; };
 		B31305907BF0078F6F24B7ED /* Libre-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Libre-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C591AFAD3C57690844D564A4 /* 2026-10-09_1723_mac_ai_peer.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "2026-10-09_1723_mac_ai_peer.jpg"; sourceTree = "<group>"; };
@@ -264,6 +273,8 @@
 				1669F4A3B97C826F6591D1AF /* VisionImage.swift */,
 				6566206FAB479DC9A1E2EBEB /* ConnectivityMonitor.swift */,
 				A50E5EFCB133A6A2FB78E74F /* MeshTransport.swift */,
+				8A5C5D57E21C21698BEC8377 /* LinkHub.swift */,
+				1A6700A74783C9BE40291BD8 /* BLETransport.swift */,
 			);
 			path = Mesh;
 			sourceTree = "<group>";
@@ -349,6 +360,7 @@
 				623462451D13DCBF40BBB8C7 /* RoomKDF.swift */,
 				1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */,
 				4C632BFB760E3187EF396C9B /* Timeline.swift */,
+				C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */,
 				FABD538020A6189503AC0FB6 /* ChatStatus.swift */,
 				2694CED37C0024DBAD648594 /* ChatLayout.swift */,
 			);
@@ -542,6 +554,8 @@
 				8D1024B102A8199B7ED77F54 /* VisionImage.swift in Sources */,
 				C2B861D4008DF57DB89A078C /* ConnectivityMonitor.swift in Sources */,
 				A838AE099437F0066F6C2076 /* MeshTransport.swift in Sources */,
+				B9DB47B44020E9CF957E89E8 /* LinkHub.swift in Sources */,
+				4B049D31AF166999BAA8E0C9 /* BLETransport.swift in Sources */,
 				C1F5594115CCD59706B4BDA6 /* NameMatcher.swift in Sources */,
 				613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */,
 				FAC18A04EE738239F7B5CBFA /* OrgMemory.swift in Sources */,
@@ -573,6 +587,7 @@
 				136BE87B75C054E7D9F6F035 /* MediaViews.swift in Sources */,
 				EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */,
 				069737D7669061806B9C5A4D /* Timeline.swift in Sources */,
+				DC416857D3ADFF758A4F8E37 /* BLEFraming.swift in Sources */,
 				06516754BFCE2F2238907FF7 /* ChatStatus.swift in Sources */,
 				15A07AAB052FFC1972322EAA /* ChatLayout.swift in Sources */,
 			);
@@ -619,6 +634,8 @@
 				FD7696D0E879EF4AF76AD484 /* VisionImage.swift in Sources */,
 				2BE410E39BCF8155121927AF /* ConnectivityMonitor.swift in Sources */,
 				D05A67DA3238A52419071E1B /* MeshTransport.swift in Sources */,
+				CD935375CB8DFD60A01874D3 /* LinkHub.swift in Sources */,
+				ACCBD3855E844C07981BFFD4 /* BLETransport.swift in Sources */,
 				A6576C652F51E68A02794362 /* NameMatcher.swift in Sources */,
 				DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */,
 				CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */,
@@ -650,6 +667,7 @@
 				DDB3442105860592EC0DBD1D /* MediaViews.swift in Sources */,
 				5FA6165B0DC52B836D0566C3 /* TasksView.swift in Sources */,
 				64F48D4AA5857840CAD71DDF /* Timeline.swift in Sources */,
+				D8EE56D8CEC66DAC00C32A76 /* BLEFraming.swift in Sources */,
 				C67026726C42445C6B2EA815 /* ChatStatus.swift in Sources */,
 				A70CDCC2DF79A62783F305B7 /* ChatLayout.swift in Sources */,
 			);

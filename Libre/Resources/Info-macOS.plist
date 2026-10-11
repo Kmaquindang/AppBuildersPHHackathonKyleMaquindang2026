@@ -42,6 +42,8 @@
 	<string>Libre sends a photo you pick to your team over the offline mesh. It is shrunk first and location data is removed.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Libre turns team voice notes into text on this Mac with on-device speech recognition. Audio is never sent to a server.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Libre uses Bluetooth to pass team messages between nearby phones and Macs when Wi-Fi is off.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Libre connects directly to nearby phones and Macs to pass team messages and AI answers with no internet.</string>
 	<key>NSAppTransportSecurity</key>

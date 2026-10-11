@@ -630,8 +630,12 @@ struct MessageDetailsSheet: View {
                     .accessibilityElement(children: .combine)
                     row(message.createdAt.formatted(date: .abbreviated, time: .standard), symbol: "clock")
                     if entry.direction == .sent {
-                        row(entry.sentTo.isEmpty ? "Queued. Sends when a teammate is in range." : "Handed to \(entry.sentTo.map(label).joined(separator: ", "))",
+                        row(entry.sentTo.isEmpty ? "Queued. Sends when a teammate is in range." : "Handed to \(entry.sentTo.map(label).joined(separator: ", "))\(entry.link.map { " via \($0)" } ?? "")",
                             symbol: entry.sentTo.isEmpty ? "clock.badge.exclamationmark" : "paperplane")
+                    }
+                    if entry.direction == .received, let link = entry.link {
+                        row(link == "Bluetooth" ? "Arrived via Bluetooth (slow link, used when there is no Wi-Fi link)" : "Arrived via \(link)",
+                            symbol: link == "Bluetooth" ? "antenna.radiowaves.left.and.right" : "wifi")
                     }
                     if message.hops.count > 1 {
                         row("Path: \(message.hops.map(label).joined(separator: " → ")) (\(hopWord(message.hopCount)))", symbol: "point.3.connected.trianglepath.dotted")

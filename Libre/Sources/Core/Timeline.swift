@@ -26,6 +26,8 @@ public struct ChatEntry: Identifiable, Equatable, Codable, Sendable {
     public var backfilled: Bool?
     /// Voice notes: the transcript made on the Mac (or a note why there is none).
     public var transcript: String?
+    /// Which radio carried it: "Wi-Fi", "Bluetooth" or "Wi-Fi and Bluetooth" (nil: older entry or local).
+    public var link: String?
 
     public init(id: UUID, message: MeshMessage, direction: Direction, receivedAt: Date,
                 sentTo: [String] = [], roundTripMs: Int? = nil, backfilled: Bool? = nil) {

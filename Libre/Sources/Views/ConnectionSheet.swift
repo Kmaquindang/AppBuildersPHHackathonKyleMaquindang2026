@@ -39,7 +39,7 @@ struct ConnectionSheet: View {
 
                 Section {
                     if mesh.peers.isEmpty {
-                        Text("No one nearby yet. Teammates show up here when they open Libre within Wi-Fi range.")
+                        Text("No one nearby yet. Teammates show up here when they open Libre nearby (Wi-Fi or Bluetooth).")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(mesh.peers) { peer in
@@ -115,6 +115,9 @@ struct ConnectionSheet: View {
                         Text("Link layer: \(mesh.discoveryRestarts) discovery restarts, \(mesh.discoveryRestartsCoalesced) folded or deferred")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        Text(mesh.bluetoothSummary)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -134,7 +137,7 @@ struct ConnectionSheet: View {
     private func stateWord(_ peer: PeerInfo) -> String {
         if peer.isBlocked { return "blocked" }
         switch peer.state {
-        case .connected: return "linked"
+        case .connected: return peer.viaBluetooth ? "linked via Bluetooth" : "linked"
         case .connecting: return "connecting"
         case .discovered: return "nearby"
         case .disconnected: return "offline"

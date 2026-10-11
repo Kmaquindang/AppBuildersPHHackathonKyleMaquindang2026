@@ -12,7 +12,7 @@ struct PeerStripView: View {
             HStack(spacing: 8) {
                 if mesh.peers.isEmpty {
                     Label {
-                        Text("Teammates show up here when they open Libre within Wi-Fi range.")
+                        Text("Teammates show up here when they open Libre nearby (Wi-Fi or Bluetooth).")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
