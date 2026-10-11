@@ -308,6 +308,7 @@ Honest status for this prototype:
 - **Data stays local.** Nothing goes to the internet. Passcodes are never stored. Room keys (`rooms.json`), team memory, timelines and cached photos and voice notes are saved as plain JSON in each app's Application Support folder (inside the app sandbox on macOS), protected only by the device's own storage encryption. Device keys (`identity.json`) are not in the Keychain yet either.
 
 ## Limitations
+- **Bluetooth only does not work (tested Oct 11, 2026):** with Wi-Fi switched off, devices did not connect. Libre never joins a Wi-Fi network, but Apple's peer-to-peer link needs the Wi-Fi radio on. Roadmap: a slower Bluetooth-only transport, which would also help Android.
 - **Town Square moderation:** Town Square is open to everyone nearby and has no admin, so nobody can delete messages there yet. Roadmap: the AI laptop's owner can hide Town Square messages for everyone. Code rooms already have admins.
 - **Phones relay only while Libre is open and on screen.** iOS suspends Libre in the background and its links drop, so there is no pocket relaying yet. Keep the app in the foreground on every phone that should pass messages on.
 - The Mac must stay awake: lid open, plugged in, Ollama running. Libre prevents idle sleep while it is the AI laptop, but closing the lid still sleeps the Mac and stops the AI. Phones then say "AI Mac asleep" and keep their questions until it wakes (see Mac sleep).
