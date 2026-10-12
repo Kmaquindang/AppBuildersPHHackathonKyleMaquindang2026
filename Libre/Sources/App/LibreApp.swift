@@ -9,7 +9,11 @@ import UIKit
 
 @main
 struct LibreApp: App {
-    @StateObject private var mesh = MeshService()
+    // One MeshService for the app, so a Bluetooth relaunch (below) and the UI share it.
+    @StateObject private var mesh = MeshService.shared
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(LibreAppDelegate.self) private var appDelegate
+    #endif
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -55,3 +59,18 @@ struct LibreApp: App {
         #endif
     }
 }
+
+#if os(iOS)
+/// Bluetooth state restoration (issue #5): when iOS relaunches Libre in the background for a
+/// Bluetooth event, no window appears, so start the mesh here. Its Bluetooth managers are then
+/// recreated with their restore identifiers and receive what iOS kept (BLETransport).
+final class LibreAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        if launchOptions?[.bluetoothCentrals] != nil || launchOptions?[.bluetoothPeripherals] != nil {
+            let mesh = MeshService.shared
+            if mesh.onboardingDone { mesh.start() }
+        }
+        return true
+    }
+}
+#endif
