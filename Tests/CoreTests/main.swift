@@ -57,6 +57,8 @@ runRelaySchedulerTests()
 runAdvertiseWatchTests()
 runLinkStatusWordsTests()
 runAndroidInteropTests()
+runAnswerStreamTests()
+await runOllamaStreamTests()
 
 print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

@@ -55,4 +55,30 @@ class MeshControllerTest {
         assertTrue(c.waiting.value.isNotEmpty())
         assertEquals("@libre ask rides the urgent Bluetooth lane", app.libre.core.Lane.URGENT, l.lanes.last())
     }
+
+    @Test fun streamedAnswerShowsPartsThenFinalOnce() {
+        val (c, l) = controller()
+        l.peers += "Mac-1"; c.peerLinked("Mac-1")
+        c.send("@libre what is the visit rule?")
+        val ask = c.waiting.value.single()
+        val room = c.activeRoom
+        fun deliver(m: app.libre.core.MeshMessage) =
+            c.receive(app.libre.core.MeshCodec.encode(app.libre.core.RoomEnvelope.seal(m, room.id, room.contentKey!!, room.epoch)), "Mac-1")
+        fun part(seq: Int, text: String) = app.libre.core.MeshMessage(origin = "Mac-1", destination = app.libre.core.Destination.Peer(c.meshName()),
+            kind = app.libre.core.Kind.ANSWER_PART, body = text, replyTo = ask, part = seq, createdAt = Vectors.T0)
+
+        deliver(part(1, " end at 8 PM"))
+        assertTrue("part 1 alone shows nothing", c.partials.value.isEmpty())
+        deliver(part(0, "Visits"))
+        assertEquals(listOf(PartialAnswer(ask, "Visits end at 8 PM")), c.partials.value)
+        assertEquals("parts never enter the timeline", 1, c.entries.value.size)
+
+        deliver(app.libre.core.MeshMessage(origin = "Mac-1", destination = app.libre.core.Destination.Peer(c.meshName()),
+            kind = app.libre.core.Kind.ANSWER, body = "Visits end at 8 PM.", replyTo = ask, createdAt = Vectors.T0))
+        assertTrue("final answer replaces the partial", c.partials.value.isEmpty())
+        deliver(part(2, " late"))
+        assertTrue("late part ignored", c.partials.value.isEmpty())
+        assertEquals("answer shown once", 1, c.entries.value.count { it.isAnswer })
+        assertTrue(c.waiting.value.isEmpty())
+    }
 }
