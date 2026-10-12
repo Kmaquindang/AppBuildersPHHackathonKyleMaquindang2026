@@ -14,8 +14,10 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import app.libre.core.BatteryLog
 import app.libre.core.PowerPolicy
 import android.util.Log
 import app.libre.mesh.MeshController
@@ -78,9 +80,26 @@ class LibreApp : Application() {
     }
 
     private fun updatePower() {
-        val p = PowerPolicy.choose(PowerPolicy.State(startedActivities > 0, screenOn, batteryPct, charging))
+        val visible = startedActivities > 0
+        val p = PowerPolicy.choose(PowerPolicy.State(visible, screenOn, batteryPct, charging))
         _power.value = p
         ble?.setPower(p)
+        logBattery(force = visible != lastVisible)
+        lastVisible = visible
+    }
+
+    private var lastVisible = false
+    private var lastBatteryLog: Long? = null
+
+    /** Battery line for device tests (issue #7): every 5 minutes (battery broadcasts come often),
+     *  and when Libre opens or closes. Numbers only. */
+    private fun logBattery(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force && !BatteryLog.due(lastBatteryLog, now)) return
+        lastBatteryLog = now
+        val bright = runCatching { Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255.0 }.getOrNull()
+        Log.i("LibreMesh", BatteryLog.line(batteryPct, charging, ble?.linkedPeers?.size ?: 0, bright, startedActivities > 0,
+            "Android " + Build.VERSION.RELEASE, Build.MODEL ?: "Android"))
     }
 
     fun run(block: (MeshController) -> Unit) { worker.execute { runCatching { block(mesh) } } }

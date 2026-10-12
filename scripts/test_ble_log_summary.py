@@ -61,6 +61,27 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(dict(d["probe_kbps"]), {"Ben Mac": [13.653]})   # iOS probes are older
         self.assertEqual(d["rtt"][("bluetooth", 1)], [3100, 2900, 2800])
 
+    def test_battery_lines(self):
+        log = (
+            "2026-10-13T01:00:00Z BAT pct=90 charging=0 links=1 bright=0.50 state=bg os=iOS 26.0 model=iPhone15,3\n"
+            "2026-10-13T01:30:00Z BAT pct=88 charging=0 links=2 bright=0.50 state=bg os=iOS 26.0 model=iPhone15,3\n"
+            "2026-10-13T02:00:00Z BAT pct=86 charging=0 links=2 bright=0.50 state=fg os=iOS 26.0 model=iPhone15,3\n"
+        )
+        text = s.report("iphone.txt", s.parse(log))
+        self.assertIn("| Battery start to end (%) | 90 to 86 |", text)
+        self.assertIn("| Run length (min) | 60 |", text)
+        self.assertIn("| Drain (% per hour) | 4.0 |", text)
+        self.assertIn("| Device | iPhone15,3, iOS 26.0 |", text)
+        self.assertIn("| Time on screen / in background (lines) | 1 / 2 |", text)
+
+    def test_battery_logcat_and_unknown_level(self):
+        log = (
+            "10-13 09:00:00.000  1  2 I LibreMesh: BAT pct=50 charging=0 links=1 bright=-1 state=bg os=Android 15 model=Pixel 8\n"
+            "10-13 10:00:00.000  1  2 I LibreMesh: BAT pct=47 charging=0 links=1 bright=-1 state=bg os=Android 15 model=Pixel 8\n"
+        )
+        self.assertIn("| Drain (% per hour) | 3.0 |", s.report("android.txt", s.parse(log)))
+        self.assertNotIn("Battery", s.report("mac.txt", s.parse("2026-10-13T01:00:00Z BAT pct=-1 charging=0 links=0 bright=-1 state=fg os=macOS model=Mac\n")))
+
     def test_empty_log(self):
         self.assertIn("no Libre Bluetooth lines found", s.report("x", s.parse("hello\n")))
 
