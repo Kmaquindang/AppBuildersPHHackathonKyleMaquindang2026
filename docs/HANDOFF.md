@@ -1,0 +1,55 @@
+# Libre handoff (Oct 12, 2026)
+
+Notes for any developer or coding agent picking up Libre. Read this first, then README.md (the user-facing source of truth) and docs/BLE_REVIEW.md. Open work is tracked as GitHub issues in this repo.
+
+## What Libre is
+An internal project: an offline team chat that runs device to device (no internet, no cell signal) with a local AI assistant on a Mac. Phones chat in encrypted rooms over peer-to-peer Wi-Fi or Bluetooth LE; messages hop through other phones. One Mac (the "AI laptop") runs Ollama and answers `@libre` questions grounded in the room's own rules, tasks and documents. Nothing goes to a cloud AI.
+
+## Architecture
+- **Apps:** one SwiftUI multiplatform app for iOS 17+ and macOS 14+ (`Libre/`, schemes `Libre-iOS` and `Libre-macOS`). Source folders: `Libre/Sources/Core` (pure Swift, builds on Linux), `AI`, `Mesh`, `Views`, `App`.
+- **Wi-Fi link:** Apple MultipeerConnectivity (`Mesh/MeshTransport.swift`), encryption required, one long-lived browser and advertiser with a debounced restart state machine (`Core/DiscoveryRestartPolicy.swift`; two Mac crashes came from overlapping restarts).
+- **Bluetooth link:** `Mesh/BLETransport.swift` (central and peripheral at once) with pure logic in Core: `BLEFraming` (11-byte frame header, version 2, chunk to MTU, reassembly with timeout and memory cap), `BLEHandshake` (signed hello and proof, peer book keyed by public key), `BLEConnectPolicy` (link cap 7 phones / 12 hub, RSSI floor, connect queue, backoff, Android 133 retries), `BLEPriority` (lanes: control, urgent, bulk, media), `AdvertiseWatch` (advertiser retry). `Mesh/LinkHub.swift` picks Wi-Fi first per peer and falls back to Bluetooth; photos and voice wait for Wi-Fi on Bluetooth-only links by default.
+- **Relay:** `Core/RelayEngine.swift` (dedup 1000 ids for 300 s, TTL 7, hop path, outbox) plus `Core/RelayScheduler.swift` (jitter, cancel on duplicate, fewer hops in a crowd). Protocol `v` field; unknown kinds and versions are relayed untouched.
+- **Room crypto:** protocol v2 has a clear routing header and a ChaCha20-Poly1305 sealed payload; room tag and sealing key come from HKDF-SHA256 of the room key, header bound as AAD. Room keys: random 256-bit, or PBKDF2-HMAC-SHA256 600,000 rounds from name plus passcode. Code rooms use signed Curve25519/Ed25519 manifests (creator, co-admins, cap, bans, key epoch), admin-approved joins, kick with key rotation. Town Square has a public key (readable by anyone nearby).
+- **AI (Mac only):** `AI/OllamaClient.swift` on 127.0.0.1:11434, `ExecutiveAssistant` (fast paths, intent call, grounded answer), `Retrieval` (BM25 style, locked rules always), `CitationGuard`, `ConversationMemory` (12 turns, compaction), `DailyDigest`, `Vision` (qwen3-vl), `Benchmark`. Default model qwen3:8b (qwen3:4b-instruct under 12 GB RAM), vision qwen3-vl:4b-instruct, embeddings nomic-embed-text. Fair queue across rooms (`Core/AIScheduler.swift`), signed AI status beacon, sleep and wake resend.
+- **Knowledge:** per-room local RAG on the Mac (`Mesh/KnowledgeService.swift`, `AI/Library*.swift`): PDF, txt, md, docx, images with OCR; BM25 plus embeddings with reciprocal rank fusion, cosine floor 0.70; Everyone or Admins-only per document.
+- **Web gateway:** `Mesh/WebGatewayServer.swift`, `Core/WebGateway*.swift`. Off by default. Plain HTTP on port 8787 for phones without the app; rate limits, session tokens, local addresses only.
+- **Android:** `android/` (Kotlin, Jetpack Compose, minSdk 26). Bluetooth LE only, wire compatible with the Swift app. Core in `app/src/main/java/app/libre/core`, mesh glue in `mesh/MeshController.kt`, radio in `android/BleTransport.kt`, UI in `android/MainActivity.kt`.
+
+## Build and test
+- **Linux (no Apple frameworks):** Swift 6.0.3 builds the Core and AI test runner with SwiftPM and swift-crypto: `swift build --product PasaCoreTests && ./.build/debug/PasaCoreTests` (about 1398 checks). Views and Mesh do not build on Linux.
+- **Mac:** `xcodebuild -project Libre.xcodeproj -scheme Libre-macOS` and `-scheme Libre-iOS` (add `CODE_SIGNING_ALLOWED=NO` for a compile check). The Mac runs the same Core tests (a few more, CommonCrypto checks).
+- **XcodeGen is not installed.** `project.yml` exists but `Libre.xcodeproj/project.pbxproj` is edited by hand. Every new Swift file must be added to the pbxproj for both targets, or the Mac build fails while Linux passes.
+- **Android:** JDK 17 plus the Android SDK. `cd android && ./gradlew testDebugUnitTest` (47 tests, includes a Robolectric smoke test), `./gradlew assembleDebug` for an APK.
+- **Cross-language vectors:** Swift writes `android/app/src/test/resources/swift_vectors.json` and Kotlin asserts it; Kotlin writes `kotlin_vectors.json` (run its vector test with `-Plibre.writeVectors=true`) and Swift checks it with `PasaCoreTests --vectors <path>`. Any wire change (framing, hello, sealing, message JSON) must update both sides and both vector files.
+- **Scripts:** `scripts/benchmark.sh` (20 fixed questions, results to docs/benchmarks), `scripts/qa-harness.sh` (real model QA on the Mac), `scripts/ask-probe.sh`, `scripts/test-relay.sh`.
+- Device ids, Apple team ids and the owner's machine names are private. Do not put them in code, docs, issues or commits.
+
+## Status: tested vs untested
+- **Tested on real devices (Mac plus two iPhones, Oct 9):** Wi-Fi mesh, 2-hop relay (rule in 522 ms), `@libre` answers over 2 hops, rooms, AI features. Benchmark on an M3 16 GB with qwen3:8b: best 19/20, median about 2.6 s, about 16 to 18 tok/s (see docs/benchmarks). Knowledge QA 6/6 synthetic questions. Browser gateway checked with curl and headless Chrome only.
+- **Failed on device:** Bluetooth only (Wi-Fi off), Oct 11, before the Bluetooth link existed.
+- **Unit tested only, never on a device:** the whole Bluetooth stack (signed hello, caps, lanes, relay jitter, advertiser watch, link status UI), all Bluetooth speeds, the Android app, background behavior, battery use, voice transcription end to end, media transfer speeds, long-conversation compaction.
+- **Known misses:** benchmark #8 (English question misses a Tagalog-titled rule, cross-language retrieval); Tagalog sometimes answered in Cebuano.
+
+## Rules for anyone working on Libre
+- **Never copy bitchat code.** bitchat for iOS is public domain, but bitchat-android is GPL v3; copying or closely porting it would force Libre's Android app under GPL. Ideas from their docs only. Write our own code and say "our own design" in new file headers.
+- **Synthetic data only** in tests, fixtures, benchmarks, screenshots and issues (for example PATIENT_A style placeholders, made-up names like Ana). No real people's messages.
+- **Apple HIG:** semantic colors and text styles, 44 pt targets, VoiceOver labels, Dynamic Type. No truncated text: wrap (`fixedSize(horizontal: false, vertical: true)`), never cut off.
+- **No em dashes in prose** (README, docs, UI strings). Use periods, commas or parentheses.
+- **README honesty:** every claim is marked measured (with date and device) or "unit tested only, not yet on devices". Never state a speed, battery figure or range that was not measured; estimates are labeled as estimates.
+- Wi-Fi first, Bluetooth fallback. Keep it.
+- Keep Swift and Kotlin behavior in sync; port pure logic to both and test both.
+- Each change: tests in both languages where it applies, Linux Swift tests, Mac compile of both schemes, Kotlin tests, README update.
+
+## BLE review summary (docs/BLE_REVIEW.md)
+Verdict on Oct 12: a foreground-only, unmeasured Bluetooth pipe under a Wi-Fi mesh. Gaps ranked: (1) zero device evidence, (2) no background Bluetooth on iOS or Android, (3) unauthenticated name-based link identity, (4) no connection budget, (5) naive flood relay, (6) store and forward is a local outbox not mesh sync, (7) media can starve text, (8) per-hop reassembly latency, (9) Android GATT quirks, (10) metadata leaks (fixed service UUID, clear hello), (11) no forward secrecy. Since then, fixed in code and unit tested: 3, 4, 5, 7, 9 (signed hello, caps and queue, jitter and duplicate cancel, lanes, 133 retry) and documented 10 and 11 in README Security. Still open: 1, 2, 6, plus battery measurement.
+
+## Key decisions (from the build and session logs)
+- Oct 9: build our own mesh from scratch (bitchat as inspiration only); Mac is the AI peer and source of truth; MultipeerConnectivity for the first link.
+- Oct 9: product renamed Pasa, then back to Libre. `@libre` is primary, `@pasa` and `pasa://` still work. Bundle ids, `PASA1` join prefix, key derivation labels and settings keys keep old names so installs keep working. The default room was renamed Town Square for display only (internal label `DEFAULT`, same key).
+- Oct 9: admins by device key, never by name. Encrypted rooms, then passcode rooms, then code rooms with signed manifests and kick.
+- Oct 9: answers grounded only in shown rules and documents, citation guard, abstain when nothing matches; no word lists to force a benchmark case; benchmark results reported as is, scorer never changed after seeing results.
+- Oct 9: Discovery restarts serialized after two Mac crashes.
+- Oct 11: Bluetooth LE added next to Wi-Fi with the same sealed packets.
+- Oct 12: native Android app over Bluetooth only. Bluetooth-first work: signed hello (keyed by public key), connection cap and queue, priority lanes (media waits for Wi-Fi on Bluetooth-only links by default), relay jitter and duplicate cancel, advertiser watch, link status UI. Streaming answers over Bluetooth deferred (needs a protocol decision).
+- Repo is private (Kmaquindang/libre). Admin pushes to main have been used; prefer pull requests for review.
