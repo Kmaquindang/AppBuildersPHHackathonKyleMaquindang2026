@@ -56,7 +56,47 @@ data class BleHello(val signKey: ByteArray, val nonce: ByteArray, val isHub: Boo
     }
 }
 
+/** Trust on first use for Bluetooth device keys (issue #12), as BLETrustStore in BLEHandshake.swift.
+ *  The first key verified for a device name is remembered (BleTransport saves it to
+ *  ble-trust.json); later, that name with a different key is refused and listed as a conflict until
+ *  the person trusts the new key. */
+class TrustStore(keys: Map<String, String> = emptyMap(), conflicts: Map<String, String> = emptyMap()) {
+    sealed class Check { object Trusted : Check(); object FirstUse : Check(); data class Changed(val trustedKey: String) : Check() }
+
+    private val keys = HashMap(keys)
+    private val conflicts = HashMap(conflicts)
+    val trusted: Map<String, String> get() = keys.toMap()
+    val conflictNames: Map<String, String> get() = conflicts.toMap()
+
+    fun check(name: String, keyId: String): Check {
+        val known = keys[name] ?: return Check.FirstUse
+        return if (known == keyId) Check.Trusted else Check.Changed(known)
+    }
+
+    fun remember(name: String, keyId: String): Boolean { if (name in keys) return false; keys[name] = keyId; return true }
+    fun flag(name: String, keyId: String): Boolean { if (conflicts[name] == keyId) return false; conflicts[name] = keyId; return true }
+    fun reset(name: String) { keys.remove(name); conflicts.remove(name) }
+
+    fun toJson(): String = kotlinx.serialization.json.JsonObject(mapOf(
+        "keys" to kotlinx.serialization.json.JsonObject(keys.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }),
+        "conflicts" to kotlinx.serialization.json.JsonObject(conflicts.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }),
+    )).toString()
+
+    companion object {
+        /** Reads toJson() output (and the Swift BLETrustStore JSON, which has the same two maps). */
+        fun fromJson(text: String): TrustStore {
+            val o = MeshCodec.parseObject(Bytes.utf8(text)) ?: return TrustStore()
+            fun map(k: String) = (o[k] as? kotlinx.serialization.json.JsonObject)?.mapNotNull { (n, v) ->
+                (v as? kotlinx.serialization.json.JsonPrimitive)?.content?.let { n to it } }?.toMap() ?: emptyMap()
+            return TrustStore(map("keys"), map("conflicts"))
+        }
+    }
+}
+
 class PeerBook(val identity: DeviceIdentity) {
+    /** Keys remembered per device name. BleTransport loads and saves it. */
+    var trust = TrustStore()
+
     enum class Role { CENTRAL, PERIPHERAL }
     class Link(val role: Role, val challenge: ByteArray) { var hello: BleHello? = null; var verified = false }
 
@@ -88,6 +128,11 @@ class PeerBook(val identity: DeviceIdentity) {
             if (oh.name == h.name && !oh.signKey.contentEquals(h.signKey)) return HelloResult.Rejected("name ${h.name} is linked to another key")
             if (oh.signKey.contentEquals(h.signKey) && oh.name != h.name) return HelloResult.Rejected("key already linked as ${oh.name}")
         }
+        // Trust on first use: a known name with a different key, even when nobody is linked.
+        if (trust.check(h.name, h.keyId) is TrustStore.Check.Changed) {
+            trust.flag(h.name, h.keyId)
+            return HelloResult.Rejected("key changed for ${h.name}")
+        }
         link.hello = h
         return HelloResult.SendProof(BleHello.proof(identity, h))
     }
@@ -105,6 +150,7 @@ class PeerBook(val identity: DeviceIdentity) {
             it.value.hello?.signKey?.contentEquals(h.signKey) == true }?.key
         if (replaced != null) links.remove(replaced)
         link.verified = true
+        trust.remember(h.name, h.keyId)
         val mine = links.filter { it.value.verified && it.value.hello?.signKey?.contentEquals(h.signKey) == true }
         var drop: String? = null
         val central = mine.entries.firstOrNull { it.value.role == Role.CENTRAL }?.key

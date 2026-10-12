@@ -339,9 +339,27 @@ fun RoomsSheet(app: LibreApp, rooms: List<RoomState>, activeId: String, link: Jo
                 }
             }) { Text(if (busy) "Unlocking room..." else "Join") }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            KeyConflictRows(app)
             BackgroundRelayRow(app)
         }
     }
+}
+
+/** Devices that came back with a different Bluetooth key (issue #12), with a way to trust it. */
+@Composable
+fun KeyConflictRows(app: LibreApp) {
+    val conflicts by app.keyConflicts.collectAsState()
+    if (conflicts.isEmpty()) return
+    Text("Changed device keys", style = MaterialTheme.typography.titleMedium)
+    conflicts.forEach { name ->
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Text("$name came back with a different device key, so Libre is not linking to it over Bluetooth.")
+            Text("This is normal after Libre was reinstalled on that device. If it was not reinstalled, another device nearby may be using its name.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton({ app.trustNewKey(name) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trust the new key") }
+        }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 8.dp))
 }
 
 /** "Keep relaying in the background" (RelayService, issue #4). Off until the person turns it on. */

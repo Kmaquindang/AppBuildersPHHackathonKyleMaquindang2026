@@ -217,6 +217,17 @@ final class MeshService: ObservableObject {
         let summary = Self.bluetoothSummary(state: transport.bluetoothState, probes: transport.bluetoothProbes,
                                             stats: transport.bluetoothStats, tooBig: transport.packetsTooBigForBluetooth)
         if summary != bluetoothSummary { bluetoothSummary = summary }
+        let conflicts = transport.bluetoothKeyConflicts
+        if conflicts != bluetoothKeyConflicts { bluetoothKeyConflicts = conflicts }
+    }
+
+    /// Devices whose Bluetooth key changed since Libre first linked to them (issue #12).
+    @Published private(set) var bluetoothKeyConflicts: [String] = []
+
+    /// Trust the new key of a device that came back with a different one (after a reinstall).
+    func trustNewBluetoothKey(for name: String) {
+        transport?.trustNewBluetoothKey(for: name)
+        bluetoothKeyConflicts.removeAll { $0 == name }
     }
 
     /// Peers reached over Bluetooth only (Wi-Fi off or out of Wi-Fi range).

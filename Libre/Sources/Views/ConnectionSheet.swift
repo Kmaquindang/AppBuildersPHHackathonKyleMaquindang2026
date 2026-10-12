@@ -73,6 +73,26 @@ struct ConnectionSheet: View {
                     Text("\(mesh.connectedCount) linked directly. Messages hop through linked phones to reach the rest.")
                 }
 
+                if !mesh.bluetoothKeyConflicts.isEmpty {
+                    Section {
+                        ForEach(mesh.bluetoothKeyConflicts, id: \.self) { name in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("\(mesh.label(for: name)) came back with a different device key, so Libre is not linking to it over Bluetooth.")
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("This is normal after Libre was reinstalled on that device. If it was not reinstalled, another device nearby may be using its name.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button("Trust the new key") { mesh.trustNewBluetoothKey(for: name) }
+                                    .frame(minHeight: 44)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } header: {
+                        Text("Changed device keys")
+                    }
+                }
+
                 if mesh.joinedRooms.count > 1 {
                     Section("Rooms") {
                         ForEach(mesh.joinedRooms) { room in

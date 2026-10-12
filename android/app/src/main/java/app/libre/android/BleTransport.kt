@@ -56,6 +56,7 @@ import app.libre.core.DeviceIdentity
 import app.libre.core.PeerBook
 import app.libre.core.PowerPolicy
 import app.libre.core.ProbeResult
+import app.libre.core.TrustStore
 import app.libre.mesh.Link
 import java.util.UUID
 
@@ -105,7 +106,15 @@ class BleTransport(
     private val links = HashMap<String, LinkState>()
     private val pending = HashSet<String>()
     private val dropped = HashMap<String, String>()   // central device address -> peer key id (tie-break)
-    private val book = PeerBook(identity)
+    private val book = PeerBook(identity).also { b ->
+        b.trust = runCatching { TrustStore.fromJson(trustFile.readText()) }.getOrDefault(TrustStore())
+    }
+    private val trustFile get() = context.filesDir.resolve("libre").resolve("ble-trust.json")
+    /** Device names refused because their key changed (issue #12); LibreApp shows them. */
+    @Volatile var trustConflicts: List<String> = book.trust.conflictNames.keys.sorted()
+        private set
+    /** Called (on the Bluetooth thread) when the list of key conflicts changes. */
+    var onTrustChanged: ((List<String>) -> Unit)? = null
     private val policy = ConnectPolicy(ConnectPolicy.Config.ANDROID)
     /** Retries advertising after a failure (AdvertiseWatch); Android reports failures only by callback. */
     private val advertiseWatch = AdvertiseWatch()
@@ -297,8 +306,34 @@ class BleTransport(
         enqueue(l, hello, FrameType.HELLO)
     }
 
+    /** Saves the trust store when it changed, and tells the person once about a new key conflict. */
+    private fun saveTrust(before: String) {
+        val now = book.trust.toJson()
+        if (now == before) return
+        runCatching { trustFile.parentFile?.mkdirs(); trustFile.writeText(now) }
+        val old = TrustStore.fromJson(before).conflictNames
+        for ((name, key) in book.trust.conflictNames) if (old[name] != key) {
+            Log.i(TAG, "key changed for $name; refused until trusted")
+            events.problem("$name came back with a different device key, so Libre did not link to it. If Libre was reinstalled on that device, trust the new key in Rooms.")
+        }
+        trustConflicts = book.trust.conflictNames.keys.sorted()
+        onTrustChanged?.invoke(trustConflicts)
+    }
+
+    /** The person trusts the new key for [name]: the next link with it is accepted. */
+    fun trustNewKey(name: String) = handler.post {
+        val before = book.trust.toJson()
+        book.trust.reset(name)
+        saveTrust(before)
+    }
+
     private fun received(raw: ByteArray, l: LinkState) {
         val done = reassembler.add(raw, l.key) ?: return
+        val trustBefore = if (done.type == FrameType.HELLO || done.type == FrameType.PROOF) book.trust.toJson() else null
+        try { handleFrame(done, l) } finally { trustBefore?.let(::saveTrust) }
+    }
+
+    private fun handleFrame(done: BleReassembler.Complete, l: LinkState) {
         when (done.type) {
             FrameType.HELLO -> when (val r = book.opened(l.key, if (l.role == Role.CENTRAL) PeerBook.Role.CENTRAL else PeerBook.Role.PERIPHERAL)
                 .let { book.receivedHello(done.data, l.key) }) {
