@@ -17,6 +17,7 @@ import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import app.libre.core.PowerPolicy
+import android.util.Log
 import app.libre.mesh.MeshController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +45,7 @@ class LibreApp : Application() {
     override fun onCreate() {
         super.onCreate()
         mesh = MeshController(filesDir.resolve("libre"))
+        mesh.timingLog = { Log.i("LibreMesh", it) }
         worker.scheduleWithFixedDelay({ runCatching { mesh.tick() } }, 5, 5, TimeUnit.SECONDS)
         // Relay jitter (RelayScheduler): relays wait a few ms on the mesh thread.
         mesh.postDelayed = { ms, block -> worker.schedule({ runCatching { block() } }, ms, TimeUnit.MILLISECONDS) }

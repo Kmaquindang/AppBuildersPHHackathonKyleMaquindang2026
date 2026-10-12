@@ -39,7 +39,9 @@ object Kind {
     const val RULE = "rule"; const val TASK = "task"; const val SYNC = "sync"; const val SEALED = "sealed"
     const val MEDIA = "media"; const val CHUNK = "chunk"; const val MEDIA_NACK = "mediaNack"; const val TRANSCRIPT = "transcript"
     const val ROOM_CONTROL = "roomControl"; const val BEACON = "beacon"; const val AI_STATUS = "aiStatus"
-    val all = setOf(CHAT, ASK, ANSWER, ACK, RULE, TASK, SYNC, SEALED, MEDIA, CHUNK, MEDIA_NACK, TRANSCRIPT, ROOM_CONTROL, BEACON, AI_STATUS)
+    /** Piece of an answer still being written (sealed only; AnswerStream.kt). */
+    const val ANSWER_PART = "answerPart"
+    val all = setOf(CHAT, ASK, ANSWER, ACK, RULE, TASK, SYNC, SEALED, MEDIA, CHUNK, MEDIA_NACK, TRANSCRIPT, ROOM_CONTROL, BEACON, AI_STATUS, ANSWER_PART)
 }
 
 data class DocRef(val title: String, val page: Int?, val version: Int, val excerpt: String) {
@@ -74,6 +76,8 @@ data class MeshMessage(
     val card: String? = null,
     val model: String? = null,
     val latencyMs: Int? = null,
+    /** For answer parts: 0, 1, 2... in the order the AI Mac wrote them. */
+    val part: Int? = null,
     /** AIProof as raw JSON (shown in Details), kept as is. */
     val proof: JsonObject? = null,
     /** Any other field (forward compatible), kept when re-encoding an inner message. */
@@ -94,7 +98,7 @@ object MeshCodec {
 
     private val known = setOf("id", "origin", "destination", "kind", "body", "ttl", "hops", "createdAt", "replyTo", "replyPath",
         "senderName", "v", "silent", "since", "checked", "room", "sealed", "epoch", "retryOf", "rulesUsed", "unverifiedRules",
-        "noRule", "docRefs", "card", "model", "latencyMs", "proof")
+        "noRule", "docRefs", "card", "model", "latencyMs", "part", "proof")
 
     fun toJson(m: MeshMessage): JsonObject {
         val o = LinkedHashMap<String, JsonElement>()
@@ -132,6 +136,7 @@ object MeshCodec {
         m.card?.let { o["card"] = JsonPrimitive(it) }
         m.model?.let { o["model"] = JsonPrimitive(it) }
         m.latencyMs?.let { o["latencyMs"] = JsonPrimitive(it) }
+        m.part?.let { o["part"] = JsonPrimitive(it) }
         m.proof?.let { o["proof"] = it }
         return JsonObject(o)
     }
@@ -188,6 +193,7 @@ object MeshCodec {
                         (r["version"] as? JsonPrimitive)?.intOrNull ?: 1, str(r, "excerpt") ?: "")
                 },
                 card = str(o, "card"), model = str(o, "model"), latencyMs = (o["latencyMs"] as? JsonPrimitive)?.intOrNull,
+                part = (o["part"] as? JsonPrimitive)?.intOrNull,
                 proof = o["proof"] as? JsonObject,
                 extra = o.filterKeys { it !in known },
             )

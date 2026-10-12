@@ -119,6 +119,9 @@ final class MeshService: ObservableObject {
     @Published private(set) var lastProblem: String?
     /// Asks this device sent that have had no answer for 20 s or more.
     @Published private(set) var waitingAsks: Set<UUID> = []
+    /// Streamed answers still being written, for the active room (issue #2).
+    @Published private(set) var partialAnswers: [PartialAnswer] = []
+    private var answerStreams = AnswerStreams()
     /// "Clear timeline" watermark: nothing older comes back through backfill or catch-ups.
     @Published private(set) var clearedAt: Date?
 
@@ -787,6 +790,8 @@ final class MeshService: ObservableObject {
         pendingAsks = PendingAskBook(items: saved.pendingAsks ?? [])
         sentAsks.removeAll()
         waitingAsks.removeAll()
+        answerStreams.removeAll()
+        partialAnswers = []
         chunkQueue.removeAll()
         mediaProgress.removeAll()
         entries = TimelineStore.dropping(loadedEntries, before: clearedAt)
@@ -918,6 +923,7 @@ final class MeshService: ObservableObject {
         for name in stale { peerStates.removeValue(forKey: name) }
         if !engine.outbox.isEmpty && connectedCount > 0 { flushOutbox() }
         refreshWaitingAsks(now: now)
+        if !answerStreams.expire(now: now).isEmpty { publishPartialAnswers() }
         sendDueNacks()
         nackAnswered = nackAnswered.filter { now.timeIntervalSince($0.value) < 60 }
         roomTick(now: now)
@@ -2187,6 +2193,17 @@ final class MeshService: ObservableObject {
         }
     }
 
+    /// One ble-log.txt line per received chat or answer, for device tests (issue #1): which radio
+    /// it came in on, hops travelled, and for answers the measured round trip and AI time.
+    /// Numbers only, never message text. scripts/ble_log_summary.py reads these lines.
+    private func logTiming(_ message: MeshMessage, roundTripMs: Int?) {
+        guard let link = receivingLink else { return }
+        var line = "MSG \(message.kind.rawValue) link=\(link.rawValue) hops=\(message.hopCount)"
+        if let roundTripMs { line += " rtt_ms=\(roundTripMs)" }
+        if let ai = message.latencyMs { line += " ai_ms=\(ai)" }
+        BLETransport.appendLog(line)
+    }
+
     private func receive(_ data: Data, from sender: String) {
         let message: MeshMessage
         switch MeshCodec.decodeLenient(data) {
@@ -2226,7 +2243,7 @@ final class MeshService: ObservableObject {
             opened = RoomEnvelope.open(d, in: r)
             if opened == nil, RoomEnvelope.isAhead(d, of: r) { requestManifest(r.id) }
         }
-        let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack } ?? false
+        let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack || $0.kind == .answerPart } ?? false
         if let forward = decision.forward {
             scheduleRelay(RelayJob(message: forward, excluding: decision.forwardExcluding,
                                    kind: .sealed(foreign: notMine, transient: transient, lane: opened.map { BLELane.of(kind: $0.kind, bytes: 0) })))
@@ -2309,6 +2326,20 @@ final class MeshService: ObservableObject {
         }
     }
 
+    /// Phones: a piece of an answer still being written. Shown in place of the typing dots until
+    /// the whole answer arrives; never added to the timeline or saved.
+    private func receiveAnswerPart(_ part: MeshMessage, room roomID: String) {
+        guard !isAIPeer, let askID = part.replyTo, let seq = part.part else { return }
+        if entriesFor(roomID).contains(where: { $0.message.kind == .answer && $0.message.replyTo == askID }) { return }
+        if answerStreams.add(askID: askID, seq: seq, text: part.body, room: roomID) { publishPartialAnswers() }
+    }
+
+    private func publishPartialAnswers() {
+        let room = activeRoom.id
+        let now = answerStreams.open(in: room).compactMap { id in answerStreams.text(for: id).map { PartialAnswer(id: id, text: $0) } }
+        if now != partialAnswers { partialAnswers = now }
+    }
+
     /// A message of one of this device's rooms, opened. `room` is the active room on phones;
     /// on the AI Mac it can be any room it serves.
     private func handleDelivered(_ delivered: MeshMessage, room roomID: String) {
@@ -2321,6 +2352,7 @@ final class MeshService: ObservableObject {
         case .chunk: receiveChunk(delivered); return
         case .mediaNack: answerNack(delivered, room: roomID); return
         case .transcript: applyTranscript(delivered, room: roomID); return
+        case .answerPart: receiveAnswerPart(delivered, room: roomID); return
         default: break
         }
 
@@ -2359,6 +2391,9 @@ final class MeshService: ObservableObject {
         var entry = ChatEntry(id: delivered.id, message: delivered, direction: .received, receivedAt: Date())
         entry.link = receivingLink.map { $0 == .bluetooth ? "Bluetooth" : "Wi-Fi" }
         if delivered.kind == .answer, let askID = delivered.replyTo {
+            // The whole answer replaces any streamed partial text (issue #2).
+            answerStreams.finish(askID)
+            publishPartialAnswers()
             // An answer re-delivered after a resend: show it once.
             if entriesFor(roomID).contains(where: { $0.message.kind == .answer && $0.message.replyTo == askID }) {
                 pendingAsks.resolve(askID)
@@ -2371,6 +2406,7 @@ final class MeshService: ObservableObject {
             }
             scheduleSave()
         }
+        if delivered.kind == .answer || delivered.kind == .chat { logTiming(delivered, roundTripMs: entry.roundTripMs) }
         appendEntry(entry, room: roomID)
 
         switch delivered.kind {
@@ -2390,7 +2426,7 @@ final class MeshService: ObservableObject {
             #if os(macOS)
             if let m = MediaManifest.decode(delivered.body), m.kind == .audio { transcribeIfNeeded(m.mediaId) }
             #endif
-        case .answer, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus:
+        case .answer, .answerPart, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus:
             break
         }
     }
@@ -2548,7 +2584,14 @@ final class MeshService: ObservableObject {
             assistant.embedder = knowledge.answerEmbedder
             assistant.roomLabel = room.displayName
             assistant.digestSchedule = digestSchedule
-            let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since, askID: ask.askKey)
+            // Streamed answers (issue #2): parts go out while the model writes; the whole answer
+            // below still follows and replaces them.
+            let parts = AnswerPartPacer()
+            let outcome = await assistant.handle(ask.body, from: ask.origin, since: ask.since, askID: ask.askKey,
+                                                 onPartial: { [weak self] delta in
+                guard let part = parts.add(delta) else { return }
+                Task { @MainActor in self?.sendAnswerPart(part, to: ask, room: roomID) }
+            })
             contextStats = assistant.contextStats
             if outcome.error != nil, askQueue.wasCutBySleep(job) {
                 // The Mac slept during the model call: answer it after wake instead.
@@ -2628,6 +2671,16 @@ final class MeshService: ObservableObject {
     }
 
     @discardableResult
+    /// Streamed answers (issue #2): one piece of an answer still being written, to the asker.
+    /// Never kept in the outbox (the whole answer follows anyway); urgent lane on Bluetooth.
+    private func sendAnswerPart(_ part: AnswerStreamer.Part, to ask: MeshMessage, room roomID: String) {
+        guard let room = rooms.room(withID: roomID) else { return }
+        var message = engine.makeOutgoing(kind: .answerPart, body: part.text, destination: .peer(ask.origin),
+                                          replyTo: ask.askKey, replyPath: ask.hops)
+        message.part = part.seq
+        _ = transmit(message, room: room, excluding: [], queueIfUnsent: false, lane: .urgent)
+    }
+
     private func sendAnswer(_ reply: AIReply, to ask: MeshMessage, room roomID: String, intent: String, error: String?,
                             promptTokens: Int? = nil, promptEval: Int? = nil) -> UUID {
         var message = engine.makeOutgoing(
