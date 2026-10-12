@@ -52,7 +52,8 @@ struct ChatTimelineView: View {
                                    onAccept: { title in mesh.send("\(AssistantMention.primary) accept task: \(title)") },
                                    onDetails: { detailsEntry = entry },
                                    onChip: { openChip = $0 },
-                                   onDoc: { openDoc = $0 })
+                                   onDoc: { openDoc = $0 },
+                                   onHide: mesh.canHideForEveryone(entry) ? { mesh.hideForEveryone(entry) } : nil)
                             .id(entry.id)
                     }
                     // Streamed answers (issue #2): the text so far replaces the typing dots; the
@@ -192,6 +193,8 @@ struct MessageRow: View {
     var onDetails: () -> Void = {}
     var onChip: (String) -> Void = { _ in }
     var onDoc: (DocRef) -> Void = { _ in }
+    /// AI Mac in Town Square: hide this message for everyone (issue #9). nil hides the action.
+    var onHide: (() -> Void)? = nil
     @State private var accepted: Set<String> = []
 
     private var message: MeshMessage { entry.message }
@@ -247,13 +250,22 @@ struct MessageRow: View {
         .padding(.top, layout.firstInGroup && layout.timestamp == nil && !layout.showName ? 8 : 0)
     }
 
+    @ViewBuilder
+    private var hideButton: some View {
+        if let onHide {
+            Button(role: .destructive, action: onHide) {
+                Label("Hide for everyone", systemImage: "eye.slash")
+            }
+        }
+    }
+
     // MARK: Bubble content
 
     @ViewBuilder
     private var content: some View {
         if message.kind == .media {
             MediaBubble(entry: entry, isMine: isMine)
-                .contextMenu { detailsButton }
+                .contextMenu { detailsButton; hideButton }
                 .accessibilityAction(named: "Details", onDetails)
         } else {
             bubble
@@ -262,6 +274,7 @@ struct MessageRow: View {
                     Button {
                         copyToPasteboard(plainText)
                     } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    hideButton
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(spokenLabel)

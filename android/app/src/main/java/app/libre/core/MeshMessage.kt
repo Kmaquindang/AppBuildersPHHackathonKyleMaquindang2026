@@ -41,7 +41,9 @@ object Kind {
     const val ROOM_CONTROL = "roomControl"; const val BEACON = "beacon"; const val AI_STATUS = "aiStatus"
     /** Piece of an answer still being written (sealed only; AnswerStream.kt). */
     const val ANSWER_PART = "answerPart"
-    val all = setOf(CHAT, ASK, ANSWER, ACK, RULE, TASK, SYNC, SEALED, MEDIA, CHUNK, MEDIA_NACK, TRANSCRIPT, ROOM_CONTROL, BEACON, AI_STATUS, ANSWER_PART)
+    /** Signed Town Square hide record from the AI Mac's owner (sealed only; Moderation.kt). */
+    const val MODERATION = "moderation"
+    val all = setOf(CHAT, ASK, ANSWER, ACK, RULE, TASK, SYNC, SEALED, MEDIA, CHUNK, MEDIA_NACK, TRANSCRIPT, ROOM_CONTROL, BEACON, AI_STATUS, ANSWER_PART, MODERATION)
 }
 
 data class DocRef(val title: String, val page: Int?, val version: Int, val excerpt: String) {

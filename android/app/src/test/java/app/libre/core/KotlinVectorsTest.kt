@@ -39,6 +39,7 @@ class KotlinVectorsTest {
             "epochKeyUsed" to JsonPrimitive(v.s("epochKey")),
             "answerPartSealedJSON" to JsonPrimitive(String(MeshCodec.encode(sealedPiece))),
             "peerSyncRequestJSON" to JsonPrimitive(PeerSync.requestBody(listOf(chat), Vectors.T0 + 60_000)),
+            "hideBlobJSON" to JsonPrimitive(ModerationState.make(chat.id, town.id, Vectors.T0, v.joiner).toJson().toString()),
             "frames" to JsonArray(frames.map { JsonPrimitive(Bytes.hex(it)) }),
             "framesData" to JsonPrimitive(Bytes.hex(data)),
             "signedHello" to JsonPrimitive(Bytes.hex(joinerHello)),

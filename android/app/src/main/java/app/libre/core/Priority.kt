@@ -13,7 +13,7 @@ enum class Lane { CONTROL, URGENT, BULK, MEDIA;
     companion object {
         const val UNKNOWN_MEDIA_BYTES = 8 * 1024
         fun of(kind: String?, bytes: Int): Lane = when (kind) {
-            Kind.CHAT, Kind.ASK, Kind.ANSWER, Kind.ANSWER_PART, Kind.ACK, Kind.TASK, Kind.RULE, Kind.ROOM_CONTROL, Kind.BEACON, Kind.AI_STATUS -> URGENT
+            Kind.CHAT, Kind.ASK, Kind.ANSWER, Kind.ANSWER_PART, Kind.MODERATION, Kind.ACK, Kind.TASK, Kind.RULE, Kind.ROOM_CONTROL, Kind.BEACON, Kind.AI_STATUS -> URGENT
             Kind.SYNC, Kind.TRANSCRIPT -> BULK
             Kind.MEDIA, Kind.CHUNK, Kind.MEDIA_NACK -> MEDIA
             else -> if (bytes > UNKNOWN_MEDIA_BYTES) MEDIA else URGENT

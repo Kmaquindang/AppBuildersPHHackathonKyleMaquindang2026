@@ -81,6 +81,33 @@ class MeshControllerTest {
         assertEquals("no duplicates on C", 1, c.entries.value.count { it.body == "Gate 2 is closed, use gate 3" })
     }
 
+    @Test fun townSquareHideFromTrustedMacOnly() {
+        val (c, l) = controller()
+        l.peers += "Mac-1"; c.peerLinked("Mac-1")
+        val mac = app.libre.core.DeviceIdentity(ByteArray(32) { (it * 5 + 41).toByte() }, ByteArray(32) { 41 })
+        val town = c.activeRoom
+        fun deliver(m: app.libre.core.MeshMessage) =
+            c.receive(app.libre.core.MeshCodec.encode(app.libre.core.RoomEnvelope.seal(m, town.id, town.contentKey!!, town.epoch)), "Mac-1")
+        val bad = app.libre.core.MeshMessage(origin = "iPhone-2", kind = app.libre.core.Kind.CHAT, body = "spam placeholder", createdAt = Vectors.T0)
+        deliver(bad)
+        val hide = app.libre.core.MeshMessage(origin = "Mac-1", kind = app.libre.core.Kind.MODERATION, createdAt = Vectors.T0,
+            body = app.libre.core.ModerationState.make(bad.id, town.id, Vectors.T0, mac).toJson().toString())
+        deliver(hide)
+        assertEquals("not trusted yet: still shown", 1, c.entries.value.count { it.id == bad.id })
+        // The phone hears the AI Mac's signed status and the person trusts it.
+        val status = mac.sign(app.libre.core.Bytes.utf8("""{"device":"Mac-1"}"""), "ai-status")
+        c.receive(app.libre.core.MeshCodec.encode(app.libre.core.MeshMessage(origin = "Mac-1", kind = app.libre.core.Kind.AI_STATUS,
+            body = status.toJson().toString(), createdAt = Vectors.T0)), "Mac-1")
+        c.setTrustAiMac(true)
+        deliver(hide.copy(id = java.util.UUID.randomUUID().toString().uppercase()))
+        assertEquals("trusted Mac's hide removes it", 0, c.entries.value.count { it.id == bad.id })
+        // Backfill or phone-to-phone sync bringing it back (no relay dedupe on batch contents).
+        val batch = app.libre.core.PeerSync.batchBodies(listOf(bad)).single()
+        deliver(app.libre.core.MeshMessage(origin = "iPhone-2", destination = app.libre.core.Destination.Peer(c.meshName()),
+            kind = app.libre.core.Kind.SYNC, body = batch, createdAt = Vectors.T0))
+        assertEquals("never shown again, even from a sync batch", 0, c.entries.value.count { it.id == bad.id })
+    }
+
     @Test fun askGoesToTheAiRole() {
         val (c, l) = controller()
         l.peers += "Mac-1"; c.peerLinked("Mac-1"); l.sent.clear()

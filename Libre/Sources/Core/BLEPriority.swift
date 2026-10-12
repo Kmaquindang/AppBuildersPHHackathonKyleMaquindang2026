@@ -27,7 +27,7 @@ public enum BLELane: Int, Comparable, CaseIterable, Sendable {
     /// Lane for a message of `kind` (the inner kind when known) that encodes to `bytes`.
     public static func of(kind: MessageKind?, bytes: Int) -> BLELane {
         switch kind {
-        case .chat?, .ask?, .answer?, .answerPart?, .ack?, .task?, .rule?, .roomControl?, .beacon?, .aiStatus?:
+        case .chat?, .ask?, .answer?, .answerPart?, .moderation?, .ack?, .task?, .rule?, .roomControl?, .beacon?, .aiStatus?:
             return .urgent
         case .sync?, .transcript?:
             return .bulk
