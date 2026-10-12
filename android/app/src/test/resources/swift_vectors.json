@@ -197,6 +197,7 @@
   "passcodeKey" : "fc2071a46da448fbdcaeea5a33c00f0ebecf6e73e1793ff4815ca07986de4f80",
   "pbkdf2_4096" : "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a",
   "pbkdf2_rfc" : "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+  "peerSyncRequestJSON" : "{\"request\":{\"knownIDs\":[],\"knownShort\":[\"6f1c2a3b4d5e\"],\"newest\":1792000000123,\"window\":1791978460123}}",
   "proofForJoiner" : "3b9ff560620399f80e379ea97cc3022169ab7128e6702e2f9469c5f4d2c2e077a2520371b6b4cb0ca3ab1f99b768dc7114d0bbc479d28ba1fe889145cbc51e02",
   "ruleJSON" : "{\"addedBy\":\"MacBook Air\",\"body\":\"Wear one on site.\",\"createdAt\":1792000000123,\"history\":[],\"id\":\"66666666-7777-4888-8999-AAAAAAAAAAAA\",\"kind\":\"rule\",\"locked\":false,\"title\":\"Hard hats\",\"updatedAt\":1792000000123,\"updatedBy\":\"MacBook Air\",\"version\":2}",
   "sealingKeyDefault" : "83ec016287e162a51f55e1ad038b63658b8e8b4d506c23580e9e7ae1b8b2d209",

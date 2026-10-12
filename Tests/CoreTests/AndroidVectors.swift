@@ -79,6 +79,10 @@ func writeAndroidVectors(to path: String) {
     let sealedTown = try! RoomEnvelope.seal(chat, in: town)
     v["townSealedJSON"] = String(decoding: try! MeshCodec.encode(sealedTown), as: UTF8.self)
     v["townAAD"] = String(decoding: RoomEnvelope.aad(sealedTown, room: town.id), as: UTF8.self)
+    // Phone-to-phone sync request (issue #6): window and short ids of known chat.
+    var peerReq = PeerSync.request(from: [ChatEntry(id: chat.id, message: chat, direction: .received, receivedAt: F.t0)], now: F.t0.addingTimeInterval(60))
+    peerReq.knownShort = peerReq.knownShort ?? []
+    v["peerSyncRequestJSON"] = SyncPayload(request: peerReq).encoded()!
     // Streamed answer piece (issue #2), sealed in Town Square.
     var piece = MeshMessage(id: UUID(uuidString: "33333333-4444-4555-8666-777777777777")!, origin: "MacBook Air", destination: .peer("Pixel-A1"),
                             kind: .answerPart, body: " a hard hat on site", createdAt: F.t0, replyTo: ask.id, replyPath: ["Pixel-A1", "MacBook Air"], v: 2)
@@ -186,6 +190,18 @@ func runAndroidInteropTests() {
         check(inner?.senderName == "Ben" && inner?.kind == .chat, "android interop: Kotlin inner message fields decode in Swift")
     } else {
         check(false, "android interop: Kotlin sealed packet decodes as a MeshMessage")
+    }
+    // Phone-to-phone sync request made by Kotlin (issue #6) decodes in Swift and is answered.
+    if let text = k["peerSyncRequestJSON"] as? String, let r = SyncPayload.decode(text)?.request {
+        check(r.window == F.t0.addingTimeInterval(60 - PeerSync.window) && r.knownShort == ["7a7a7a7a1111"],
+              "android interop: Kotlin peer sync request decodes in Swift with window and short ids")
+        let mine = MeshMessage(id: UUID(uuidString: "7A7A7A7A-1111-4222-8333-444444444444")!, origin: "Pixel-A1", kind: .chat, body: "known", createdAt: F.t0)
+        let other = MeshMessage(origin: "iPhone 12", kind: .chat, body: "missing", createdAt: F.t0)
+        let sent = PeerSync.select(from: [mine, other].map { ChatEntry(id: $0.id, message: $0, direction: .received, receivedAt: F.t0) },
+                                   request: r, now: F.t0.addingTimeInterval(60))
+        check(sent.map(\.body) == ["missing"], "android interop: Swift answers a Kotlin peer request with only what it lacks")
+    } else {
+        check(false, "android interop: Kotlin peer sync request present")
     }
     // Streamed answer piece sealed by Kotlin (issue #2): opens in Swift with its kind and order.
     if let text = k["answerPartSealedJSON"] as? String, let outer = try? MeshCodec.decode(Data(text.utf8)) {
