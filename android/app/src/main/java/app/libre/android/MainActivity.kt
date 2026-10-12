@@ -73,7 +73,13 @@ fun LibreRoot(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
     val profile by app.mesh.profile.collectAsState()
     val ctx = LocalContext.current
     var granted by remember { mutableStateOf(hasBlePermissions(ctx)) }
-    LaunchedEffect(profile.onboarded, granted) { if (profile.onboarded && granted) app.startBluetooth() }
+    LaunchedEffect(profile.onboarded, granted) {
+        if (profile.onboarded && granted) {
+            app.startBluetooth()
+            // Opening Libre restarts the background relay if it was on (Android may have stopped it).
+            if (app.backgroundRelay.value) RelayService.start(ctx)
+        }
+    }
     when {
         !profile.onboarded -> Onboarding { app.completeOnboarding(it) }
         !granted -> PermissionScreen { granted = hasBlePermissions(ctx) }
@@ -171,11 +177,13 @@ fun MainScreen(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
 fun ChatPane(app: LibreApp) {
     val entries by app.mesh.entries.collectAsState()
     val waiting by app.mesh.waiting.collectAsState()
+    val partials by app.mesh.partials.collectAsState()
     var text by remember { mutableStateOf("") }
     var details by remember { mutableStateOf<Entry?>(null) }
     var doc by remember { mutableStateOf<DocChip?>(null) }
     val list = rememberLazyListState()
     LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.animateScrollToItem(entries.size - 1) }
+    LaunchedEffect(partials) { if (partials.isNotEmpty()) list.scrollToItem(maxOf(0, list.layoutInfo.totalItemsCount - 1)) }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp), state = list) {
             if (entries.isEmpty()) item {
@@ -183,7 +191,9 @@ fun ChatPane(app: LibreApp) {
                     Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             items(entries, key = { it.id }) { e -> Bubble(e, onDetails = { details = e }, onDoc = { doc = it }) }
-            if (waiting.isNotEmpty()) item {
+            // Streamed answers (issue #2): the text so far, replaced by the whole answer when it arrives.
+            items(partials, key = { "partial-" + it.askId }) { p -> PartialBubble(p.text) }
+            if (waiting.isNotEmpty() && partials.isEmpty()) item {
                 Text("Libre is thinking...", Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -204,6 +214,19 @@ fun ChatPane(app: LibreApp) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/** An answer still being written: Libre's bubble with the text so far. Wraps, never cut off. */
+@Composable
+fun PartialBubble(text: String) {
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalAlignment = Alignment.Start) {
+        Text("Libre is writing", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp, bottom = 2.dp))
+        Text(text, color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.widthIn(max = 300.dp).background(if (dark) LibreColors.IncomingDark else LibreColors.Incoming, RoundedCornerShape(18.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp))
+    }
+}
+
 @Composable
 fun Bubble(e: Entry, onDetails: () -> Unit, onDoc: (DocChip) -> Unit) {
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -315,6 +338,34 @@ fun RoomsSheet(app: LibreApp, rooms: List<RoomState>, activeId: String, link: Jo
                     else { app.run { it.join(room) }; dismiss() }
                 }
             }) { Text(if (busy) "Unlocking room..." else "Join") }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            BackgroundRelayRow(app)
         }
+    }
+}
+
+/** "Keep relaying in the background" (RelayService, issue #4). Off until the person turns it on. */
+@Composable
+fun BackgroundRelayRow(app: LibreApp) {
+    val on by app.backgroundRelay.collectAsState()
+    val power by app.power.collectAsState()
+    // Android 13+: ask to show the relay's notification. The relay runs either way; without the
+    // permission its notification only appears in the system's list of running apps.
+    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { app.setBackgroundRelay(true) }
+    val ctx = LocalContext.current
+    fun turnOn() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else app.setBackgroundRelay(true)
+    }
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { if (on) app.setBackgroundRelay(false) else turnOn() },
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Keep relaying in the background", style = MaterialTheme.typography.titleMedium)
+            Text("Libre keeps its Bluetooth links and passes messages for people nearby while the app is closed. A notification shows while it runs, with a Stop button. It scans less when Libre is closed, the screen is off, or the battery is under 20%. Battery use is not measured yet.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Bluetooth now: ${power.name}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { if (it) turnOn() else app.setBackgroundRelay(false) })
     }
 }

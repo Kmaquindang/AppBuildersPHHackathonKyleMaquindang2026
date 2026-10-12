@@ -71,6 +71,12 @@ public protocol LLMClient: Sendable {
     func chat(_ messages: [ChatTurn], json: Bool, maxTokens: Int?) async throws -> LLMResult
 }
 
+/// A client that hands out text while the model writes (Ollama's streamed /api/chat). Used for
+/// streamed @libre answers (issue #2). The result is the same whole reply `chat` would return.
+public protocol StreamingLLMClient: LLMClient {
+    func chatStream(_ messages: [ChatTurn], maxTokens: Int?, onDelta: @escaping @Sendable (String) -> Void) async throws -> LLMResult
+}
+
 public extension LLMClient {
     /// Clients without a token cap (test fakes) ignore it.
     func chat(_ messages: [ChatTurn], json: Bool, maxTokens: Int?) async throws -> LLMResult {

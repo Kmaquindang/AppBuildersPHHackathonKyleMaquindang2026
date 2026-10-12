@@ -79,6 +79,11 @@ func writeAndroidVectors(to path: String) {
     let sealedTown = try! RoomEnvelope.seal(chat, in: town)
     v["townSealedJSON"] = String(decoding: try! MeshCodec.encode(sealedTown), as: UTF8.self)
     v["townAAD"] = String(decoding: RoomEnvelope.aad(sealedTown, room: town.id), as: UTF8.self)
+    // Streamed answer piece (issue #2), sealed in Town Square.
+    var piece = MeshMessage(id: UUID(uuidString: "33333333-4444-4555-8666-777777777777")!, origin: "MacBook Air", destination: .peer("Pixel-A1"),
+                            kind: .answerPart, body: " a hard hat on site", createdAt: F.t0, replyTo: ask.id, replyPath: ["Pixel-A1", "MacBook Air"], v: 2)
+    piece.part = 1
+    v["answerPartSealedJSON"] = String(decoding: try! MeshCodec.encode(try! RoomEnvelope.seal(piece, in: town)), as: UTF8.self)
 
     // 4. BLE frames.
     var frames: [[String: Any]] = []
@@ -181,6 +186,15 @@ func runAndroidInteropTests() {
         check(inner?.senderName == "Ben" && inner?.kind == .chat, "android interop: Kotlin inner message fields decode in Swift")
     } else {
         check(false, "android interop: Kotlin sealed packet decodes as a MeshMessage")
+    }
+    // Streamed answer piece sealed by Kotlin (issue #2): opens in Swift with its kind and order.
+    if let text = k["answerPartSealedJSON"] as? String, let outer = try? MeshCodec.decode(Data(text.utf8)) {
+        let inner = RoomEnvelope.open(outer, in: Room.makeDefault())
+        check(inner?.kind == .answerPart && inner?.part == 2 && inner?.body == " and boots",
+              "android interop: Kotlin-sealed answer part opens in Swift with kind, part and text")
+        check(inner?.replyTo == UUID(uuidString: "7B7B7B7B-1111-4222-8333-444444444444"), "android interop: Kotlin answer part names its ask")
+    } else {
+        check(false, "android interop: Kotlin answer part present")
     }
     // Ask sealed by Kotlin with the epoch key: opens on the admin Mac.
     if let text = k["epochAskJSON"] as? String, let outer = try? MeshCodec.decode(Data(text.utf8)),

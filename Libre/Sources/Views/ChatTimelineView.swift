@@ -55,9 +55,16 @@ struct ChatTimelineView: View {
                                    onDoc: { openDoc = $0 })
                             .id(entry.id)
                     }
+                    // Streamed answers (issue #2): the text so far replaces the typing dots; the
+                    // whole answer replaces this bubble when it arrives.
+                    ForEach(mesh.partialAnswers) { partial in
+                        StreamingBubble(text: partial.text).padding(.top, 8)
+                    }
                     switch typing {
-                    case .typing:
+                    case .typing where mesh.partialAnswers.isEmpty:
                         TypingBubble().padding(.top, 8)
+                    case .typing:
+                        EmptyView()
                     case .note(let line):
                         SystemLine(text: line).padding(.top, 10)
                     case .none:
@@ -73,6 +80,7 @@ struct ChatTimelineView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: entries.count) { _, _ in scrollToBottom(proxy) }
             .onChange(of: typing) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: mesh.partialAnswers) { _, _ in scrollToBottom(proxy) }
             .onAppear { proxy.scrollTo(bottomID, anchor: .bottom) }
             // "Answered above" in the composer: jump to that answer.
             .onChange(of: mesh.scrollRequest) { _, request in
@@ -516,6 +524,28 @@ struct FlowChips: View {
                 .background(Color.orange.opacity(0.15), in: Capsule())
                 .accessibilityLabel("Warning. \(AnswerStyle.title(in: tag)) is not a saved rule.")
         }
+    }
+}
+
+/// An answer still being written (streamed over the mesh): the text so far in Libre's bubble.
+/// Wraps, never cut off; no animation, so growing text does not make the bubble jump.
+struct StreamingBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            PasaAvatar()
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(BubbleStyle.pasa, in: RoundedRectangle(cornerRadius: BubbleStyle.radius, style: .continuous))
+                .transaction { $0.animation = nil }
+            Spacer(minLength: 40)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Libre is writing an answer")
+        .accessibilityValue(text)
     }
 }
 

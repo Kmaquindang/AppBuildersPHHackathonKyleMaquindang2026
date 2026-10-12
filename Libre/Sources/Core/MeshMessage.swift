@@ -23,6 +23,8 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case roomControl // signed manifest, join request or "send me the manifest" (sealed with the base key)
     case beacon      // CLEAR: signed "this room exists" for the Nearby rooms list (no key, no passcode)
     case aiStatus    // CLEAR: signed AI Mac status (awake or asleep, model, queue depth, rooms served)
+    // Streamed answers (Oct 2026, AnswerStream.swift; sealed only, older builds drop them unread):
+    case answerPart  // piece of an answer still being written; replyTo = ask id, part = 0, 1, 2...
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.
@@ -117,6 +119,8 @@ public struct MeshMessage: Codable, Hashable, Identifiable, Sendable {
     /// For asks sent with staged photos ("@pasa what is this?" as a caption): the photos' media
     /// ids. The AI Mac waits until the first one has arrived, then answers about it.
     public var attachments: [UUID]? = nil
+    /// For answer parts: 0, 1, 2... in the order the AI Mac wrote them (AnswerStream.swift).
+    public var part: Int? = nil
 
     public init(
         id: UUID = UUID(),
