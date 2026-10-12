@@ -58,6 +58,7 @@ runAdvertiseWatchTests()
 runLinkStatusWordsTests()
 runAndroidInteropTests()
 runBLERestoreTests()
+runPeerSyncTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 

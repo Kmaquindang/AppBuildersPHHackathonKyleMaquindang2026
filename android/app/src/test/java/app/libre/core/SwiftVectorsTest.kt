@@ -105,6 +105,15 @@ class SwiftVectorsTest {
         assertNull(RoomEnvelope.open(outer.copy(origin = "someone else"), town.id, town.key))
     }
 
+    @Test fun swiftPeerSyncRequestParses() {
+        val r = PeerSync.parseRequest(MeshCodec.parseObject(Bytes.utf8(v.s("peerSyncRequestJSON")))!!)!!
+        assertEquals(Vectors.T0 + 60_000 - PeerSync.WINDOW_MS, r.windowMs)
+        assertEquals(setOf(PeerSync.shortId("6F1C2A3B-4D5E-4F60-8172-93A4B5C6D7E8")), r.knownShort)
+        val known = MeshMessage(id = "6F1C2A3B-4D5E-4F60-8172-93A4B5C6D7E8", origin = "iPhone 12", kind = Kind.CHAT, body = "known", createdAt = Vectors.T0)
+        val other = MeshMessage(origin = "Pixel-A1", kind = Kind.CHAT, body = "missing", createdAt = Vectors.T0)
+        assertEquals(listOf("missing"), PeerSync.select(listOf(known, other), r, Vectors.T0 + 60_000).map { it.body })
+    }
+
     @Test fun swiftSealedAnswerPartOpens() {
         val outer = MeshCodec.decode(Bytes.utf8(v.s("answerPartSealedJSON")))!!
         val town = RoomState.townSquare()

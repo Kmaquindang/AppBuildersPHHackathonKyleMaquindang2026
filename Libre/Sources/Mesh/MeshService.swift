@@ -293,6 +293,9 @@ final class MeshService: ObservableObject {
     private var housekeeping: Timer?
     private var savePending = false
     private var lastBackfillRequest = Date.distantPast
+    /// Phone-to-phone sync (PeerSync): when each peer was last asked, and last answered.
+    private var peerSyncAsked: [String: Date] = [:]
+    private var peerSyncAnswered: [String: Date] = [:]
     /// Phones: when this device last went away (app in the background or every link lost).
     /// Sent with asks so "what did I miss" covers only what came after.
     private var awaySince: Date?
@@ -2106,6 +2109,29 @@ final class MeshService: ObservableObject {
     }
 
     /// AI Mac side: send the phone what it missed, at most 200 messages, in small chunks.
+    /// Phones: ask a newly linked device for the active room's recent team chat this phone lacks.
+    private func requestPeerSync(from device: String, now: Date = Date()) {
+        guard !isAIPeer, now.timeIntervalSince(peerSyncAsked[device] ?? .distantPast) >= PeerSync.askEvery else { return }
+        peerSyncAsked[device] = now
+        guard let body = SyncPayload(request: PeerSync.request(from: entries, now: now, clearedAt: clearedAt)).encoded() else { return }
+        transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), excluding: [], queueIfUnsent: false)
+    }
+
+    /// Any device: answer a phone's sync request with the team chat it is missing, in bulk-lane
+    /// batches. At most once a minute per asker.
+    private func servePeerSync(to device: String, request: SyncRequest, room roomID: String, now: Date = Date()) {
+        guard device != displayName, let room = rooms.room(withID: roomID),
+              now.timeIntervalSince(peerSyncAnswered[device] ?? .distantPast) >= PeerSync.answerEvery else { return }
+        peerSyncAnswered[device] = now
+        let missing = PeerSync.select(from: entriesFor(roomID), request: request, now: now, clearedAt: clearedAtFor(roomID))
+        guard !missing.isEmpty else { return }
+        let chunks = Backfill.chunk(missing)
+        for (index, chunk) in chunks.enumerated() {
+            guard let body = SyncPayload(batch: SyncBatch(messages: chunk, part: index + 1, parts: chunks.count)).encoded() else { continue }
+            transmit(engine.makeOutgoing(kind: .sync, body: body, destination: .peer(device)), room: room, excluding: [], queueIfUnsent: false)
+        }
+    }
+
     private func serveBackfill(to device: String, request: SyncRequest, room roomID: String) {
         guard let room = rooms.room(withID: roomID) else { return }
         let list = entriesFor(roomID)
@@ -2175,6 +2201,7 @@ final class MeshService: ObservableObject {
                 isAway = false
                 flushOutbox()
                 requestBackfill()
+                requestPeerSync(from: name)
                 sendDueNacks(force: true)
                 publishManifests(to: name)
                 #if os(macOS)
@@ -2362,7 +2389,10 @@ final class MeshService: ObservableObject {
         if delivered.kind == .sync {
             // Backfill traffic never shows in the timeline.
             guard let payload = SyncPayload.decode(delivered.body) else { return }
-            if let request = payload.request, isAIPeer {
+            if let request = payload.request, request.window != nil {
+                // Phone-to-phone sync (issue #6): any device answers with team chat it has.
+                servePeerSync(to: delivered.origin, request: request, room: roomID)
+            } else if let request = payload.request, isAIPeer {
                 serveBackfill(to: delivered.origin, request: request, room: roomID)
                 #if os(macOS)
                 // Background rooms get their rules and tasks here (the active room on link).
