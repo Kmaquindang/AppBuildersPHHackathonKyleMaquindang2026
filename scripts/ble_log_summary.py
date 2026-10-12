@@ -22,6 +22,9 @@ from pathlib import Path
 PROBE = re.compile(r"(?:BLE )?probe (?P<peer>.+?) role=(?P<role>\w+) mtu=(?P<mtu>\d+) bytes=(?P<bytes>\d+) rtt_ms=(?P<rtt>\d+) Bps=(?P<bps>\d+)")
 VERIFIED = re.compile(r"(?:BLE )?verified (?P<peer>.+?) key=\S+ role=(?P<role>\w+) mtu=(?P<mtu>\d+)(?: after_s=(?P<after>[\d.]+))?")
 FOUND = re.compile(r"(?:BLE )?found a Libre device rssi=(?P<rssi>-?\d+)")
+BAT = re.compile(r"BAT pct=(?P<pct>-?\d+) charging=(?P<chg>[01]) links=(?P<links>\d+) bright=(?P<bright>-?[\d.]+) state=(?P<state>fg|bg) os=(?P<os>.+?) model=(?P<model>.+)$")
+ISO_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
+LOGCAT_TIME = re.compile(r"^(\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 MSG = re.compile(r"MSG (?P<kind>\w+) link=(?P<link>\w+) hops=(?P<hops>\d+)(?: rtt_ms=(?P<rtt>\d+))?(?: ai_ms=(?P<ai>\d+))?")
 
 
@@ -46,6 +49,7 @@ def parse(text):
         "rtt": defaultdict(list),          # (link, hops) -> answer round trips in ms
         "ai": defaultdict(list),           # (link, hops) -> AI time in ms
         "chats": defaultdict(int),         # (link, hops) -> received chat count
+        "battery": [],                     # (seconds since epoch or None, pct, charging, links, state, os, model)
     }
     for line in text.splitlines():
         if m := PROBE.search(line):
@@ -56,6 +60,8 @@ def parse(text):
                 out["verify_s"].append(float(m["after"]))
         elif m := FOUND.search(line):
             out["found_rssi"].append(int(m["rssi"]))
+        elif m := BAT.search(line):
+            out["battery"].append((stamp(line), int(m["pct"]), m["chg"] == "1", int(m["links"]), m["state"], m["os"], m["model"].strip()))
         elif m := MSG.search(line):
             key = (m["link"], int(m["hops"]))
             if m["kind"] == "answer" and m["rtt"]:
@@ -65,6 +71,33 @@ def parse(text):
             elif m["kind"] == "chat":
                 out["chats"][key] += 1
     return out
+
+
+def stamp(line):
+    """Seconds for an iPhone or Mac ISO stamp, or a logcat MM-DD HH:MM:SS stamp (year 2000), else None."""
+    from datetime import datetime, timezone
+    if m := ISO_TIME.match(line):
+        return datetime.strptime(m[1], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+    if m := LOGCAT_TIME.match(line):
+        return datetime.strptime("2000-" + m[1], "%Y-%m-%d %H:%M:%S").timestamp()
+    return None
+
+
+def battery_rows(points):
+    """Start and end battery, drain per hour, links held, for one log's BAT lines."""
+    known = [p for p in points if p[1] >= 0]
+    if not known:
+        return []
+    first, last = known[0], known[-1]
+    rows = [f"| Device | {last[6]}, {last[5]} |",
+            f"| Battery start to end (%) | {first[1]} to {last[1]}{' (charging seen)' if any(p[2] for p in known) else ''} |",
+            f"| Links held during the run | {spread([p[3] for p in known])} |",
+            f"| Time on screen / in background (lines) | {sum(p[4] == 'fg' for p in known)} / {sum(p[4] == 'bg' for p in known)} |"]
+    if first[0] is not None and last[0] is not None and last[0] > first[0]:
+        hours = (last[0] - first[0]) / 3600
+        rows.append(f"| Run length (min) | {hours * 60:.0f} |")
+        rows.append(f"| Drain (% per hour) | {(first[1] - last[1]) / hours:.1f} |")
+    return rows
 
 
 def report(name, data):
@@ -84,6 +117,7 @@ def report(name, data):
     for key in sorted(data["chats"]):
         link, hops = key
         lines.append(f"| Chats received over {link}, {hops} hop(s) | {data['chats'][key]} |")
+    lines += battery_rows(data["battery"])
     if len(lines) == 4:
         lines.append("| (no Libre Bluetooth lines found) | |")
     return "\n".join(lines)
