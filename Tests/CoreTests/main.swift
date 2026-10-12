@@ -3,6 +3,11 @@
 
 import Foundation
 
+if let i = CommandLine.arguments.firstIndex(of: "--vectors"), i + 1 < CommandLine.arguments.count {
+    writeAndroidVectors(to: CommandLine.arguments[i + 1])
+    exit(0)
+}
+
 runRelayTests()
 runMemoryTests()
 runIntentTests()
@@ -45,6 +50,7 @@ runTownSquareTests()
 runNoAIHostTests()
 await runWebGatewayTests()
 runBLETests()
+runAndroidInteropTests()
 
 print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")
 exit(TestCounter.failures == 0 ? 0 : 1)

@@ -375,8 +375,23 @@ The Mac's onboarding ends with **Create your room**: type a name (for example `G
 - **Approve new members:** when on, valid join requests wait in a list on the admin's join screen with Approve and Deny. The list lives in memory only (it clears when the app restarts; the phone can ask again).
 - **Security limits:** the room identity comes from the name only, so anyone who knows the room name can read the room's control messages (member device names and public keys in the manifest), but not chat, tasks, rules or answers, which use the random content key. The code is stored on the creator's device so it can show the join screen (passcode rooms never store the passcode). An 8-character code is about 40 bits; someone who records a join request could try to guess it offline, slowed by PBKDF2. Phones on builds older than this one cannot join code rooms.
 
-## Android and other phones
-Android phones cannot join the iPhone mesh, so the AI laptop can serve a small chat page on the local network instead. It is off by default.
+## Android app (Bluetooth, new, untested on a real phone)
+A native Android app lives in `android/` (Kotlin, Jetpack Compose, minSdk 26 / Android 8.0, targetSdk 37). Android cannot join Apple's MultipeerConnectivity, so it links only over Bluetooth LE, using the same link the Mac and iPhones run in parallel (see Bluetooth mode): same service and characteristic UUIDs, hello frame, 11 byte frame header, chunking to the link MTU, one write or notification in flight, and the same tie-break when two devices are linked both ways. Messages are the same sealed packets (same JSON field names, ChaCha20-Poly1305 with the same nonce and AAD layout, PBKDF2-HMAC-SHA256 600,000 rounds with the same salts, Ed25519 signed room records), and it relays with the same dedupe, TTL 7 and path rules.
+
+Status, honestly: it builds and its tests pass on a Linux box, but it has **not been run on a real Android phone yet**. Cross-language test vectors check the bytes both ways: the Swift core writes `android/app/src/test/resources/swift_vectors.json` (key derivation, seal and open, framing, message JSON, signed room records) and the Kotlin tests assert them; Kotlin writes `kotlin_vectors.json` (a join request, sealed packets, frames) and the Swift tests open and verify them.
+
+What it does: onboarding (name, then the Nearby devices permission, or location on Android 11 and older), Town Square and rooms joined by name plus join code (or passcode for older rooms; code rooms wait for the admin Mac to let you in), chat bubbles, `@libre` questions answered by the Mac with rule and document chips (tap a document chip for its excerpt), tasks and rules read only, Knowledge titles read only, and Details showing the path and "via Bluetooth". `libre://join` links open the join sheet.
+
+Install (debug build):
+1. On the phone: Settings, About phone, tap Build number 7 times, then Developer options, turn on USB debugging.
+2. Connect it to a computer with Android platform-tools (`brew install --cask android-platform-tools` on a Mac) and accept the prompt on the phone.
+3. `adb install -r libre-android-debug.apk`
+4. Build it yourself: `cd android && ./gradlew assembleDebug` (JDK 17 and the Android SDK; the APK lands in `app/build/outputs/apk/debug/`). Tests: `./gradlew testDebugUnitTest`.
+
+Limits: Bluetooth only (no Wi-Fi link, no browser gateway needed), works only while the app is open (no background service), cannot send photos or voice notes (received photos show as a placeholder), never an admin (cannot make rooms, admit or kick), no task editing, debug build only (not signed for the Play Store).
+
+## Android and other phones (browser)
+Android phones without the app can use a small chat page the AI laptop serves on the local network. It is off by default.
 
 Setup (no internet needed):
 1. Put the Mac and the phones on the same Wi-Fi. With no Wi-Fi router, turn on one Android phone's hotspot and join the Mac to it.
