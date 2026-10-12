@@ -27,7 +27,7 @@ No internet. No cost. Your own knowledge.
 
 Name note: the app was briefly called Pasa on Oct 9, 2026, so old `@pasa` messages and `pasa://` links still work.
 
-> Status: milestone 2 (AI executive assistant). Milestone 1 proved the mesh: devices discover each other with no internet, messages travel through our own multi-hop relay layer, and every message shows its hop path and measured timing. Milestone 2 adds the team's executive assistant on the Mac, running a local model through Ollama: it saves rules and skills, turns plain sentences into tasks and pushes them to the assignee's phone, catches people up on what they missed, takes notes from transcripts, and answers questions grounded in the team's own rules with citations.
+> Status: internal project, in active development. Milestone 2 (AI executive assistant). Milestone 1 proved the mesh: devices discover each other with no internet, messages travel through our own multi-hop relay layer, and every message shows its hop path and measured timing. Milestone 2 adds the team's executive assistant on the Mac, running a local model through Ollama: it saves rules and skills, turns plain sentences into tasks and pushes them to the assignee's phone, catches people up on what they missed, takes notes from transcripts, and answers questions grounded in the team's own rules with citations.
 
 ## Problem
 
@@ -46,7 +46,7 @@ Name note: the app was briefly called Pasa on Oct 9, 2026, so old `@pasa` messag
 
 Source note: the ChatGPT Plus price comes from a third-party tracker of Apple App Store prices in the Philippines (observed Oct 9, 2026), not from OpenAI's own page. Public schools are not the gap: DICT says [96% of public schools had free Wi-Fi by Jul 3, 2026](https://www.dzrh.com.ph/post/96percent-of-public-schools-nationwide-now-have-free-wi-fi-dict) (the agency's own figure). The gap is at home and per person.
 
-## Why does this product benefit from running AI locally?
+## Why run the AI locally?
 The people we build for cannot rely on cloud AI: they have no signal, or they cannot afford mobile data. Cloud-only AI is impossible for them at the moment they need it and expensive at scale. With Libre, one laptop running a local model serves everyone in mesh range, so every question costs nothing and works with no cell towers. Team notes, rules and to-dos are private by design because they never leave the group's own devices.
 
 ## Local AI
@@ -96,10 +96,6 @@ The one miss is the same retrieval gap as before: #8 ("Is smoking allowed near t
 The two misses, as recorded: #8 ("Is smoking allowed near the cement and paint storage?") answered without citing the Tagalog rule "Bawal manigarilyo sa bodega". English words did not match the Tagalog title in keyword retrieval, so the rule never reached the model. #16 (Cebuano, "Pwede ba ko mosulod sa site alas sais sa gabii?") hit the 300 s timeout and counts as wrong. Latency is ask-to-answer through both model calls (intent and answer), measured while the Libre app was also running on the same Mac.
 
 - **Limits.** The Details sheet proves where the answer was made and whether the Mac had an internet route; it does not prove what other apps on the Mac do. Summaries can miss a decision the model did not read; done, open and rules lines are exact. The vision model can misread numbers, so the card says to check them. The benchmark's 20 questions are ours and small; they show the pipeline works in three languages on this Mac, not general quality.
-
-## Demo
-- Demo video: link added at submission (see the submission form).
-- X / LinkedIn post: link added at submission.
 
 ## What runs locally
 - **Mesh (all devices):** discovery, encrypted device-to-device links, and our multi-hop relay (dedup, hop budget, store and forward).
@@ -153,7 +149,7 @@ Good to know: with a free Apple ID, the app on each iPhone stops opening after 7
 
 What checks this: the Mac's only internet calls are the two setup downloads above (the Ollama zip from ollama.com, and model pulls through the local Ollama), and only after you tap Set up AI. Every other request goes to 127.0.0.1 (Ollama) or to nearby devices. The internet state in Details comes from Apple's `NWPathMonitor`, which only listens and sends nothing. The iPhone app makes no internet calls at all.
 
-## How to run it (for judges)
+## How to run it
 
 > **Important: Libre must be open and on screen on every phone that relays.** iOS suspends apps in the background and MultipeerConnectivity links drop when that happens, so a phone in a pocket with the screen locked does not pass messages on. Keep Libre in the foreground (the app keeps the screen awake while it is open). The Mac must stay awake, lid open and plugged in, with Ollama running.
 Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [docs/SETUP.md](docs/SETUP.md).
@@ -177,7 +173,7 @@ Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [
     - `what did I miss?` (on a phone: a summary of team chat since that phone was last away, meaning the app was in the background or had no links; on the Mac, or when there is no away time, a labelled recap of the latest messages. Also `recap` and `ano'ng na-miss ko?`), `my tasks`, `team tasks`, `the cement is ordered`, `more`
     - Paste a long meeting transcript (or start with `notes:`) to get decisions and auto-created tasks.
     - Pick photos from the "+" button: they wait in the message box as thumbnails until you tap send (add a caption such as `@libre what is this?` to ask about them). Hold the mic to record a voice note (up to 30 s); on release a preview lets you play, delete or send it. On the AI laptop each voice note is transcribed on the device; say "At Libre, remind Ana to order cement Friday" and it becomes an ask.
-12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`. On macOS it uses CryptoKit and needs no downloads. On Linux it builds with SwiftPM and fetches Apple's swift-crypto once (see Disclosures).
+12. Core unit tests (macOS or Linux with Swift installed, no Ollama needed): `./scripts/test-relay.sh`. On macOS it uses CryptoKit and needs no downloads. On Linux it builds with SwiftPM and fetches Apple's swift-crypto once (see Built with).
 
 ## First run
 New installs see a short onboarding. Code: `Libre/Sources/Views/OnboardingView.swift`, `Libre/Sources/Views/MacSetupView.swift`.
@@ -280,7 +276,7 @@ Notes:
 - The 522 ms one-way figure depends on how closely the two device clocks agree; the round trip uses one clock and is exact.
 - Earlier, a direct Ollama API call (no app) measured 15.6 tokens/s warm, and the very first question after starting Ollama took about 25 s while the model loaded. The app now warms the model up on launch.
 
-## Disclosures
+## Built with
 ### Models used
 - Qwen3 8B, tag `qwen3:8b`, digest `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41` (Q4_K_M, 8.2B parameters, 5.2 GB download), served by Ollama 0.35.0 on the MacBook Air M3 16 GB. Read from `ollama list` and `/api/tags` on Oct 9, 2026. Library page: https://ollama.com/library/qwen3. License: Apache 2.0 (https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE).
 - Memory: the default `qwen3:8b` is meant for Macs with 12 GB of memory or more (tested on 16 GB). Loaded with an 8,192-token context it takes 6.2 GB (Ollama `/api/ps`, Oct 9, 2026 at 7:43 PM PHT). Macs under 12 GB default to `qwen3:4b-instruct`.
@@ -298,13 +294,13 @@ Notes:
 ### APIs and cloud services
 - None at runtime. The only API used is the local Ollama server on the same Mac. One-time setup only, after an explicit tap: the Ollama app from ollama.com (served from GitHub releases) and models through Ollama's own registry. Speech recognition is Apple's on-device recognizer with `requiresOnDeviceRecognition = true`, so audio is never sent to Apple's servers; if the Mac has no on-device model for the language, Libre shows a note instead of a transcript.
 ### Existing code and assets
-- No pre-existing project code. The app has no third-party packages; the Linux test build uses Apple's swift-crypto (above). All app code was written during the hackathon.
+- No pre-existing project code. The app has no third-party packages; the Linux test build uses Apple's swift-crypto (above). All app code was written for Libre, starting Oct 9, 2026.
 - Design inspiration only (no code used): the bitchat whitepaper (TTL flooding, dedup cache, store and forward).
-### AI development tools
+### AI tools
 - Grok Bot (Remy): wrote and tested most of the code, the docs and the QA harness from Kyle's direction. Kyle directed the product, reviewed every UI round on his own devices, and tested on the Mac and iPhones.
 
 ## Team
-- Kyle Maquindang (solo): picked the problem and pushed for research-backed framing, directed every product and design decision, reviewed each UI round on his own Mac and iPhones, ran all device and hop tests, and recorded the demo.
+- Kyle Maquindang: internal project lead. Picked the problem, directs every product and design decision, reviews each UI round on his own Mac and iPhones, and runs the device and hop tests.
 
 ## Security
 Honest status for this prototype:

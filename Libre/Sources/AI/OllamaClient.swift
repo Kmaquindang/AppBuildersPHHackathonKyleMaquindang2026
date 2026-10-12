@@ -288,7 +288,7 @@ public struct OllamaClient: LLMClient {
         return out
     }
 
-    /// Model tested for the hackathon on a MacBook Air M3 16 GB (Ollama 0.35.0, Oct 9, 2026).
+    /// Model tested on a MacBook Air M3 16 GB (Ollama 0.35.0, Oct 9, 2026).
     public static let testedModelDigest = "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
     /// Non-thinking 4B build, used by default on Macs with less than 12 GB of memory.
     public static let lowMemoryModel = "qwen3:4b-instruct"

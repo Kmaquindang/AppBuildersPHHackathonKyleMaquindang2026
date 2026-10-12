@@ -1,8 +1,8 @@
 # Build log (times PHT, Oct 9 to 10, 2026)
 
-All code in this repo was written during the AppBuildersPH Hackathon 2026, after the 1:00 PM Oct 9 kickoff. No pre-existing project code is used.
+Libre is an internal project. All code in this repo was written for it, starting 1:00 PM Oct 9, 2026. No pre-existing project code is used.
 
-## Tools in use (running list for disclosures)
+## Tools in use (running list for the Built with credits)
 - AI development tool: Grok Bot (agent "Remy"), writing and testing code from Kyle's direction.
 - Local model runtime: Ollama (model TBD after testing).
 - Apple frameworks: SwiftUI, MultipeerConnectivity (to be confirmed).
