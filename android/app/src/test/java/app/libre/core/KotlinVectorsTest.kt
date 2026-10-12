@@ -1,6 +1,7 @@
 // Writes (with -Dlibre.writeVectors=true) or checks kotlin_vectors.json: bytes made by Kotlin that
 // the Swift suite (runAndroidInteropTests) verifies: a signed join request with a code proof, a
-// Town Square packet sealed in Kotlin, an @libre ask sealed with the epoch key, and BLE frames.
+// Town Square packet sealed in Kotlin, an @libre ask sealed with the epoch key, a streamed answer
+// piece, and BLE frames.
 // Kotlin output is deterministic (Ed25519 signatures are deterministic, nonces fixed here).
 package app.libre.core
 
@@ -24,6 +25,9 @@ class KotlinVectorsTest {
             kind = Kind.ASK, body = "what is the site rule", createdAt = Vectors.T0, senderName = "Ben", v = 2)
         val epochKey = Bytes.unhex(v.s("epochKey"))
         val epochAsk = RoomEnvelope.seal(ask, room.id, epochKey, v.v["manifestEpoch"].toString().toInt(), ByteArray(12) { (it + 1).toByte() })
+        val piece = MeshMessage(id = "7C7C7C7C-1111-4222-8333-444444444444", origin = "MacBook Air", destination = Destination.Peer("Pixel-A1"),
+            kind = Kind.ANSWER_PART, body = " and boots", createdAt = Vectors.T0, replyTo = ask.id, part = 2, v = 2)
+        val sealedPiece = RoomEnvelope.seal(piece, town.id, town.key, 0, ByteArray(12) { (it + 2).toByte() })
         val data = ByteArray(700) { (it * 13 + 3).toByte() }
         val frames = BleChunker.frames(data, 0x01020304, 185)!!
         val joinerHello = BleHello.make(v.joiner, "Pixel-A1", v.h("joinerNonce"))!!
@@ -33,6 +37,7 @@ class KotlinVectorsTest {
             "townSealedJSON" to JsonPrimitive(String(MeshCodec.encode(sealed))),
             "epochAskJSON" to JsonPrimitive(String(MeshCodec.encode(epochAsk))),
             "epochKeyUsed" to JsonPrimitive(v.s("epochKey")),
+            "answerPartSealedJSON" to JsonPrimitive(String(MeshCodec.encode(sealedPiece))),
             "frames" to JsonArray(frames.map { JsonPrimitive(Bytes.hex(it)) }),
             "framesData" to JsonPrimitive(Bytes.hex(data)),
             "signedHello" to JsonPrimitive(Bytes.hex(joinerHello)),
