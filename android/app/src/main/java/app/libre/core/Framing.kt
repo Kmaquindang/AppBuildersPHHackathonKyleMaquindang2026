@@ -117,3 +117,16 @@ class BleReassembler(private val timeoutMs: Long = 60_000) {
         for (f in finished.values) f.entries.removeIf { now - it.value >= timeoutMs }
     }
 }
+
+/** Speed test numbers from one Bluetooth probe (same as BLEProbeResult.swift): a `bytes`-long
+ *  probe answered by a short reply. */
+data class ProbeResult(val bytes: Int, val mtu: Int, val roundTripMs: Long) {
+    /** Bytes per second one way (the reply is tiny, so the round trip is mostly the probe). */
+    val bytesPerSecond: Double get() = if (roundTripMs > 0) bytes * 1000.0 / roundTripMs else 0.0
+
+    /** Log line in the iPhone's format, read by scripts/ble_log_summary.py. */
+    fun logLine(peer: String, role: String): String =
+        "probe $peer role=$role mtu=$mtu bytes=$bytes rtt_ms=$roundTripMs Bps=${bytesPerSecond.toInt()}"
+
+    companion object { const val PROBE_BYTES = 4096 }
+}

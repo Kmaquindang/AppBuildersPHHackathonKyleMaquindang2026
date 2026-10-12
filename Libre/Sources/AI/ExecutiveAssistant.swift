@@ -157,8 +157,12 @@ public final class ExecutiveAssistant {
     /// - Parameter since: the asker was away from this time on (sent by the phone with the ask).
     ///   "What did I miss" then summarizes only chat after it. nil means a plain recap.
     /// - Parameter askID: the ask's id (askKey); names the thread turn this exchange becomes.
-    public func handle(_ rawText: String, from asker: String, since: Date? = nil, askID: UUID? = nil) async -> AssistantOutcome {
-        var outcome = await handleCore(rawText, from: asker, since: since)
+    /// - Parameter onPartial: raw model text as it is written, for streamed answers (issue #2).
+    ///   Called only for grounded answers and only when the client streams; the returned outcome
+    ///   is still the whole, checked answer.
+    public func handle(_ rawText: String, from asker: String, since: Date? = nil, askID: UUID? = nil,
+                       onPartial: (@Sendable (String) -> Void)? = nil) async -> AssistantOutcome {
+        var outcome = await handleCore(rawText, from: asker, since: since, onPartial: onPartial)
         recordTurn(question: rawText, outcome: &outcome, asker: asker, askID: askID)
         return outcome
     }
@@ -223,7 +227,8 @@ public final class ExecutiveAssistant {
         }
     }
 
-    private func handleCore(_ rawText: String, from asker: String, since: Date? = nil) async -> AssistantOutcome {
+    private func handleCore(_ rawText: String, from asker: String, since: Date? = nil,
+                            onPartial: (@Sendable (String) -> Void)? = nil) async -> AssistantOutcome {
         let started = Date()
         var tracker = CallTracker()
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -511,7 +516,12 @@ public final class ExecutiveAssistant {
             stats.summaryTurns = memory.roomSummary?.turnCount ?? 0
             contextStats[roomKey] = stats
             do {
-                let result = try await llm.chat(turns, json: false, maxTokens: TokenCaps.answer)
+                let result: LLMResult
+                if let onPartial, let streaming = llm as? any StreamingLLMClient {
+                    result = try await streaming.chatStream(turns, maxTokens: TokenCaps.answer, onDelta: onPartial)
+                } else {
+                    result = try await llm.chat(turns, json: false, maxTokens: TokenCaps.answer)
+                }
                 tracker.add(result, prompt: turns)
                 // Never pass on a citation that is not in memory: fix versions, flag the rest,
                 // then move citations out of the text into chips.

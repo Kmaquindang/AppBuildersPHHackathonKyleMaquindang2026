@@ -1,5 +1,6 @@
 // OllamaClient.swift
-// Pasa: talks to Ollama on the same Mac (default http://127.0.0.1:11434), non-streaming /api/chat.
+// Pasa: talks to Ollama on the same Mac (default http://127.0.0.1:11434) over /api/chat, whole
+// replies or streamed line by line (chatStream, for streamed answers, issue #2).
 // No internet involved: Ollama serves the model from local disk.
 
 import Foundation
@@ -30,7 +31,7 @@ public enum WarmthPolicy {
     }
 }
 
-public struct OllamaClient: LLMClient {
+public struct OllamaClient: StreamingLLMClient {
     public static let defaultBaseURL = URL(string: "http://127.0.0.1:11434")!
     public static let defaultModel = "qwen3:8b"
     public static let defaultFallbackModel = "qwen3:4b"
@@ -40,6 +41,8 @@ public struct OllamaClient: LLMClient {
     public var fallbackModel: String?
     public var timeout: TimeInterval
     public var temperature: Double
+    /// How streamed replies are read; tests swap in a fake.
+    public var lines: any OllamaLineTransport = URLSessionLineTransport()
 
     public init(
         baseURL: URL = OllamaClient.defaultBaseURL,
@@ -69,6 +72,20 @@ public struct OllamaClient: LLMClient {
                 throw LLMError.modelMissing(missing)
             }
             return try await send(messages, json: json, model: fallbackModel, maxTokens: maxTokens)
+        }
+    }
+
+    /// Streamed /api/chat: `onDelta` gets each piece of text as Ollama writes it (thinking
+    /// included, if a model emits it); the result is the whole reply with thinking removed, as
+    /// from `chat`. Falls back to `fallbackModel` when the model is missing, like `chat`.
+    public func chatStream(_ messages: [ChatTurn], maxTokens: Int?, onDelta: @escaping @Sendable (String) -> Void) async throws -> LLMResult {
+        do {
+            return try await stream(messages, model: model, maxTokens: maxTokens, onDelta: onDelta)
+        } catch LLMError.modelMissing(let missing) {
+            guard let fallbackModel, !fallbackModel.isEmpty, fallbackModel != model else {
+                throw LLMError.modelMissing(missing)
+            }
+            return try await stream(messages, model: fallbackModel, maxTokens: maxTokens, onDelta: onDelta)
         }
     }
 
@@ -184,6 +201,52 @@ public struct OllamaClient: LLMClient {
         )
     }
 
+    private func stream(_ messages: [ChatTurn], model: String, maxTokens: Int?, onDelta: @escaping @Sendable (String) -> Void) async throws -> LLMResult {
+        let body = ChatRequest(
+            model: model,
+            messages: OllamaClient.prepare(messages, model: model),
+            stream: true,
+            think: OllamaClient.usesThinking(model) ? false : nil,
+            format: nil,
+            options: ChatRequest.Options(temperature: temperature, num_ctx: PromptBudget.contextTokens, num_predict: maxTokens),
+            keep_alive: OllamaClient.keepAlive
+        )
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        do {
+            let (status, stream) = try await lines.lines(for: request)
+            var reader = OllamaStreamReader()
+            if status != 200 {
+                var detail = ""
+                for try await line in stream where detail.count < 200 { detail += line }
+                let error = (try? JSONDecoder().decode(ChatResponse.self, from: Data(detail.utf8)))?.error
+                if status == 404 || (error?.lowercased().contains("not found") ?? false) { throw LLMError.modelMissing(model) }
+                throw LLMError.badResponse(String((error ?? (detail.isEmpty ? "HTTP \(status)" : detail)).prefix(200)))
+            }
+            for try await line in stream {
+                if let delta = try reader.read(line, model: model), !delta.isEmpty { onDelta(delta) }
+            }
+            return try reader.result(model: model)
+        } catch let error as URLError {
+            throw OllamaClient.mapped(error)
+        }
+    }
+
+    static func mapped(_ error: URLError) -> LLMError {
+        switch error.code {
+        case .timedOut:
+            return .timeout
+        case .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet, .badServerResponse, .resourceUnavailable:
+            return .notRunning
+        default:
+            return .badResponse(error.localizedDescription)
+        }
+    }
+
     private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await URLSession.shared.data(for: request)
@@ -239,6 +302,44 @@ public struct OllamaClient: LLMClient {
         var eval_duration: Int64?
         var prompt_eval_count: Int?
         var error: String?
+    }
+
+    /// Reads Ollama's streamed reply: one JSON object per line, text in message.content, the
+    /// last line has done = true and the timings. Pure, tested with fake lines.
+    struct OllamaStreamReader {
+        private(set) var text = ""
+        private var last: ChatResponse?
+
+        /// Returns the new text in `line` (nil for a blank line). Throws on an error line.
+        mutating func read(_ line: String, model: String) throws -> String? {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            guard let chunk = try? JSONDecoder().decode(ChatResponse.self, from: Data(trimmed.utf8)) else {
+                throw LLMError.badResponse("Unreadable line from Ollama: " + String(trimmed.prefix(120)))
+            }
+            if let error = chunk.error {
+                if error.lowercased().contains("not found") { throw LLMError.modelMissing(model) }
+                throw LLMError.badResponse(String(error.prefix(200)))
+            }
+            let delta = chunk.message?.content ?? ""
+            text += delta
+            if chunk.done == true { last = chunk }
+            return delta
+        }
+
+        /// The whole reply, once the done line came. A stream cut short is an error, never a
+        /// partial answer.
+        func result(model: String) throws -> LLMResult {
+            guard let last else { throw LLMError.badResponse("Ollama stopped before the answer was finished.") }
+            return LLMResult(
+                text: OllamaClient.stripThinking(text),
+                model: last.model ?? model,
+                evalCount: last.eval_count,
+                evalDurationNs: last.eval_duration,
+                totalDurationNs: last.total_duration,
+                promptEvalCount: last.prompt_eval_count
+            )
+        }
     }
 
     struct TagsResponse: Decodable {
@@ -297,6 +398,42 @@ public struct OllamaClient: LLMClient {
     /// Default model for this Mac: qwen3:8b with 12 GB of memory or more, otherwise qwen3:4b-instruct.
     public static func recommendedModel(physicalMemory: UInt64) -> String {
         physicalMemory < lowMemoryThreshold ? lowMemoryModel : defaultModel
+    }
+}
+
+/// Opens an HTTP request and hands back its status and body line by line. The real one reads
+/// URLSession bytes as they arrive; tests use a fake.
+public protocol OllamaLineTransport: Sendable {
+    func lines(for request: URLRequest) async throws -> (status: Int, lines: AsyncThrowingStream<String, Error>)
+}
+
+public struct URLSessionLineTransport: OllamaLineTransport {
+    public init() {}
+
+    public func lines(for request: URLRequest) async throws -> (status: Int, lines: AsyncThrowingStream<String, Error>) {
+        #if canImport(FoundationNetworking)
+        // Linux test builds have no URLSession.bytes: read the whole body, then split it.
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let all = String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
+        return ((response as? HTTPURLResponse)?.statusCode ?? 0, AsyncThrowingStream { c in
+            for line in all { c.yield(line) }
+            c.finish()
+        })
+        #else
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let stream = AsyncThrowingStream<String, Error> { c in
+            let task = Task {
+                do {
+                    for try await line in bytes.lines { c.yield(line) }
+                    c.finish()
+                } catch {
+                    c.finish(throwing: error)
+                }
+            }
+            c.onTermination = { _ in task.cancel() }
+        }
+        return ((response as? HTTPURLResponse)?.statusCode ?? 0, stream)
+        #endif
     }
 }
 
