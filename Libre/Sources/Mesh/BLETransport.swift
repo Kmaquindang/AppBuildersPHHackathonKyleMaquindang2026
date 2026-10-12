@@ -93,6 +93,8 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private var namedLinks: [String: [String]] = [:]
     private var blocked: Set<String>
     private var probes: [String: BLEProbeResult] = [:]
+    /// Device names that came back with a different key (BLETrustStore), for the Connection sheet.
+    private var conflicts: [String] = []
     private var radioState = "starting"
     private(set) var framesSent = 0
     private(set) var bytesSent = 0
@@ -104,10 +106,53 @@ final class BLETransport: NSObject, @unchecked Sendable {
         self.isHub = isHub
         var b = BLEPeerBook(identity: identity)
         _ = b.setBlocked(blocked)
+        b.trust = BLETransport.loadTrust()
         self.book = b
         self.policy = BLEConnectPolicy(config: isHub ? .hub : .phone)
         self.advertiseWatch = AdvertiseWatch(isHub: isHub)
         super.init()
+        conflicts = book.trust.conflicts.keys.sorted()
+    }
+
+    // MARK: Trust on first use (issue #12)
+
+    private static var trustURL: URL? { logURL?.deletingLastPathComponent().appendingPathComponent("ble-trust.json") }
+
+    private static func loadTrust() -> BLETrustStore {
+        guard let url = trustURL, let data = try? Data(contentsOf: url),
+              let store = try? JSONDecoder().decode(BLETrustStore.self, from: data) else { return BLETrustStore() }
+        return store
+    }
+
+    /// Saves the trust store when it changed, and tells the person once about a new key conflict.
+    private func saveTrust(before: BLETrustStore) {
+        guard book.trust != before else { return }
+        if let url = BLETransport.trustURL, let data = try? JSONEncoder().encode(book.trust) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+        }
+        lock.lock(); conflicts = book.trust.conflicts.keys.sorted(); lock.unlock()
+        for name in book.trust.conflicts.keys where before.conflicts[name] != book.trust.conflicts[name] {
+            note("BLE key changed for \(name); refused until trusted")
+            onEvent(.problem("\(name) came back with a different device key, so Libre did not link to it. If Libre was reinstalled on that device, trust the new key in the connection sheet."))
+        }
+    }
+
+    /// Names refused because their key changed.
+    var trustConflicts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return conflicts
+    }
+
+    /// The person trusts the new key for `name`: the next link with it is accepted.
+    func trustNewKey(for name: String) {
+        queue.async { [self] in
+            let before = book.trust
+            book.trust.reset(name: name)
+            saveTrust(before: before)
+            note("BLE trust reset for \(name)")
+            rescan()
+        }
     }
 
     // MARK: Control
@@ -290,6 +335,8 @@ final class BLETransport: NSObject, @unchecked Sendable {
             // A central's first writes can arrive before its subscribe: open the book entry now
             // (linkReady later reuses the same challenge for our hello).
             _ = book.opened(link.id, role: link.role == .central ? .central : .peripheral)
+            let before = book.trust
+            defer { saveTrust(before: before) }
             switch book.received(hello: done.data, on: link.id) {
             case .sendProof(let proof):
                 enqueue(proof, type: .proof, on: link)
@@ -298,6 +345,8 @@ final class BLETransport: NSObject, @unchecked Sendable {
                 if why != "second hello" { drop(link.id) }
             }
         case .proof:
+            let before = book.trust
+            defer { saveTrust(before: before) }
             switch book.received(proof: done.data, on: link.id) {
             case .verified(let name, let keyID, let newPeer, let dropLink, let replaced):
                 if let replaced, links[replaced] != nil {

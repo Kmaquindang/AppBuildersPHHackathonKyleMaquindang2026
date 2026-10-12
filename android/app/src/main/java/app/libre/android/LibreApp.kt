@@ -36,6 +36,9 @@ class LibreApp : Application() {
     private val _backgroundRelay = MutableStateFlow(false)
     /** The person chose to keep relaying while Libre is closed (RelayService). Off by default. */
     val backgroundRelay: StateFlow<Boolean> = _backgroundRelay
+    private val _keyConflicts = MutableStateFlow<List<String>>(emptyList())
+    /** Devices refused over Bluetooth because their key changed (issue #12). */
+    val keyConflicts: StateFlow<List<String>> = _keyConflicts
     private val _power = MutableStateFlow(PowerPolicy.FOREGROUND)
     val power: StateFlow<PowerPolicy.Profile> = _power
 
@@ -115,9 +118,14 @@ class LibreApp : Application() {
         })
         ble = t
         mesh.link = t
+        _keyConflicts.value = t.trustConflicts
+        t.onTrustChanged = { _keyConflicts.value = it }
         t.setPower(_power.value)
         t.start()
     }
+
+    /** Trust the new Bluetooth key of a device that came back with a different one. */
+    fun trustNewKey(name: String) { ble?.trustNewKey(name); _keyConflicts.value = _keyConflicts.value - name }
 
     /** Turns the background relay on or off (and remembers the choice). */
     fun setBackgroundRelay(on: Boolean) {
