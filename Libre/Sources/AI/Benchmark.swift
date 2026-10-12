@@ -143,9 +143,13 @@ public enum BenchmarkSuite {
     /// Runs every question through a fresh ExecutiveAssistant on a fresh memory copy.
     @MainActor
     public static func run(llm: any LLMClient, model: String, progress: ((BenchmarkResult) -> Void)? = nil) async -> [BenchmarkResult] {
+        // As in the app: rules get their gloss (RuleGlosser) once, when saved, before anyone asks.
+        let prepared = OrgMemory()
+        prepared.replace(with: memory())
+        await RuleGlosser.glossMissing(in: prepared, llm: llm)
         var results: [BenchmarkResult] = []
         for q in questions {
-            let r = await runOne(q, llm: llm, model: model)
+            let r = await runOne(q, llm: llm, model: model, snapshot: prepared.snapshot)
             results.append(r)
             progress?(r)
         }
@@ -154,8 +158,8 @@ public enum BenchmarkSuite {
 
     /// One question (also the Mac setup's one-question self-test).
     @MainActor
-    public static func runOne(_ q: BenchmarkQuestion, llm: any LLMClient, model: String) async -> BenchmarkResult {
-        let snapshot = memory()
+    public static func runOne(_ q: BenchmarkQuestion, llm: any LLMClient, model: String, snapshot prepared: OrgSnapshot? = nil) async -> BenchmarkResult {
+        let snapshot = prepared ?? memory()
         let mem = OrgMemory()
         mem.replace(with: snapshot)
         mem.admins = ["Site Office"]

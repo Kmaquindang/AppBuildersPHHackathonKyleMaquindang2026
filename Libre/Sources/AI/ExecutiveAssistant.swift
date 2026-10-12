@@ -456,7 +456,7 @@ public final class ExecutiveAssistant {
             let previousTurn = ConversationMemory.uncovered(memory.threadTurns, summary: memory.roomSummary, clearedAt: clearedAt)
                 .last { $0.asker == asker }
             let selection = KnowledgeRetriever.select(question: ConversationMemory.retrievalQuery(question, previous: previousTurn),
-                                                      rules: memory.rules, notes: memory.notes)
+                                                      rules: memory.rules, notes: memory.notes, glosses: memory.glossMap)
             checked = selection.checkedTitles
             // Knowledge: role filter first (Admins-only documents never rank for members), then
             // BM25 plus embeddings when the model is there, keyword-only otherwise.
