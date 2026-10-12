@@ -33,6 +33,7 @@ import app.libre.core.RuleItem
 import app.libre.core.SyncPayload
 import app.libre.core.TaskItem
 import app.libre.core.AnswerStreams
+import app.libre.core.PeerSync
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -311,6 +312,37 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
         for (r in _rooms.value) if (!r.isDefault) { requestManifest(r.id); sendJoinRequestIfNeeded(r.id) }
         lastBackfill = 0
         requestBackfill()
+        requestPeerSync(name)
+    }
+
+    /** Phone-to-phone sync (PeerSync, issue #6): when each peer was last asked and answered. */
+    private val peerSyncAsked = HashMap<String, Long>()
+    private val peerSyncAnswered = HashMap<String, Long>()
+
+    /** Asks a newly linked device for the active room's recent team chat this phone lacks. */
+    private fun requestPeerSync(device: String) {
+        val room = activeRoom
+        if (room.contentKey == null || now() - (peerSyncAsked[device] ?: Long.MIN_VALUE / 2) < PeerSync.ASK_EVERY_MS) return
+        peerSyncAsked[device] = now()
+        val body = PeerSync.requestBody(teamChat(room.id), now())
+        transmit(engine.makeOutgoing(Kind.SYNC, body, Destination.Peer(device), displayLabel(), now()), room, queue = false)
+    }
+
+    /** Answers a phone's sync request with the team chat it is missing (bulk lane), once a minute per asker. */
+    private fun servePeerSync(device: String, roomId: String, req: PeerSync.Request) {
+        val room = _rooms.value.firstOrNull { it.id == roomId } ?: return
+        if (device == meshName() || now() - (peerSyncAnswered[device] ?: Long.MIN_VALUE / 2) < PeerSync.ANSWER_EVERY_MS) return
+        peerSyncAnswered[device] = now()
+        val missing = PeerSync.select(teamChat(roomId), req, now())
+        for (body in PeerSync.batchBodies(missing)) {
+            transmit(engine.makeOutgoing(Kind.SYNC, body, Destination.Peer(device), displayLabel(), now()), room, queue = false)
+        }
+    }
+
+    /** Team chat in a room's timeline, as messages (Android keeps no private chat). */
+    private fun teamChat(roomId: String): List<MeshMessage> = (timelines[roomId] ?: emptyList()).filter { it.kind == Kind.CHAT }.map {
+        MeshMessage(id = it.id, origin = it.origin, kind = Kind.CHAT, body = it.body, hops = it.hops.ifEmpty { listOf(it.origin) },
+            createdAt = it.createdAt, senderName = it.senderName, v = MeshMessage.PROTOCOL_VERSION)
     }
 
     fun peerUnlinked(name: String) { _peers.value = _peers.value - name }
@@ -450,6 +482,7 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
                 updateCache(roomId) { c -> c.copy(rules = c.rules.filter { it.id != r.id } + r) }
             }
             Kind.SYNC -> {
+                if (!backfilled) MeshCodec.parseObject(Bytes.utf8(m.body))?.let(PeerSync::parseRequest)?.let { servePeerSync(m.origin, roomId, it) }
                 val p = SyncPayload.decode(m.body) ?: return
                 updateCache(roomId) { c ->
                     c.copy(

@@ -149,6 +149,11 @@ public struct SyncRequest: Codable, Equatable, Sendable {
     public var knownIDs: [UUID]
     /// The phone cleared its timeline at this time: never send anything older.
     public var clearedAt: Date?
+    /// Phone-to-phone sync (PeerSync, issue #6): send team chat from this time on that is not in
+    /// `knownShort`. Builds without these fields ignore them; the AI Mac backfill is unchanged.
+    public var window: Date? = nil
+    /// Phone-to-phone sync: short ids (PeerSync.shortID) of the chat the asker already has.
+    public var knownShort: [String]? = nil
 
     public init(newest: Date?, knownIDs: [UUID], clearedAt: Date? = nil) {
         self.newest = newest

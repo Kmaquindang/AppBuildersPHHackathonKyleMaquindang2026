@@ -46,6 +46,41 @@ class MeshControllerTest {
         assertTrue(l.sent.any { "Mac-1" in it.second })
     }
 
+    @Test fun threePhonesCarryChatWithoutTheMac() {
+        val clock = Vectors.T0 + 5_000
+        fun phone(name: String) = MeshController(Files.createTempDirectory("libre").toFile(), now = { clock }).also {
+            it.completeOnboarding(name, "Pixel 8"); it.link = FakeLink()
+        }
+        val a = phone("PATIENT_A"); val b = phone("PATIENT_B"); val c = phone("PATIENT_C")
+        val all = listOf(a, b, c).associateBy { it.meshName() }
+        fun link(x: MeshController, y: MeshController) {
+            (x.link as FakeLink).peers += y.meshName(); (y.link as FakeLink).peers += x.meshName()
+            x.peerLinked(y.meshName()); y.peerLinked(x.meshName())
+        }
+        fun unlink(x: MeshController, y: MeshController) {
+            (x.link as FakeLink).peers -= y.meshName(); (y.link as FakeLink).peers -= x.meshName()
+            x.peerUnlinked(y.meshName()); y.peerUnlinked(x.meshName())
+        }
+        fun pump() {
+            repeat(10) {
+                for ((name, ctl) in all) {
+                    val l = ctl.link as FakeLink
+                    val out = l.sent.toList(); l.sent.clear()
+                    for ((data, to) in out) for (t in to) all[t]?.receive(data, name)
+                }
+            }
+        }
+        a.send("Gate 2 is closed, use gate 3")   // nobody linked yet: waits in A's outbox
+        link(a, b); pump()
+        assertTrue("B got A's chat", b.entries.value.any { it.body == "Gate 2 is closed, use gate 3" })
+        unlink(a, b)
+        c.send("Ana is at the clinic")
+        link(b, c); pump()
+        assertTrue("C got A's chat from B, no Mac anywhere", c.entries.value.any { it.body == "Gate 2 is closed, use gate 3" })
+        assertTrue("B got C's chat", b.entries.value.any { it.body == "Ana is at the clinic" })
+        assertEquals("no duplicates on C", 1, c.entries.value.count { it.body == "Gate 2 is closed, use gate 3" })
+    }
+
     @Test fun askGoesToTheAiRole() {
         val (c, l) = controller()
         l.peers += "Mac-1"; c.peerLinked("Mac-1"); l.sent.clear()
