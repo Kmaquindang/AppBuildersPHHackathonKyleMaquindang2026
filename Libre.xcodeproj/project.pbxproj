@@ -18,6 +18,7 @@
 		AE1A5BBF6CB1724B6CE6028D /* BLEConnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */; };
 		3A81D74A84A31A89A2BEC6CD /* LinkStatusWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE4745C8959647761989137 /* LinkStatusWords.swift */; };
 		95F21BE6A4466B3141C5B4A8 /* AdvertiseWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */; };
+		5FE855C853C924B76B714671 /* BLERestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14404C15D6451D62F6F4303B /* BLERestore.swift */; };
 		8BC10C12C2ED6DAFEC8EC38E /* BLEHandshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C27E5149A89D0F248A159AF /* BLEHandshake.swift */; };
 		06516754BFCE2F2238907FF7 /* ChatStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FABD538020A6189503AC0FB6 /* ChatStatus.swift */; };
 		15A07AAB052FFC1972322EAA /* ChatLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2694CED37C0024DBAD648594 /* ChatLayout.swift */; };
@@ -90,6 +91,7 @@
 		174C9A01FDD55DFAA63CAE53 /* BLEConnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */; };
 		76CD3FD7DF8B55FCDCF4D13F /* LinkStatusWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE4745C8959647761989137 /* LinkStatusWords.swift */; };
 		F72DD3B10BAD9380548D119F /* AdvertiseWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */; };
+		AC1E535D4067F981EB96DD70 /* BLERestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14404C15D6451D62F6F4303B /* BLERestore.swift */; };
 		6C58C52190E19AFEE22E402E /* BLEHandshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C27E5149A89D0F248A159AF /* BLEHandshake.swift */; };
 		C67026726C42445C6B2EA815 /* ChatStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FABD538020A6189503AC0FB6 /* ChatStatus.swift */; };
 		A70CDCC2DF79A62783F305B7 /* ChatLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2694CED37C0024DBAD648594 /* ChatLayout.swift */; };
@@ -205,6 +207,7 @@
 		6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEConnectPolicy.swift; sourceTree = "<group>"; };
 		6CE4745C8959647761989137 /* LinkStatusWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkStatusWords.swift; sourceTree = "<group>"; };
 		7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvertiseWatch.swift; sourceTree = "<group>"; };
+		14404C15D6451D62F6F4303B /* BLERestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLERestore.swift; sourceTree = "<group>"; };
 		3C27E5149A89D0F248A159AF /* BLEHandshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEHandshake.swift; sourceTree = "<group>"; };
 		FABD538020A6189503AC0FB6 /* ChatStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStatus.swift; sourceTree = "<group>"; };
 		2694CED37C0024DBAD648594 /* ChatLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLayout.swift; sourceTree = "<group>"; };
@@ -384,6 +387,7 @@
 				6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */,
 				6CE4745C8959647761989137 /* LinkStatusWords.swift */,
 				7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */,
+				14404C15D6451D62F6F4303B /* BLERestore.swift */,
 				3C27E5149A89D0F248A159AF /* BLEHandshake.swift */,
 				FABD538020A6189503AC0FB6 /* ChatStatus.swift */,
 				2694CED37C0024DBAD648594 /* ChatLayout.swift */,
@@ -617,6 +621,7 @@
 				AE1A5BBF6CB1724B6CE6028D /* BLEConnectPolicy.swift in Sources */,
 				3A81D74A84A31A89A2BEC6CD /* LinkStatusWords.swift in Sources */,
 				95F21BE6A4466B3141C5B4A8 /* AdvertiseWatch.swift in Sources */,
+				5FE855C853C924B76B714671 /* BLERestore.swift in Sources */,
 				8BC10C12C2ED6DAFEC8EC38E /* BLEHandshake.swift in Sources */,
 				06516754BFCE2F2238907FF7 /* ChatStatus.swift in Sources */,
 				15A07AAB052FFC1972322EAA /* ChatLayout.swift in Sources */,
@@ -703,6 +708,7 @@
 				174C9A01FDD55DFAA63CAE53 /* BLEConnectPolicy.swift in Sources */,
 				76CD3FD7DF8B55FCDCF4D13F /* LinkStatusWords.swift in Sources */,
 				F72DD3B10BAD9380548D119F /* AdvertiseWatch.swift in Sources */,
+				AC1E535D4067F981EB96DD70 /* BLERestore.swift in Sources */,
 				6C58C52190E19AFEE22E402E /* BLEHandshake.swift in Sources */,
 				C67026726C42445C6B2EA815 /* ChatStatus.swift in Sources */,
 				A70CDCC2DF79A62783F305B7 /* ChatLayout.swift in Sources */,

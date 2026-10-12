@@ -20,6 +20,10 @@
 // (BLEHandshake.swift). Links are keyed by the peer's device key; the mesh name from the signed
 // hello is what RelayEngine, peer states and hop paths see, the same as on Wi-Fi. Data frames
 // from a link that is not verified yet are dropped.
+// iOS (issue #5): the bluetooth-central and bluetooth-peripheral background modes keep links up
+// while Libre is in the background, and restore identifiers let iOS relaunch Libre for a
+// Bluetooth event after it ended the app. willRestoreState only remembers what iOS hands back;
+// the plan (BLERestore) runs once the radio reports powered on.
 // After the hello each side sends one 4 KB probe and times the reply (speed shown in logs and
 // the Connection sheet). Threading: all CoreBluetooth work runs on one serial queue; the small
 // snapshot that send() reads from the main thread sits behind a lock.
@@ -32,6 +36,10 @@ final class BLETransport: NSObject, @unchecked Sendable {
     static let serviceUUID = CBUUID(string: "BAA354FA-5C3F-4FD8-A2FB-A2F30E6C73F2")
     static let characteristicUUID = CBUUID(string: "05F51AD3-42F8-4ABD-A52C-BD6C6537FAF7")
     static let probeBytes = 4096
+    #if os(iOS)
+    static let centralRestoreID = "app.libre.ble.central"
+    static let peripheralRestoreID = "app.libre.ble.peripheral"
+    #endif
 
     private static let log = Logger(subsystem: "com.kmaquindang.libre", category: "ble")
 
@@ -74,6 +82,11 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private var rescanTimer: DispatchSourceTimer?
     private var running = false
     private var startedAt = Date()
+    #if os(iOS)
+    /// Handed back by iOS after a background relaunch; used once the radio is on.
+    private var restoredPeripherals: [CBPeripheral] = []
+    private var restoredSubscribers: [CBCentral] = []
+    #endif
 
     // Read from the main thread (send, connectedPeerNames, stats).
     private let lock = NSLock()
@@ -105,8 +118,14 @@ final class BLETransport: NSObject, @unchecked Sendable {
             running = true
             startedAt = Date()
             // ShowPowerAlert off: Libre explains Bluetooth itself, no system alert loop.
-            centralManager = CBCentralManager(delegate: self, queue: queue, options: [CBCentralManagerOptionShowPowerAlertKey: false])
-            peripheralManager = CBPeripheralManager(delegate: self, queue: queue, options: [CBPeripheralManagerOptionShowPowerAlertKey: false])
+            var centralOptions: [String: Any] = [CBCentralManagerOptionShowPowerAlertKey: false]
+            var peripheralOptions: [String: Any] = [CBPeripheralManagerOptionShowPowerAlertKey: false]
+            #if os(iOS)
+            centralOptions[CBCentralManagerOptionRestoreIdentifierKey] = BLETransport.centralRestoreID
+            peripheralOptions[CBPeripheralManagerOptionRestoreIdentifierKey] = BLETransport.peripheralRestoreID
+            #endif
+            centralManager = CBCentralManager(delegate: self, queue: queue, options: centralOptions)
+            peripheralManager = CBPeripheralManager(delegate: self, queue: queue, options: peripheralOptions)
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + 20, repeating: 20)
             timer.setEventHandler { [weak self] in self?.rescan() }
@@ -434,7 +453,47 @@ extension BLETransport: CBCentralManagerDelegate, CBPeripheralDelegate {
             return
         }
         central.scanForPeripherals(withServices: [BLETransport.serviceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        #if os(iOS)
+        resumeRestoredPeripherals(central)
+        #endif
     }
+
+    #if os(iOS)
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        note("BLE restored by iOS: \(restoredPeripherals.count) peripherals")
+    }
+
+    /// Runs the restore plan: adopt links that are still connected (find the service, subscribe,
+    /// signed hello again), queue the rest, cancel what is over the cap.
+    private func resumeRestoredPeripherals(_ central: CBCentralManager) {
+        guard !restoredPeripherals.isEmpty else { return }
+        let byID = Dictionary(restoredPeripherals.map { ($0.identifier.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
+        let states = restoredPeripherals.map { p -> (id: String, state: BLERestore.State) in
+            (p.identifier.uuidString, p.state == .connected ? .connected : (p.state == .connecting ? .connecting : .disconnected))
+        }
+        restoredPeripherals = []
+        let plan = BLERestore.plan(states, openLinks: links.count, cap: policy.config.maxLinks)
+        note("BLE restore plan adopt=\(plan.adopt.count) reconnect=\(plan.reconnect.count) cancel=\(plan.cancel.count)")
+        for id in plan.adopt {
+            guard let p = byID[id], links[ck(p)] == nil else { continue }
+            policy.connected(id)
+            let link = Link(id: ck(p), role: .central)
+            link.peripheral = p
+            links[ck(p)] = link
+            p.delegate = self
+            p.discoverServices([BLETransport.serviceUUID])
+        }
+        for id in plan.reconnect {
+            guard let p = byID[id] else { continue }
+            p.delegate = self
+            heard[p.identifier] = p
+            policy.discovered(id, rssi: 127)
+        }
+        for id in plan.cancel { if let p = byID[id] { central.cancelPeripheralConnection(p) } }
+        startConnects()
+    }
+    #endif
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         guard dropped[peripheral.identifier] == nil, links[ck(peripheral)] == nil else { return }
@@ -531,9 +590,39 @@ extension BLETransport: CBPeripheralManagerDelegate {
             serviceAdded = false
             return
         }
+        #if os(iOS)
+        resumeRestoredSubscribers()
+        #endif
         guard !serviceAdded else { return }
         addServiceAndAdvertise(peripheral)
     }
+
+    #if os(iOS)
+    func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
+        let services = dict[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService] ?? []
+        guard let service = services.first(where: { $0.uuid == BLETransport.serviceUUID }),
+              let ch = service.characteristics?.first(where: { $0.uuid == BLETransport.characteristicUUID }) as? CBMutableCharacteristic else { return }
+        // The service is still published: keep using it instead of adding a second copy.
+        characteristic = ch
+        serviceAdded = true
+        restoredSubscribers = ch.subscribedCentrals ?? []
+        note("BLE restored by iOS: service and \(restoredSubscribers.count) subscribed centrals")
+    }
+
+    /// Centrals still subscribed to our service after a relaunch: open their links again (signed
+    /// hello again; the old verified state was in memory).
+    private func resumeRestoredSubscribers() {
+        let centrals = restoredSubscribers
+        restoredSubscribers = []
+        for central in centrals where links[pk(central)] == nil {
+            let link = Link(id: pk(central), role: .peripheral)
+            link.central = central
+            link.mtu = min(512, central.maximumUpdateValueLength)
+            links[pk(central)] = link
+            linkReady(link)
+        }
+    }
+    #endif
 
     /// Peripheral side health: re-add the service or restart advertising when it failed or stopped.
     func watchAdvertising() {
