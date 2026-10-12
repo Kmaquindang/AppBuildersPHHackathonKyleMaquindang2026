@@ -57,6 +57,7 @@ runRelaySchedulerTests()
 runAdvertiseWatchTests()
 runLinkStatusWordsTests()
 runAndroidInteropTests()
+runBLERestoreTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 
