@@ -81,4 +81,29 @@ class MeshControllerTest {
         assertEquals("answer shown once", 1, c.entries.value.count { it.isAnswer })
         assertTrue(c.waiting.value.isEmpty())
     }
+
+    @Test fun answerLogsRoundTripLinkAndHops() {
+        var clock = Vectors.T0 + 5_000
+        val c = MeshController(Files.createTempDirectory("libre").toFile(), now = { clock })
+        c.completeOnboarding("PATIENT_A", "Pixel 8")
+        val l = FakeLink(mutableSetOf("iPhone-2")); c.link = l; c.peerLinked("iPhone-2")
+        val lines = mutableListOf<String>()
+        c.timingLog = { lines += it }
+        c.send("@libre what is the visit rule?")
+        val askId = c.waiting.value.single()
+        clock += 3_100
+        // The Mac's answer arrives through iPhone-2 (two hops), sealed for the same room.
+        val room = c.activeRoom
+        val answer = app.libre.core.MeshMessage(origin = "Mac-1", kind = app.libre.core.Kind.ANSWER, body = "Visits end at 8 PM.",
+            hops = listOf("Mac-1", "iPhone-2"), replyTo = askId, latencyMs = 2500, createdAt = clock)
+        val sealed = app.libre.core.RoomEnvelope.seal(answer, room.id, room.contentKey!!, room.epoch)
+        c.receive(app.libre.core.MeshCodec.encode(sealed), "iPhone-2")
+        assertEquals(listOf("MSG answer link=bluetooth hops=2 rtt_ms=3100 ai_ms=2500"), lines)
+        assertTrue(c.waiting.value.isEmpty())
+        // A chat logs link and hops only, never its text.
+        lines.clear()
+        val chat = app.libre.core.MeshMessage(origin = "Mac-1", kind = app.libre.core.Kind.CHAT, body = "secret words", createdAt = clock)
+        c.receive(app.libre.core.MeshCodec.encode(app.libre.core.RoomEnvelope.seal(chat, room.id, room.contentKey!!, room.epoch)), "Mac-1")
+        assertEquals(listOf("MSG chat link=bluetooth hops=1"), lines)
+    }
 }
