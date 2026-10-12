@@ -105,6 +105,17 @@ class SwiftVectorsTest {
         assertNull(RoomEnvelope.open(outer.copy(origin = "someone else"), town.id, town.key))
     }
 
+    @Test fun swiftSealedAnswerPartOpens() {
+        val outer = MeshCodec.decode(Bytes.utf8(v.s("answerPartSealedJSON")))!!
+        val town = RoomState.townSquare()
+        val inner = RoomEnvelope.open(outer, town.id, town.key)!!
+        assertEquals(Kind.ANSWER_PART, inner.kind)
+        assertEquals(1, inner.part)
+        assertEquals(" a hard hat on site", inner.body)
+        assertEquals("11111111-2222-4333-8444-555555555555", inner.replyTo)
+        assertEquals(Lane.URGENT, Lane.of(inner.kind, 600))
+    }
+
     @Test fun kotlinSealMatchesSwiftLayout() {
         val outer = MeshCodec.decode(Bytes.utf8(v.s("townSealedJSON")))!!
         val town = RoomState.townSquare()
