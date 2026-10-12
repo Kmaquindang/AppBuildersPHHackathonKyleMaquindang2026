@@ -281,6 +281,7 @@ struct ChatNotices: View {
         let banner = StatusWords.offlineBanner(linked: mesh.connectedCount, queued: mesh.queuedMineCount)
         let items: [(String, String, Color)] = [
             banner.map { ($0, "clock", Color.orange) },
+            LinkStatusWords.waitingToSend(queued: mesh.queuedMineCount, linked: mesh.connectedCount).map { ($0, "clock", Color.secondary) },
             mesh.activeRoom.sendBlocker.map { ($0, "lock", Color.orange) },
             mesh.forcedRelayBadge.map { ($0, "arrow.triangle.branch", Color.orange) },
             mesh.aiNotice.map { ($0, "desktopcomputer", Color.orange) },

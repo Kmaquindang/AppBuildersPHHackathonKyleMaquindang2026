@@ -28,6 +28,9 @@ struct ConnectionSheet: View {
                         Text(mesh.ollamaStatus).foregroundStyle(.secondary)
                     } else if let detail = mesh.aiDetail {
                         Text("AI Mac: \(mesh.label(for: detail.device))")
+                        if let distance = LinkStatusWords.aiDistance(hops: mesh.aiHops) {
+                            Text(distance).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                         Text("Model: \(detail.model)")
                         if detail.queue > 0 { Text("Questions in line: \(detail.queue)") }
                     }
@@ -43,11 +46,22 @@ struct ConnectionSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(mesh.peers) { peer in
-                        HStack {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Circle().fill(color(peer)).frame(width: 10, height: 10).accessibilityHidden(true)
-                            Text(peer.label)
-                            Spacer()
-                            Text(stateWord(peer)).foregroundStyle(.secondary)
+                            // Name over status, both wrapping: long names and words are never cut off.
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(peer.label).fixedSize(horizontal: false, vertical: true)
+                                if let link = linkKind(peer) {
+                                    Label(LinkStatusWords.linkWord(link), systemImage: LinkStatusWords.linkSymbol(link))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                } else {
+                                    Text(stateWord(peer)).font(.subheadline).foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
                         }
                         .frame(minHeight: 44)
                         .accessibilityElement(children: .ignore)
@@ -137,11 +151,18 @@ struct ConnectionSheet: View {
     private func stateWord(_ peer: PeerInfo) -> String {
         if peer.isBlocked { return "blocked" }
         switch peer.state {
-        case .connected: return peer.viaBluetooth ? "linked via Bluetooth" : "linked"
+        case .connected: return linkKind(peer).map { "linked over \(LinkStatusWords.linkWord($0))" } ?? "linked"
         case .connecting: return "connecting"
         case .discovered: return "nearby"
         case .disconnected: return "offline"
         }
+    }
+
+    /// How a linked device is reached; nil when it is not linked right now.
+    private func linkKind(_ peer: PeerInfo) -> LinkStatusWords.Link? {
+        guard peer.state == .connected, !peer.isBlocked else { return nil }
+        if peer.viaBoth { return .both }
+        return peer.viaBluetooth ? .bluetooth : .wifi
     }
 
     private func color(_ peer: PeerInfo) -> Color {

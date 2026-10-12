@@ -36,6 +36,8 @@ struct PeerInfo: Identifiable, Equatable {
     var isBlocked: Bool
     /// Linked over Bluetooth only (no Wi-Fi link to this peer).
     var viaBluetooth = false
+    /// Linked over both Wi-Fi and Bluetooth.
+    var viaBoth = false
     var id: String { name }
 }
 
@@ -201,6 +203,8 @@ final class MeshService: ObservableObject {
         if transport.coalescedRestarts != discoveryRestartsCoalesced { discoveryRestartsCoalesced = transport.coalescedRestarts }
         let ble = transport.bluetoothOnlyPeers
         if ble != bluetoothPeers { bluetoothPeers = ble }
+        let both = transport.dualLinkPeers
+        if both != dualLinkPeers { dualLinkPeers = both }
         let summary = Self.bluetoothSummary(state: transport.bluetoothState, probes: transport.bluetoothProbes,
                                             stats: transport.bluetoothStats, tooBig: transport.packetsTooBigForBluetooth)
         if summary != bluetoothSummary { bluetoothSummary = summary }
@@ -208,6 +212,10 @@ final class MeshService: ObservableObject {
 
     /// Peers reached over Bluetooth only (Wi-Fi off or out of Wi-Fi range).
     @Published private(set) var bluetoothPeers: Set<String> = []
+    /// Peers linked over both Wi-Fi and Bluetooth.
+    @Published private(set) var dualLinkPeers: Set<String> = []
+    /// Relays the AI Mac's latest status crossed to reach this device (0 = linked directly).
+    @Published private(set) var aiHops: Int?
     /// Debug line: radio state, measured speed per peer, bytes sent.
     @Published private(set) var bluetoothSummary = ""
 
@@ -519,7 +527,7 @@ final class MeshService: ObservableObject {
         names.formUnion(blocked)
         return names.sorted().map { name in
             PeerInfo(name: name, label: label(for: name), state: peerStates[name] ?? .disconnected, isBlocked: blocked.contains(name),
-                     viaBluetooth: bluetoothPeers.contains(name))
+                     viaBluetooth: bluetoothPeers.contains(name), viaBoth: dualLinkPeers.contains(name))
         }
     }
 
@@ -978,6 +986,7 @@ final class MeshService: ObservableObject {
         if availability != aiAvailability { aiAvailability = availability }
         if !NoAIHost.isAway(availability), aiNotice != nil { aiNotice = nil }
         if detail?.queue != aiDetail?.queue || detail?.model != aiDetail?.model || detail?.internet != aiDetail?.internet || (detail == nil) != (aiDetail == nil) { aiDetail = detail }
+        if detail == nil || isAIPeer, aiHops != nil { aiHops = nil }
     }
 
     /// Phones: resend unanswered asks of the active room (new packet id, retryOf = original)
@@ -2293,6 +2302,7 @@ final class MeshService: ObservableObject {
         case .aiStatus:
             let transition = aiTracker.ingest(blob)
             refreshAIAvailability()
+            if aiDetail != nil, aiHops != message.hopCount { aiHops = message.hopCount }
             if case .woke = transition { resendDueAsks() }
         default:
             break

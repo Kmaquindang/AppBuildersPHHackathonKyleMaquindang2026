@@ -67,6 +67,9 @@ final class LinkHub: @unchecked Sendable {
     /// Peers this device reaches over Bluetooth only (no Wi-Fi link to them).
     var bluetoothOnlyPeers: Set<String> { Set(bluetooth.connectedPeerNames).subtracting(wifi.connectedPeerNames) }
 
+    /// Peers linked over both Wi-Fi and Bluetooth.
+    var dualLinkPeers: Set<String> { Set(bluetooth.connectedPeerNames).intersection(wifi.connectedPeerNames) }
+
     func link(for name: String) -> LinkKind? {
         if wifi.connectedPeerNames.contains(name) { return .wifi }
         if bluetooth.connectedPeerNames.contains(name) { return .bluetooth }
