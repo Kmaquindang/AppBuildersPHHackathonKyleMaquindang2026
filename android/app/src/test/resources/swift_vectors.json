@@ -187,6 +187,7 @@
   "joinerNonce" : "0827466584a3c2e1001f3e5d7c9bbad9",
   "joinerSignKey" : "6280a508215c5fbd9a271abaa29a5701bc04b8240fb34dbdc04013d9bc9ef11e",
   "joinerSignSecret" : "032241607f9ebddcfb1a39587796b5d4f31231506f8eadcceb0a29486786a5c4",
+  "hideBlobJSON" : "{\"body\":\"eyJhdCI6MTc5MjAwMDAwMDEyMywibWVzc2FnZSI6IjZGMUMyQTNCLTRENUUtNEY2MC04MTcyLTkzQTRCNUM2RDdFOCIsInJvb20iOiJhMjI5NDcwYTljNjIwYjZhIn0=\",\"domain\":\"town-hide\",\"sig\":\"uL0HXtyrqYvNcAE5ADwjQ5Rl6paWh3QyyWHXxMOY\\\/A5n7x2ir+HJy+FkbotljPYMdFamCZ4AoSpKm3g+r3VsBw==\",\"signer\":\"PAAuAzSI9bm2rgBkZpnsWRJnXe8obEta9KGRI3y9BHw=\"}",
   "joinProof" : "873dc748736a6d0389d99f2be58de371ea0c9c09552f264c960e863927e82377",
   "joinRequestBlob" : "{\"body\":\"eyJhdCI6MTc5MjAwMDAwMDEyMywiYm94S2V5IjoiNjBNUVB1eGZvV2RtNHcydURLbFQ0ME1SdFwvSlRCYXNoczYrNGtZTEk3Mzg9IiwiZGV2aWNlIjoiUGl4ZWwtQTEiLCJuYW1lIjoiQmVuIiwicHJvb2YiOiJoejNIU0hOcWJRT0oyWjhyNVkzamNlb01uQWxWTHlaTWxnNkdPU2ZvSTNjPSIsInJvb20iOiJjNWYzOGY3NzE2NTgzM2I1Iiwic2lnbktleSI6IllvQ2xDQ0ZjWDcyYUp4cTZvcHBYQWJ3RXVDUVBzMDI5d0VBVDJieWU4UjQ9In0=\",\"domain\":\"join\",\"sig\":\"yG+72684e7pOUvXlhu2ldKy83j4EEyqzWcNqPhcp2w7ymPY8WlC4jd9sOvI7\\\/S8IbOH11BMKTsFi\\\/F+pp1v1Bg==\",\"signer\":\"YoClCCFcX72aJxq6oppXAbwEuCQPs029wEAT2bye8R4=\"}",
   "keyGreaterAdminJoiner" : false,

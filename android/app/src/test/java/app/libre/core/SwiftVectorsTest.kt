@@ -105,6 +105,13 @@ class SwiftVectorsTest {
         assertNull(RoomEnvelope.open(outer.copy(origin = "someone else"), town.id, town.key))
     }
 
+    @Test fun swiftHideRecordVerifiesForItsSignerOnly() {
+        val blob = SignedBlob.fromJson(MeshCodec.parseObject(Bytes.utf8(v.s("hideBlobJSON"))))!!
+        val town = RoomState.townSquare().id
+        assertNull(ModerationState().apply(blob, town, emptySet()))
+        assertEquals("6F1C2A3B-4D5E-4F60-8172-93A4B5C6D7E8", ModerationState().apply(blob, town, setOf(v.s("adminSignKey"))))
+    }
+
     @Test fun swiftPeerSyncRequestParses() {
         val r = PeerSync.parseRequest(MeshCodec.parseObject(Bytes.utf8(v.s("peerSyncRequestJSON")))!!)!!
         assertEquals(Vectors.T0 + 60_000 - PeerSync.WINDOW_MS, r.windowMs)

@@ -340,6 +340,7 @@ fun RoomsSheet(app: LibreApp, rooms: List<RoomState>, activeId: String, link: Jo
             }) { Text(if (busy) "Unlocking room..." else "Join") }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             KeyConflictRows(app)
+            TrustMacRow(app)
             BackgroundRelayRow(app)
         }
     }
@@ -358,6 +359,23 @@ fun KeyConflictRows(app: LibreApp) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton({ app.trustNewKey(name) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Trust the new key") }
         }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+}
+
+/** Town Square moderation (issue #9): let the AI Mac in view hide Town Square messages. Off by default. */
+@Composable
+fun TrustMacRow(app: LibreApp) {
+    val key by app.mesh.aiMacKey.collectAsState()
+    val on by app.mesh.trustsAiMac.collectAsState()
+    if (key == null) return
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { app.run { it.setTrustAiMac(!on) } }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Let the AI Mac hide Town Square messages", style = MaterialTheme.typography.titleMedium)
+            Text("Turn this on only for your team's own Mac. Messages it hides are removed from Town Square on this phone.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { v -> app.run { it.setTrustAiMac(v) } })
     }
     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 }
