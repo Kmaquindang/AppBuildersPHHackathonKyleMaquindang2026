@@ -209,16 +209,24 @@ public enum LinkRouter {
         public var bluetooth: [String]
         /// Bluetooth peers skipped because the packet is too big for BLE.
         public var tooBigForBluetooth: [String]
+        /// Bluetooth-only peers skipped because media waits for Wi-Fi (BLEPriority).
+        public var heldForWifi: [String] = []
         public var all: [String] { (wifi + bluetooth).sorted() }
     }
 
+    /// `lane` defaults to the lane for an unknown packet of `bytes` (BLELane.of).
     public static func plan(wifi: Set<String>, bluetooth: Set<String>, blocked: Set<String>, excluding: Set<String>,
-                            bytes: Int, bluetoothLimit: Int = BLEChunker.maxMessageBytes) -> Plan {
+                            bytes: Int, bluetoothLimit: Int = BLEChunker.maxMessageBytes,
+                            lane: BLELane? = nil, mediaOverBluetooth: Bool = false) -> Plan {
         let wifiTargets = wifi.subtracting(blocked).subtracting(excluding)
         let bleOnly = bluetooth.subtracting(wifi).subtracting(blocked).subtracting(excluding)
         let fits = bytes <= bluetoothLimit
-        return Plan(wifi: wifiTargets.sorted(), bluetooth: fits ? bleOnly.sorted() : [],
-                    tooBigForBluetooth: fits ? [] : bleOnly.sorted())
+        guard fits else { return Plan(wifi: wifiTargets.sorted(), bluetooth: [], tooBigForBluetooth: bleOnly.sorted()) }
+        let l = lane ?? BLELane.of(kind: nil, bytes: bytes)
+        if !l.allowedOnBluetoothOnly(mediaOverBluetooth: mediaOverBluetooth) {
+            return Plan(wifi: wifiTargets.sorted(), bluetooth: [], tooBigForBluetooth: [], heldForWifi: bleOnly.sorted())
+        }
+        return Plan(wifi: wifiTargets.sorted(), bluetooth: bleOnly.sorted(), tooBigForBluetooth: [])
     }
 
     /// One state per peer across both links: connected if either link is connected.

@@ -16,6 +16,7 @@ package app.libre.mesh
 import app.libre.core.AssistantMention
 import app.libre.core.Bytes
 import app.libre.core.Destination
+import app.libre.core.Lane
 import app.libre.core.DeviceIdentity
 import app.libre.core.Governor
 import app.libre.core.Kind
@@ -42,8 +43,8 @@ import java.io.File
 interface Link {
     /** Names of devices linked right now. */
     val linkedPeers: Set<String>
-    /** Sends to these peers; returns who it was handed to. */
-    fun send(data: ByteArray, to: Set<String>): Set<String>
+    /** Sends to these peers at a Bluetooth priority lane; returns who it was handed to. */
+    fun send(data: ByteArray, to: Set<String>, lane: Lane = Lane.of(null, data.size)): Set<String>
 }
 
 @Serializable
@@ -254,13 +255,13 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
         val key = if (control) room.key else room.contentKey ?: return emptySet()
         val epoch = if (control) 0 else room.epoch
         val data = MeshCodec.encode(RoomEnvelope.seal(plain, room.id, key, epoch))
-        return sendRaw(data, excluding, queue)
+        return sendRaw(data, excluding, queue, Lane.of(plain.kind, data.size))
     }
 
-    private fun sendRaw(data: ByteArray, excluding: Set<String>, queue: Boolean): Set<String> {
+    private fun sendRaw(data: ByteArray, excluding: Set<String>, queue: Boolean, lane: Lane = Lane.of(null, data.size)): Set<String> {
         val l = link
         val targets = (l?.linkedPeers ?: emptySet()) - excluding
-        val sent = if (l != null && targets.isNotEmpty()) l.send(data, targets) else emptySet()
+        val sent = if (l != null && targets.isNotEmpty()) l.send(data, targets, lane) else emptySet()
         if (sent.isEmpty() && queue) synchronized(outbox) { outbox.add(data to now()); while (outbox.size > 200) outbox.removeAt(0) }
         return sent
     }

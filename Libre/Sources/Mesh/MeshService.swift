@@ -325,6 +325,7 @@ final class MeshService: ObservableObject {
         static let name = "libre.displayName"
         static let gateway = "pasa.browserGateway"
         static let blocked = "libre.blocked"
+        static let mediaOverBluetooth = "libre.mediaOverBluetooth"
         static let aiPeer = "libre.isAIPeer"
         static let engine = "libre.aiEngine"
         static let model = "libre.ollamaModel"
@@ -796,6 +797,7 @@ final class MeshService: ObservableObject {
                 }
             }
         }
+        newTransport.mediaOverBluetooth = mediaOverBluetooth
         transport = newTransport
         newTransport.start()
         startHousekeeping()
@@ -948,7 +950,7 @@ final class MeshService: ObservableObject {
     /// Clear (unsealed) signals: beacons and AI status. Never queued, never stored.
     private func sendClear(_ message: MeshMessage) {
         guard let transport, let data = try? MeshCodec.encode(message) else { return }
-        _ = transport.send(data, excluding: [])
+        _ = transport.send(data, excluding: [], lane: .urgent)
     }
 
     private func refreshAIAvailability(now: Date = Date()) {
@@ -1343,6 +1345,16 @@ final class MeshService: ObservableObject {
         assistant.directory = directory
         #endif
         start()
+    }
+
+    /// Off by default: photos and voice notes wait for Wi-Fi for devices reached only over
+    /// Bluetooth (text, @libre answers and tasks always go).
+    var mediaOverBluetooth: Bool { defaults.bool(forKey: Keys.mediaOverBluetooth) }
+
+    func setMediaOverBluetooth(_ on: Bool) {
+        objectWillChange.send()
+        defaults.set(on, forKey: Keys.mediaOverBluetooth)
+        transport?.mediaOverBluetooth = on
     }
 
     func setBlocked(_ name: String, _ isBlocked: Bool) {
@@ -1746,7 +1758,9 @@ final class MeshService: ObservableObject {
     /// (whoever holds the file serves it again when asked).
     /// `room` picks the room to seal for (the AI Mac answers in many rooms); default is active.
     @discardableResult
-    private func transmit(_ plain: MeshMessage, room: Room? = nil, excluding: Set<String>, foreign: Bool = false, queueIfUnsent: Bool = true) -> [String] {
+    /// `lane` is the Bluetooth priority (BLEPriority). Default: from the message kind, or by size
+    /// for an already sealed packet whose kind is unknown here.
+    private func transmit(_ plain: MeshMessage, room: Room? = nil, excluding: Set<String>, foreign: Bool = false, queueIfUnsent: Bool = true, lane: BLELane? = nil) -> [String] {
         let message: MeshMessage
         if plain.kind == .sealed {
             message = plain
@@ -1775,7 +1789,8 @@ final class MeshService: ObservableObject {
             lastProblem = "Could not encode message: \(error.localizedDescription)"
             return []
         }
-        let sentTo = transport.send(data, excluding: excluding)
+        let sentTo = transport.send(data, excluding: excluding,
+                                    lane: lane ?? (plain.kind == .sealed ? nil : BLELane.of(kind: plain.kind, bytes: data.count)))
         if sentTo.isEmpty && queueIfUnsent {
             engine.enqueue(message, excluding: excluding, foreign: foreign)
             scheduleSave()
@@ -2189,7 +2204,8 @@ final class MeshService: ObservableObject {
         }
         let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack } ?? false
         if let forward = decision.forward {
-            transmit(forward, excluding: decision.forwardExcluding, foreign: notMine, queueIfUnsent: !transient)
+            transmit(forward, excluding: decision.forwardExcluding, foreign: notMine, queueIfUnsent: !transient,
+                     lane: opened.map { BLELane.of(kind: $0.kind, bytes: 0) })
             relayedCount += 1
             if packetRoom == nil && message.kind == .sealed { foreignRelayedCount += 1 }
         }
@@ -2223,7 +2239,7 @@ final class MeshService: ObservableObject {
     /// Relays a beacon or AI status without sealing (they are clear by design).
     private func sendClearForward(_ forward: MeshMessage, excluding: Set<String>) {
         guard let transport, let data = try? MeshCodec.encode(forward) else { return }
-        if !transport.send(data, excluding: excluding).isEmpty { relayedCount += 1 }
+        if !transport.send(data, excluding: excluding, lane: .urgent).isEmpty { relayedCount += 1 }
     }
 
     private func handleClearSignal(_ message: MeshMessage) {

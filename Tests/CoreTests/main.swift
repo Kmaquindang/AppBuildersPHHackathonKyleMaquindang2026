@@ -52,6 +52,7 @@ await runWebGatewayTests()
 runBLETests()
 runBLEHandshakeTests()
 runBLEConnectPolicyTests()
+runBLEPriorityTests()
 runAndroidInteropTests()
 
 print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")

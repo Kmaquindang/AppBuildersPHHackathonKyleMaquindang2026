@@ -19,6 +19,11 @@ final class LinkHub: @unchecked Sendable {
     private var bleStates: [String: PeerLinkState] = [:]
     private var reported: [String: PeerLinkState] = [:]
     private var skippedTooBig = 0
+    private var heldMedia = 0
+    private var lastHeldWarning = Date.distantPast
+    /// Off by default: photos and voice notes wait for Wi-Fi instead of going to a device reached
+    /// only over Bluetooth (BLEPriority). Set from Settings.
+    var mediaOverBluetooth = false
     private var lastSlowWarning = Date.distantPast
     /// Packets bigger than this over Bluetooth are media chunks (photos, voice): warn they are slow.
     static let slowPacketBytes = 8 * 1024
@@ -80,14 +85,19 @@ final class LinkHub: @unchecked Sendable {
     var bluetoothProbes: [String: BLEProbeResult] { bluetooth.probeResults }
     var bluetoothStats: (frames: Int, bytes: Int) { bluetooth.stats }
     var packetsTooBigForBluetooth: Int { lock.lock(); defer { lock.unlock() }; return skippedTooBig }
+    var mediaHeldForWifi: Int { lock.lock(); defer { lock.unlock() }; return heldMedia }
 
     /// Each reachable, unblocked peer not in `excluding` gets one copy: over Wi-Fi when it has a
-    /// Wi-Fi link, else over Bluetooth. Returns who it was handed to.
+    /// Wi-Fi link, else over Bluetooth. `lane` is the packet's priority (BLEPriority; by size when
+    /// nil). Media lane packets skip Bluetooth-only peers unless `mediaOverBluetooth` is on.
+    /// Returns who it was handed to.
     @discardableResult
-    func send(_ data: Data, excluding: Set<String>) -> [String] {
+    func send(_ data: Data, excluding: Set<String>, lane: BLELane? = nil) -> [String] {
+        let l = lane ?? BLELane.of(kind: nil, bytes: data.count)
         let plan = LinkRouter.plan(wifi: Set(wifi.connectedPeerNames), bluetooth: Set(bluetooth.connectedPeerNames),
-                                   blocked: [], excluding: excluding, bytes: data.count)
+                                   blocked: [], excluding: excluding, bytes: data.count, lane: l, mediaOverBluetooth: mediaOverBluetooth)
         if !plan.tooBigForBluetooth.isEmpty { lock.lock(); skippedTooBig += 1; lock.unlock() }
+        if !plan.heldForWifi.isEmpty { warnHeld() }
         var sent: [String] = []
         if !plan.wifi.isEmpty {
             let viaWifi = wifi.send(data, excluding: excluding)
@@ -95,14 +105,25 @@ final class LinkHub: @unchecked Sendable {
             // Wi-Fi send failed: fall back to Bluetooth for peers that have it.
             if viaWifi.isEmpty {
                 let fallback = plan.wifi.filter { bluetooth.connectedPeerNames.contains($0) }
-                if !fallback.isEmpty { sent += bluetooth.send(data, to: fallback) }
+                if !fallback.isEmpty && l.allowedOnBluetoothOnly(mediaOverBluetooth: mediaOverBluetooth) {
+                    sent += bluetooth.send(data, to: fallback, lane: l)
+                }
             }
         }
         if !plan.bluetooth.isEmpty {
-            sent += bluetooth.send(data, to: plan.bluetooth)
+            sent += bluetooth.send(data, to: plan.bluetooth, lane: l)
             if data.count > LinkHub.slowPacketBytes { warnSlow() }
         }
         return Array(Set(sent)).sorted()
+    }
+
+    private func warnHeld() {
+        lock.lock()
+        heldMedia += 1
+        let due = Date().timeIntervalSince(lastHeldWarning) > 60
+        if due { lastHeldWarning = Date() }
+        lock.unlock()
+        if due { onEvent(.problem("Photos and voice notes wait for Wi-Fi for devices reached only over Bluetooth. Text, @libre answers and tasks still go. You can change this in Settings.")) }
     }
 
     private func warnSlow() {
