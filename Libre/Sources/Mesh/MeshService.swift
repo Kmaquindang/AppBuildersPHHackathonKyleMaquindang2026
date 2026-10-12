@@ -311,6 +311,8 @@ final class MeshService: ObservableObject {
     private var lastBatteryLog: Date?
     private var syntheticTimer: Timer?
     private var syntheticCount = 0
+    /// Town Square moderation (issue #9): trusted Mac keys, accepted hide records, hidden ids.
+    @Published private(set) var moderation = MeshService.loadModeration()
     /// Phone-to-phone sync (PeerSync): when each peer was last asked, and last answered.
     private var peerSyncAsked: [String: Date] = [:]
     private var peerSyncAnswered: [String: Date] = [:]
@@ -2228,6 +2230,7 @@ final class MeshService: ObservableObject {
         var transcripts: [MeshMessage] = []
         for m in batch.messages {
             engine.markSeen(m.id, now: now)
+            if moderation.isHidden(m.id) { continue }
             if let clearedAt, m.createdAt < clearedAt { continue }
             if m.kind == .transcript { transcripts.append(m); continue }
             if let name = m.senderName, m.origin != displayName { learn(device: m.origin, name: name) }
@@ -2268,6 +2271,7 @@ final class MeshService: ObservableObject {
                 flushOutbox()
                 requestBackfill()
                 requestPeerSync(from: name)
+                sendHides(to: name)
                 sendDueNacks(force: true)
                 publishManifests(to: name)
                 #if os(macOS)
@@ -2422,6 +2426,80 @@ final class MeshService: ObservableObject {
         }
     }
 
+    // MARK: Town Square moderation (issue #9)
+
+    private static func loadModeration() -> ModerationState {
+        guard let url = storageURL("moderation.json"), let data = try? Data(contentsOf: url),
+              let state = try? JSONDecoder().decode(ModerationState.self, from: data) else { return ModerationState() }
+        return state
+    }
+
+    private func saveModeration() {
+        guard let url = MeshService.storageURL("moderation.json"), let data = try? JSONEncoder().encode(moderation) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private var townSquareID: String { rooms.rooms.first { $0.isDefault }?.id ?? Room.makeDefault().id }
+
+    /// Admin keys of the code rooms this device joined (checked against their signed manifests).
+    private var joinedAdminKeys: Set<Data> { Set(rooms.rooms.compactMap { $0.gov?.adminKey }) }
+
+    /// The AI Mac can hide Town Square messages (not its own hide records or room control).
+    func canHideForEveryone(_ entry: ChatEntry) -> Bool {
+        isAIPeer && activeRoom.isDefault && !moderation.isHidden(entry.id)
+    }
+
+    /// AI Mac: hide a Town Square message for everyone who trusts this Mac.
+    func hideForEveryone(_ entry: ChatEntry) {
+        guard canHideForEveryone(entry), let blob = ModerationState.make(message: entry.id, room: townSquareID, identity: identity),
+              moderation.apply(blob, room: townSquareID, adminKeys: [], ownKey: identity.signKey) != nil else { return }
+        removeEntry(entry.id, room: townSquareID)
+        saveModeration()
+        broadcastHide(blob)
+    }
+
+    private func broadcastHide(_ blob: SignedBlob, to device: String? = nil) {
+        guard let town = rooms.room(withID: townSquareID), let body = PasaJSON.string(blob) else { return }
+        let message = engine.makeOutgoing(kind: .moderation, body: body, destination: device.map { .peer($0) })
+        transmit(message, room: town, excluding: [])
+    }
+
+    /// Passes the hide records this device holds to a newly linked device (newest 50).
+    private func sendHides(to device: String) {
+        for blob in moderation.records.suffix(50) { broadcastHide(blob, to: device) }
+    }
+
+    private func receiveHide(_ message: MeshMessage, room roomID: String) {
+        guard roomID == townSquareID, let blob = PasaJSON.value(SignedBlob.self, from: message.body),
+              let id = moderation.apply(blob, room: townSquareID, adminKeys: joinedAdminKeys, ownKey: identity.signKey) else { return }
+        removeEntry(id, room: roomID)
+        saveModeration()
+    }
+
+    private func removeEntry(_ id: UUID, room roomID: String) {
+        if roomID == activeRoom.id {
+            entries.removeAll { $0.id == id }
+        } else {
+            #if os(macOS)
+            if let ctx = context(roomID) { ctx.entries.removeAll { $0.id == id }; ctx.dirty = true }
+            #endif
+        }
+        scheduleSave()
+    }
+
+    /// Phones: the AI Mac currently in view, by the key that signs its status beacon.
+    var aiMacKey: Data? { aiDetail.flatMap { aiTracker.pins[$0.device] } }
+
+    var trustsAIMacForHides: Bool { aiMacKey.map { moderation.trusts(mac: $0) } ?? false }
+
+    /// Phones: let (or stop letting) the AI Mac in view hide Town Square messages.
+    func setTrustAIMacForHides(_ on: Bool) {
+        guard let key = aiMacKey else { return }
+        moderation.setTrusted(mac: key, on)
+        saveModeration()
+    }
+
     /// Phones: a piece of an answer still being written. Shown in place of the typing dots until
     /// the whole answer arrives; never added to the timeline or saved.
     private func receiveAnswerPart(_ part: MeshMessage, room roomID: String) {
@@ -2449,6 +2527,7 @@ final class MeshService: ObservableObject {
         case .mediaNack: answerNack(delivered, room: roomID); return
         case .transcript: applyTranscript(delivered, room: roomID); return
         case .answerPart: receiveAnswerPart(delivered, room: roomID); return
+        case .moderation: receiveHide(delivered, room: roomID); return
         default: break
         }
 
@@ -2478,6 +2557,8 @@ final class MeshService: ObservableObject {
         }
         // Already in the timeline (for example restored from disk, or backfilled): do not repeat it.
         if entriesFor(roomID).contains(where: { $0.id == delivered.id }) { return }
+        // Hidden for everyone in Town Square (issue #9): never shown again, even if it comes late.
+        if moderation.isHidden(delivered.id) { return }
 
         // Phones: a rule or task update only becomes a card when it changed the cached copy and
         // is not a silent sync-on-link update. Reconnects no longer flood the chat.
@@ -2525,7 +2606,7 @@ final class MeshService: ObservableObject {
             #if os(macOS)
             if let m = MediaManifest.decode(delivered.body), m.kind == .audio { transcribeIfNeeded(m.mediaId) }
             #endif
-        case .answer, .answerPart, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus:
+        case .answer, .answerPart, .moderation, .ack, .sync, .sealed, .chunk, .mediaNack, .transcript, .roomControl, .beacon, .aiStatus:
             break
         }
     }

@@ -33,6 +33,20 @@ struct ConnectionSheet: View {
                         }
                         Text("Model: \(detail.model)")
                         if detail.queue > 0 { Text("Questions in line: \(detail.queue)") }
+                        if mesh.aiMacKey != nil {
+                            // Town Square moderation (issue #9): off until the person trusts this Mac.
+                            Toggle(isOn: Binding(get: { mesh.trustsAIMacForHides }, set: { mesh.setTrustAIMacForHides($0) })) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Let this AI Mac hide Town Square messages")
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text("Turn this on only for your team's own Mac. Messages it hides are removed from Town Square on this phone.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .frame(minHeight: 44)
+                        }
                     }
                     if let internet {
                         TintedLabel(text: internet.detailsLabel, symbol: internet == .offline ? "wifi.slash" : "wifi",

@@ -79,6 +79,8 @@ func writeAndroidVectors(to path: String) {
     let sealedTown = try! RoomEnvelope.seal(chat, in: town)
     v["townSealedJSON"] = String(decoding: try! MeshCodec.encode(sealedTown), as: UTF8.self)
     v["townAAD"] = String(decoding: RoomEnvelope.aad(sealedTown, room: town.id), as: UTF8.self)
+    // Town Square hide record signed by the admin identity (issue #9).
+    v["hideBlobJSON"] = PasaJSON.string(ModerationState.make(message: chat.id, room: town.id, at: F.t0, identity: F.adminIdentity)!)!
     // Phone-to-phone sync request (issue #6): window and short ids of known chat.
     var peerReq = PeerSync.request(from: [ChatEntry(id: chat.id, message: chat, direction: .received, receivedAt: F.t0)], now: F.t0.addingTimeInterval(60))
     peerReq.knownShort = peerReq.knownShort ?? []
@@ -190,6 +192,16 @@ func runAndroidInteropTests() {
         check(inner?.senderName == "Ben" && inner?.kind == .chat, "android interop: Kotlin inner message fields decode in Swift")
     } else {
         check(false, "android interop: Kotlin sealed packet decodes as a MeshMessage")
+    }
+    // Hide record signed in Kotlin (issue #9) verifies in Swift and applies for its trusted signer only.
+    if let text = k["hideBlobJSON"] as? String, let blob = PasaJSON.value(SignedBlob.self, from: text) {
+        let town = Room.makeDefault().id
+        var state = ModerationState()
+        check(state.apply(blob, room: town, adminKeys: []) == nil, "android interop: Kotlin hide ignored without trust")
+        check(state.apply(blob, room: town, adminKeys: [F.joinerIdentity.signKey]) == UUID(uuidString: "7A7A7A7A-1111-4222-8333-444444444444"),
+              "android interop: Kotlin-signed hide record verifies and applies in Swift")
+    } else {
+        check(false, "android interop: Kotlin hide record present")
     }
     // Phone-to-phone sync request made by Kotlin (issue #6) decodes in Swift and is answered.
     if let text = k["peerSyncRequestJSON"] as? String, let r = SyncPayload.decode(text)?.request {

@@ -25,6 +25,8 @@ public enum MessageKind: String, Codable, CaseIterable, Hashable, Sendable {
     case aiStatus    // CLEAR: signed AI Mac status (awake or asleep, model, queue depth, rooms served)
     // Streamed answers (Oct 2026, AnswerStream.swift; sealed only, older builds drop them unread):
     case answerPart  // piece of an answer still being written; replyTo = ask id, part = 0, 1, 2...
+    // Town Square moderation (Oct 2026, Moderation.swift; sealed only, older builds drop it unread):
+    case moderation  // body: signed HideRecord (SignedBlob JSON) from the AI Mac's owner
 }
 
 /// Who a message is addressed to. A nil destination on MeshMessage means broadcast.

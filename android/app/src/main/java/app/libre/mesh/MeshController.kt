@@ -34,6 +34,9 @@ import app.libre.core.SyncPayload
 import app.libre.core.TaskItem
 import app.libre.core.AnswerStreams
 import app.libre.core.PeerSync
+import app.libre.core.ModerationState
+import app.libre.core.SignedBlob
+import app.libre.core.PasaSign
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -313,6 +316,45 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
         lastBackfill = 0
         requestBackfill()
         requestPeerSync(name)
+        sendHides(name)
+    }
+
+    // MARK: Town Square moderation (issue #9)
+
+    private val moderationFile get() = dir.resolve("moderation.json")
+    private val moderation: ModerationState by lazy { runCatching { ModerationState.fromJson(moderationFile.readText()) }.getOrDefault(ModerationState()) }
+    private val _aiMacKey = MutableStateFlow<String?>(null)
+    /** Key (hex) that signs the AI Mac's status beacon, once one was heard. */
+    val aiMacKey: StateFlow<String?> = _aiMacKey
+    private val _trustsAiMac = MutableStateFlow(false)
+    /** The person lets the AI Mac in view hide Town Square messages. */
+    val trustsAiMac: StateFlow<Boolean> = _trustsAiMac
+
+    fun setTrustAiMac(on: Boolean) {
+        val key = _aiMacKey.value ?: return
+        moderation.setTrusted(key, on)
+        _trustsAiMac.value = moderation.trusts(key)
+        saveModeration()
+    }
+
+    private fun saveModeration() { runCatching { moderationFile.writeText(moderation.toJson()) } }
+
+    private fun receiveHide(m: MeshMessage, roomId: String) {
+        val town = _rooms.value.firstOrNull { it.isDefault } ?: return
+        if (roomId != town.id) return
+        val blob = SignedBlob.fromJson(MeshCodec.parseObject(Bytes.utf8(m.body))) ?: return
+        val adminKeys = _rooms.value.mapNotNull { it.adminKeyHex }.toSet()
+        val id = moderation.apply(blob, town.id, adminKeys, Bytes.hex(identity.signKey)) ?: return
+        timelines[roomId]?.removeAll { it.id == id }
+        saveModeration(); saveTimeline(roomId); publish()
+    }
+
+    /** Passes the hide records this phone accepted to a newly linked device (newest 50). */
+    private fun sendHides(device: String) {
+        val town = _rooms.value.firstOrNull { it.isDefault } ?: return
+        for (blob in moderation.records.takeLast(50)) {
+            transmit(engine.makeOutgoing(Kind.MODERATION, blob.toJson().toString(), Destination.Peer(device), displayLabel(), now()), town, queue = false)
+        }
     }
 
     /** Phone-to-phone sync (PeerSync, issue #6): when each peer was last asked and answered. */
@@ -393,7 +435,14 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
         val delivered = d.deliver?.message ?: return
         val message = delivered.copy(hops = d.deliverHops)
         when (message.kind) {
-            Kind.AI_STATUS -> { _lastAiHeard.value = now(); return }
+            Kind.AI_STATUS -> {
+                _lastAiHeard.value = now()
+                SignedBlob.fromJson(MeshCodec.parseObject(Bytes.utf8(message.body)))?.takeIf { it.domain == "ai-status" && PasaSign.verify(it) }?.let {
+                    val key = Bytes.hex(it.signer)
+                    if (_aiMacKey.value != key) { _aiMacKey.value = key; _trustsAiMac.value = moderation.trusts(key) }
+                }
+                return
+            }
             Kind.BEACON -> return
             Kind.SEALED -> {
                 val room = _rooms.value.firstOrNull { it.id == message.room } ?: return
@@ -443,6 +492,7 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
 
     private fun handleContent(m: MeshMessage, roomId: String, viaLink: String, backfilled: Boolean) {
         when (m.kind) {
+            Kind.MODERATION -> receiveHide(m, roomId)
             Kind.ANSWER_PART -> {
                 // Shown in place of the typing line until the whole answer arrives; never in the timeline.
                 val ask = m.replyTo ?: return
@@ -500,6 +550,7 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
     // MARK: State
 
     private fun addEntry(roomId: String, e: Entry) {
+        if (moderation.isHidden(e.id)) return   // hidden for everyone in Town Square (issue #9)
         val list = timelines.getOrPut(roomId) { mutableListOf() }
         if (list.any { it.id == e.id }) return
         list.add(e)
