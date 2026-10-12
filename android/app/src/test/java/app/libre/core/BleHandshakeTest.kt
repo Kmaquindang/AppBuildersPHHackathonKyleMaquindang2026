@@ -58,6 +58,28 @@ class BleHandshakeTest {
         assertFalse("unverified link carries no data", book.isVerified("c-3"))
     }
 
+    @Test fun trustOnFirstUseRefusesChangedKeyUntilReset() {
+        val book = PeerBook(a)
+        assertTrue(handshake(a, b, book, "p-1", PeerBook.Role.PERIPHERAL, "iPhone 14") is PeerBook.ProofResult.Verified)
+        assertEquals(TrustStore.Check.Trusted, book.trust.check("iPhone 14", Bytes.hex(b.signKey)))
+        book.closed("p-1")
+        assertTrue("same key accepted again", handshake(a, b, book, "p-2", PeerBook.Role.PERIPHERAL, "iPhone 14") is PeerBook.ProofResult.Verified)
+        book.closed("p-2")
+        book.opened("p-3", PeerBook.Role.PERIPHERAL)
+        assertEquals(PeerBook.HelloResult.Rejected("key changed for iPhone 14"), book.receivedHello(BleHello.make(c, "iPhone 14", nB)!!, "p-3"))
+        assertEquals(Bytes.hex(c.signKey), book.trust.conflictNames["iPhone 14"])
+        book.closed("p-3")
+        // Saved and loaded: a restart keeps refusing; the Swift JSON shape reads too.
+        val loaded = TrustStore.fromJson(book.trust.toJson())
+        assertEquals(book.trust.trusted, loaded.trusted); assertEquals(book.trust.conflictNames, loaded.conflictNames)
+        assertEquals(mapOf("X" to "k1"), TrustStore.fromJson("""{"keys":{"X":"k1"},"conflicts":{}}""").trusted)
+        book.trust.reset("iPhone 14")
+        assertTrue("new key accepted after reset", handshake(a, c, book, "p-4", PeerBook.Role.PERIPHERAL, "iPhone 14") is PeerBook.ProofResult.Verified)
+        assertTrue(book.trust.conflictNames.isEmpty())
+        val store = TrustStore()
+        assertTrue(store.flag("X", "k2")); assertFalse("same conflict is news once", store.flag("X", "k2"))
+    }
+
     @Test fun tieBreakByKeyAndBlocking() {
         val greater = if (BleHello.keyGreater(a.signKey, b.signKey)) a else b
         val lesser = if (greater === a) b else a

@@ -104,6 +104,48 @@ public struct BLEHello: Equatable, Sendable {
     }
 }
 
+/// Trust on first use for Bluetooth device keys (issue #12). The first key verified for a device
+/// name is remembered (BLETransport saves it to ble-trust.json); later, a hello with that name and
+/// a different key is refused and listed as a conflict until the person trusts the new key (for
+/// example after Libre was reinstalled) or it stops. Codable, so it survives restarts.
+public struct BLETrustStore: Codable, Equatable, Sendable {
+    public enum Check: Equatable, Sendable { case trusted, firstUse, changed(trustedKey: String) }
+
+    /// Device name -> key id trusted for it.
+    public private(set) var keys: [String: String] = [:]
+    /// Device name -> the different key id it last came back with (refused until trusted).
+    public private(set) var conflicts: [String: String] = [:]
+
+    public init() {}
+
+    public func check(name: String, keyID: String) -> Check {
+        guard let known = keys[name] else { return .firstUse }
+        return known == keyID ? .trusted : .changed(trustedKey: known)
+    }
+
+    /// Remembers a verified key the first time a name is seen. Returns true when the store changed.
+    @discardableResult
+    public mutating func remember(name: String, keyID: String) -> Bool {
+        guard keys[name] == nil else { return false }
+        keys[name] = keyID
+        return true
+    }
+
+    /// A hello came with a key other than the trusted one. Returns true when this is news.
+    @discardableResult
+    public mutating func flag(name: String, keyID: String) -> Bool {
+        guard conflicts[name] != keyID else { return false }
+        conflicts[name] = keyID
+        return true
+    }
+
+    /// The person chose to trust the new key: the next link with it is accepted and remembered.
+    public mutating func reset(name: String) {
+        keys.removeValue(forKey: name)
+        conflicts.removeValue(forKey: name)
+    }
+}
+
 /// Who is on each Bluetooth link, keyed by the peer's device key. Pure state, no radio.
 public struct BLEPeerBook: Sendable {
     public enum Role: String, Sendable { case central, peripheral }
@@ -136,6 +178,8 @@ public struct BLEPeerBook: Sendable {
     public private(set) var links: [String: Link] = [:]
     public private(set) var blockedNames: Set<String> = []
     public private(set) var blockedKeys: Set<String> = []
+    /// Keys remembered per device name (trust on first use). BLETransport loads and saves it.
+    public var trust = BLETrustStore()
 
     public init(identity: DeviceIdentity) {
         self.identity = identity
@@ -165,6 +209,11 @@ public struct BLEPeerBook: Sendable {
             if h.name == hello.name && h.signKey != hello.signKey { return .rejected("name \(hello.name) is linked to another key") }
             if h.signKey == hello.signKey && h.name != hello.name { return .rejected("key already linked as \(h.name)") }
         }
+        // Trust on first use: a known name with a different key, even when nobody is linked.
+        if case .changed = trust.check(name: hello.name, keyID: hello.keyID) {
+            trust.flag(name: hello.name, keyID: hello.keyID)
+            return .rejected("key changed for \(hello.name)")
+        }
         guard let proof = BLEHello.proof(identity: identity, peer: hello) else { return .rejected("cannot sign") }
         link.hello = hello
         links[linkID] = link
@@ -182,6 +231,7 @@ public struct BLEPeerBook: Sendable {
         if let replaced { links.removeValue(forKey: replaced) }
         link.verified = true
         links[linkID] = link
+        trust.remember(name: hello.name, keyID: hello.keyID)
         // Both devices opened a link as scanner: the one with the greater key drops its own.
         var drop: String?
         let mine = links.filter { $0.value.verified && $0.value.hello?.signKey == hello.signKey }

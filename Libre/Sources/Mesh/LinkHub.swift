@@ -85,6 +85,8 @@ final class LinkHub: @unchecked Sendable {
     }
 
     var bluetoothState: String { bluetooth.state }
+    var bluetoothKeyConflicts: [String] { bluetooth.trustConflicts }
+    func trustNewBluetoothKey(for name: String) { bluetooth.trustNewKey(for: name) }
     var bluetoothProbes: [String: BLEProbeResult] { bluetooth.probeResults }
     var bluetoothStats: (frames: Int, bytes: Int) { bluetooth.stats }
     var packetsTooBigForBluetooth: Int { lock.lock(); defer { lock.unlock() }; return skippedTooBig }
