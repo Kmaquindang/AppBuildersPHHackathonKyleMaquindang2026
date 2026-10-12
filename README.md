@@ -392,7 +392,9 @@ Install (debug build):
 3. `adb install -r libre-android-debug.apk`
 4. Build it yourself: `cd android && ./gradlew assembleDebug` (JDK 17 and the Android SDK; the APK lands in `app/build/outputs/apk/debug/`). Tests: `./gradlew testDebugUnitTest`.
 
-Limits: Bluetooth only (no Wi-Fi link, no browser gateway needed), works only while the app is open (no background service), cannot send photos or voice notes (received photos show as a placeholder), never an admin (cannot make rooms, admit or kick), no task editing, debug build only (not signed for the Play Store).
+Background relay (added Oct 2026, unit tested only, not yet run on a phone): in the Rooms sheet, "Keep relaying in the background" (off by default) starts a foreground service of type connectedDevice, so Android keeps Libre's Bluetooth links and relay running while the app is closed. A notification shows while it runs, with a Stop button; on Android 13 and newer Libre asks to show it. Scanning and advertising follow the phone's state: on screen, a continuous fast scan; on screen with the battery under 20% (not charging), a balanced scan; closed with the screen on, a balanced scan 10 s of every 30 s; screen off, a low-power scan 10 s of every minute; closed with the battery under 20%, a low-power scan 5 s of every 2 minutes with lower transmit power. Links that are already open stay open in every mode; the slower modes only find new devices more slowly. Battery use of these modes is not measured yet (see the battery issue), and Android can still stop the service (for example some phone makers' battery savers); opening Libre starts it again.
+
+Limits: Bluetooth only (no Wi-Fi link, no browser gateway needed), keeps running in the background only with the background relay turned on, cannot send photos or voice notes (received photos show as a placeholder), never an admin (cannot make rooms, admit or kick), no task editing, debug build only (not signed for the Play Store).
 
 ## Android and other phones (browser)
 Android phones without the app can use a small chat page the AI laptop serves on the local network. It is off by default.
