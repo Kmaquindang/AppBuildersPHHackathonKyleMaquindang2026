@@ -73,7 +73,13 @@ fun LibreRoot(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
     val profile by app.mesh.profile.collectAsState()
     val ctx = LocalContext.current
     var granted by remember { mutableStateOf(hasBlePermissions(ctx)) }
-    LaunchedEffect(profile.onboarded, granted) { if (profile.onboarded && granted) app.startBluetooth() }
+    LaunchedEffect(profile.onboarded, granted) {
+        if (profile.onboarded && granted) {
+            app.startBluetooth()
+            // Opening Libre restarts the background relay if it was on (Android may have stopped it).
+            if (app.backgroundRelay.value) RelayService.start(ctx)
+        }
+    }
     when {
         !profile.onboarded -> Onboarding { app.completeOnboarding(it) }
         !granted -> PermissionScreen { granted = hasBlePermissions(ctx) }
@@ -332,6 +338,34 @@ fun RoomsSheet(app: LibreApp, rooms: List<RoomState>, activeId: String, link: Jo
                     else { app.run { it.join(room) }; dismiss() }
                 }
             }) { Text(if (busy) "Unlocking room..." else "Join") }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            BackgroundRelayRow(app)
         }
+    }
+}
+
+/** "Keep relaying in the background" (RelayService, issue #4). Off until the person turns it on. */
+@Composable
+fun BackgroundRelayRow(app: LibreApp) {
+    val on by app.backgroundRelay.collectAsState()
+    val power by app.power.collectAsState()
+    // Android 13+: ask to show the relay's notification. The relay runs either way; without the
+    // permission its notification only appears in the system's list of running apps.
+    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { app.setBackgroundRelay(true) }
+    val ctx = LocalContext.current
+    fun turnOn() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else app.setBackgroundRelay(true)
+    }
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { if (on) app.setBackgroundRelay(false) else turnOn() },
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Keep relaying in the background", style = MaterialTheme.typography.titleMedium)
+            Text("Libre keeps its Bluetooth links and passes messages for people nearby while the app is closed. A notification shows while it runs, with a Stop button. It scans less when Libre is closed, the screen is off, or the battery is under 20%. Battery use is not measured yet.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Bluetooth now: ${power.name}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { if (it) turnOn() else app.setBackgroundRelay(false) })
     }
 }
