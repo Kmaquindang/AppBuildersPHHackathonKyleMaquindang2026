@@ -132,6 +132,13 @@ struct ConnectionSheet: View {
                         Text(mesh.bluetoothSummary)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        if let url = BLETransport.logURL, FileManager.default.fileExists(atPath: url.path) {
+                            // Link timings for device tests: device names and numbers, no message text.
+                            ShareLink(item: url) {
+                                Label("Share Bluetooth log", systemImage: "square.and.arrow.up")
+                            }
+                            .frame(minHeight: 44)
+                        }
                     }
                 }
             }

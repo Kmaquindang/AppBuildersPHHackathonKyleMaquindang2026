@@ -377,11 +377,22 @@ final class BLETransport: NSObject, @unchecked Sendable {
     }
 
     /// Log line to os_log (category "ble") and to Application Support/Libre/ble-log.txt, so link
-    /// timings can be read back from a phone. Only device names and numbers, never message text.
+    /// timings can be read back from a phone.
     private func note(_ line: String) {
-        BLETransport.log.notice("\(line, privacy: .public)")
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
-        let url = base.appendingPathComponent("Libre", isDirectory: true).appendingPathComponent("ble-log.txt")
+        BLETransport.appendLog(line)
+    }
+
+    /// Where ble-log.txt lives (Application Support/Libre). Shared from the Connection sheet.
+    static var logURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Libre", isDirectory: true).appendingPathComponent("ble-log.txt")
+    }
+
+    /// Appends one line to os_log and ble-log.txt. MeshService also uses it for per-message
+    /// timings (scripts/ble_log_summary.py reads them). Names and numbers only, never message text.
+    static func appendLog(_ line: String) {
+        log.notice("\(line, privacy: .public)")
+        guard let url = logURL else { return }
         let stamp = ISO8601DateFormatter().string(from: Date())
         let data = Data("\(stamp) \(line)\n".utf8)
         if let h = try? FileHandle(forWritingTo: url) {
