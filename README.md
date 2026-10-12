@@ -128,7 +128,7 @@ Two parts. Do part 1 once where there is internet. Part 2 is every day, with no 
 ### 1. One-time setup (needs internet once, for example at a school or cafe)
 Steps marked **(internet)** need a connection. Do them all in one visit.
 1. **(internet)** On the Mac, install Xcode from the Mac App Store. It is a large download.
-2. **(internet)** Download the Libre code: `git clone https://github.com/Kmaquindang/AppBuildersPHHackathonKyleMaquindang2026.git`
+2. **(internet)** Download the Libre code: `git clone https://github.com/Kmaquindang/libre.git`
 3. **(internet)** Install Ollama from https://ollama.com/download (about 206 MB). Or skip this and use step 6.
 4. Open `Libre.xcodeproj` in Xcode. Pick your Team (a free Apple ID works) for the `Libre-macOS` and `Libre-iOS` targets.
 5. Run `Libre-macOS` on the Mac. Connect each iPhone with a cable and run `Libre-iOS` on it.
@@ -155,7 +155,7 @@ What checks this: the Mac's only internet calls are the two setup downloads abov
 Full step-by-step guide, including a manual Xcode path and iPhone trust steps: [docs/SETUP.md](docs/SETUP.md).
 
 1. Install Xcode 15 or newer from the Mac App Store, and Ollama from https://ollama.com/download. Then run `ollama pull qwen3:8b` once (or `qwen3:4b` on a Mac with 8 GB of memory).
-2. `git clone https://github.com/Kmaquindang/AppBuildersPHHackathonKyleMaquindang2026.git && cd AppBuildersPHHackathonKyleMaquindang2026`
+2. `git clone https://github.com/Kmaquindang/libre.git && cd libre`
 3. Open `Libre.xcodeproj` (or run `xcodegen generate` first if you prefer to regenerate it from `project.yml`).
 4. Pick your Team (a free Apple ID works) under Signing & Capabilities for the `Libre-macOS` and `Libre-iOS` targets.
 5. Run `Libre-macOS` on your Mac. Run `Libre-iOS` on one or two iPhones (iOS 17+). On each iPhone trust the developer profile in Settings > General > VPN & Device Management, and allow Local Network access.

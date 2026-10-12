@@ -8,7 +8,7 @@ Names in the project: Xcode targets, schemes, the `Libre/` folder, bundle ids (`
 
 ## Option A: open the committed project (fastest)
 
-1. `git clone https://github.com/Kmaquindang/AppBuildersPHHackathonKyleMaquindang2026.git` and `cd` into it.
+1. `git clone https://github.com/Kmaquindang/libre.git` and `cd` into it.
 2. Open `Libre.xcodeproj` in Xcode. It is committed in the repo (generated from `project.yml` with XcodeGen). If it fails to open, use Option B or Option C.
 3. Go to Option A/B common steps below.
 
