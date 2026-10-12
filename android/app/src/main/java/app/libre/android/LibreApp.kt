@@ -4,6 +4,7 @@ package app.libre.android
 
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import app.libre.mesh.MeshController
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -17,6 +18,7 @@ class LibreApp : Application() {
     override fun onCreate() {
         super.onCreate()
         mesh = MeshController(filesDir.resolve("libre"))
+        mesh.timingLog = { Log.i("LibreMesh", it) }
         worker.scheduleWithFixedDelay({ runCatching { mesh.tick() } }, 5, 5, TimeUnit.SECONDS)
         // Relay jitter (RelayScheduler): relays wait a few ms on the mesh thread.
         mesh.postDelayed = { ms, block -> worker.schedule({ runCatching { block() } }, ms, TimeUnit.MILLISECONDS) }
