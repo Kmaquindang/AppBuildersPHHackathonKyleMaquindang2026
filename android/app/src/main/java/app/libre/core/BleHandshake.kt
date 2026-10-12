@@ -62,7 +62,7 @@ class PeerBook(val identity: DeviceIdentity) {
 
     sealed class HelloResult { data class SendProof(val proof: ByteArray) : HelloResult(); data class Rejected(val why: String) : HelloResult() }
     sealed class ProofResult {
-        data class Verified(val name: String, val keyId: String, val newPeer: Boolean, val dropLink: String?) : ProofResult()
+        data class Verified(val name: String, val keyId: String, val newPeer: Boolean, val dropLink: String?, val replaced: String? = null) : ProofResult()
         data class Rejected(val why: String) : ProofResult()
     }
 
@@ -99,6 +99,11 @@ class PeerBook(val identity: DeviceIdentity) {
         if (link.verified) return ProofResult.Rejected("already verified")
         if (!BleHello.checkProof(proof, h, link.challenge, myKey)) return ProofResult.Rejected("bad proof")
         val newPeer = links.values.none { it.verified && it.hello?.signKey?.contentEquals(h.signKey) == true }
+        // Same key, same role, older link: the peer's radio address changed (iPhones rotate theirs)
+        // or the old link is stale. The new link takes over.
+        val replaced = links.entries.firstOrNull { it.key != id && it.value.verified && it.value.role == link.role &&
+            it.value.hello?.signKey?.contentEquals(h.signKey) == true }?.key
+        if (replaced != null) links.remove(replaced)
         link.verified = true
         val mine = links.filter { it.value.verified && it.value.hello?.signKey?.contentEquals(h.signKey) == true }
         var drop: String? = null
@@ -106,7 +111,7 @@ class PeerBook(val identity: DeviceIdentity) {
         if (central != null && mine.values.any { it.role == Role.PERIPHERAL } && BleHello.keyGreater(myKey, h.signKey)) {
             drop = central; links.remove(central)
         }
-        return ProofResult.Verified(h.name, h.keyId, newPeer, drop)
+        return ProofResult.Verified(h.name, h.keyId, newPeer && replaced == null, drop, replaced)
     }
 
     data class Closed(val name: String, val keyId: String, val stillLinked: Boolean)

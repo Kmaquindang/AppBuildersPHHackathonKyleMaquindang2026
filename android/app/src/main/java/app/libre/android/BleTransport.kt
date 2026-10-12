@@ -10,6 +10,9 @@
 // (BleReassembler). Flow control: one write in flight per client link (next one after
 // onCharacteristicWrite), one notification in flight on the server (next after onNotificationSent).
 // Two links between the same pair: the device whose key sorts last drops the one it opened.
+// Connects go through ConnectPolicy: at most 7 links, signal floor, strongest first, one connect
+// at a time, 10 s timeout, backoff, and quick retries for GATT status 133. A peer is its key, not
+// its MAC address: an iPhone that comes back on a new address replaces its old link.
 // All Bluetooth state lives on one HandlerThread.
 package app.libre.android
 
@@ -40,6 +43,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import app.libre.core.BleChunker
 import app.libre.core.BleReassembler
+import app.libre.core.ConnectPolicy
 import app.libre.core.FrameType
 import app.libre.core.BleHello
 import app.libre.core.DeviceIdentity
@@ -93,6 +97,8 @@ class BleTransport(
     private val pending = HashSet<String>()
     private val dropped = HashMap<String, String>()   // central device address -> peer key id (tie-break)
     private val book = PeerBook(identity)
+    private val policy = ConnectPolicy(ConnectPolicy.Config.ANDROID)
+    private val heard = HashMap<String, BluetoothDevice>()   // address -> device waiting for a connect slot
     private val reassembler = BleReassembler()
     private val serverMtu = HashMap<String, Int>()   // MTU a central negotiated with our server, by address
     private var running = false
@@ -122,12 +128,27 @@ class BleTransport(
             events.problem("Libre needs the Nearby devices permission to use Bluetooth.")
         }
         handler.postDelayed(rescan, 25_000)
+        handler.postDelayed(tick, 2_000)
+    }
+
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!running) return
+            for (addr in policy.timedOut()) links["c-$addr"]?.let { l ->
+                Log.i(TAG, "connect timed out; backing off")
+                try { l.gatt?.disconnect(); l.gatt?.close() } catch (e: SecurityException) { }
+                links.remove(l.key); pending.remove(addr)
+            }
+            startConnects()
+            handler.postDelayed(this, 2_000)
+        }
     }
 
     fun stop() = handler.post {
         if (!running) return@post
         running = false
         handler.removeCallbacks(rescan)
+        handler.removeCallbacks(tick)
         try {
             adapter?.bluetoothLeScanner?.stopScan(scanCallback)
             adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
@@ -135,7 +156,7 @@ class BleTransport(
             server?.close()
         } catch (e: SecurityException) { }
         val names = links.values.mapNotNull { it.name }.toSet()
-        links.clear(); pending.clear(); dropped.clear(); book.reset(); server = null
+        links.clear(); pending.clear(); dropped.clear(); heard.clear(); book.reset(); policy.reset(); server = null
         named = emptyMap()
         names.forEach(events::unlinked)
     }
@@ -245,7 +266,11 @@ class BleTransport(
                 is PeerBook.HelloResult.Rejected -> { Log.i(TAG, "hello refused: ${r.why}"); if (r.why != "second hello") drop(l.key) }
             }
             FrameType.PROOF -> when (val r = book.receivedProof(done.data, l.key)) {
-                is PeerBook.ProofResult.Verified -> verified(l, r)
+                is PeerBook.ProofResult.Verified -> {
+                    r.replaced?.let { old -> Log.i(TAG, "${r.name} came back on a new address; closing the old link"); drop(old) }
+                    if (l.role == Role.CENTRAL) policy.verified(l.device.address)
+                    verified(l, r)
+                }
                 is PeerBook.ProofResult.Rejected -> { Log.i(TAG, "proof refused: ${r.why}"); drop(l.key) }
             }
             FrameType.DATA -> if (book.isVerified(l.key)) l.name?.let { events.received(done.data, it) }
@@ -263,6 +288,7 @@ class BleTransport(
             val central = links.remove(dropId)
             if (central != null) {
                 dropped[central.device.address] = r.keyId
+                policy.exclude(central.device.address)
                 reassembler.reset(dropId)
                 try { central.gatt?.disconnect(); central.gatt?.close() } catch (e: SecurityException) { }
             }
@@ -281,7 +307,11 @@ class BleTransport(
         gone ?: return
         val rest = book.linkIds(name)
         named = named.toMutableMap().also { if (rest.isEmpty()) it.remove(name) else it[name] = rest }
-        if (l.role == Role.PERIPHERAL) dropped.entries.removeIf { it.value == gone.keyId }
+        if (l.role == Role.PERIPHERAL) {
+            // The peer's link to us died: the scanner link we dropped in the tie-break may come back.
+            val back = dropped.filterValues { it == gone.keyId }.keys
+            for (addr in back) { dropped.remove(addr); policy.include(addr) }
+        }
         if (!gone.stillLinked) events.unlinked(name)
     }
 
@@ -365,15 +395,30 @@ class BleTransport(
     }
 
     private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) { handler.post { connect(result.device) } }
-        override fun onBatchScanResults(results: MutableList<ScanResult>) { handler.post { results.forEach { connect(it.device) } } }
+        override fun onScanResult(callbackType: Int, result: ScanResult) { handler.post { heard(result.device, result.rssi) } }
+        override fun onBatchScanResults(results: MutableList<ScanResult>) { handler.post { results.forEach { heard(it.device, it.rssi) } } }
         override fun onScanFailed(errorCode: Int) { events.problem("Bluetooth scan failed (code $errorCode).") }
+    }
+
+    private fun heard(device: BluetoothDevice, rssi: Int) {
+        if (!running || dropped.containsKey(device.address) || links.containsKey("c-" + device.address)) return
+        if (policy.discovered(device.address, rssi)) { heard[device.address] = device; startConnects() }
+    }
+
+    /** Starts the connects the policy allows now (cap, signal floor, strongest first, backoff). */
+    private fun startConnects() {
+        if (!running) return
+        for (addr in policy.next(links.size)) {
+            val d = heard.remove(addr)
+            if (d == null) { policy.disconnected(addr); continue }
+            connect(d)
+        }
     }
 
     private fun connect(device: BluetoothDevice) {
         if (!running) return
         val key = "c-" + device.address
-        if (links.containsKey(key) || device.address in pending || dropped.containsKey(device.address)) return
+        if (links.containsKey(key) || device.address in pending || dropped.containsKey(device.address)) { policy.disconnected(device.address); return }
         pending.add(device.address)
         try {
             val g = device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE)
@@ -388,13 +433,28 @@ class BleTransport(
             handler.post {
                 val key = "c-" + gatt.device.address
                 try {
+                    val addr = gatt.device.address
                     if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
-                        pending.remove(gatt.device.address)
+                        pending.remove(addr)
+                        policy.connected(addr)
                         if (!gatt.requestMtu(517)) gatt.discoverServices()
                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
-                        pending.remove(gatt.device.address)
+                        val wasPending = addr in pending
+                        val wasLinked = links[key]?.ready == true
+                        pending.remove(addr)
+                        // Always close: a GATT client left open after status 133 blocks the next connect.
                         gatt.close()
                         closed(key)
+                        if (wasPending || !wasLinked) {
+                            val failure = if (status == ConnectPolicy.GATT_ERROR_133) ConnectPolicy.Failure.GATT_ERROR_133 else ConnectPolicy.Failure.OTHER
+                            val wait = policy.failed(addr, failure)
+                            Log.i(TAG, "connect failed status=$status; retry in ${wait} ms")
+                            heard[addr] = gatt.device
+                            handler.postDelayed({ if (policy.discovered(addr, 127)) startConnects() }, wait)
+                        } else {
+                            policy.disconnected(addr)
+                            if (!dropped.containsKey(addr)) { heard[addr] = gatt.device; policy.discovered(addr, 127); startConnects() }
+                        }
                     }
                 } catch (e: SecurityException) { }
             }

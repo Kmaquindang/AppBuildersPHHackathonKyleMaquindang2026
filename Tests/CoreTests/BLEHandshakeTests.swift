@@ -42,10 +42,10 @@ func runBLEHandshakeTests() {
     guard case .sendProof(let pA) = bookA.received(hello: helloFromB, on: "c-1"),
           case .sendProof(let pB) = bookB.received(hello: helloFromA, on: "p-1") else { check(false, "ble book: hellos accepted"); return }
     check(!bookA.isVerified("c-1"), "ble book: a hello alone does not verify a link")
-    if case .verified(let name, _, let newPeer, let drop) = bookA.received(proof: pB, on: "c-1") {
+    if case .verified(let name, _, let newPeer, let drop, _) = bookA.received(proof: pB, on: "c-1") {
         check(name == "iPhone 14" && newPeer && drop == nil, "ble book: A verifies B by key, names it from the signed hello")
     } else { check(false, "ble book: A verifies B by key, names it from the signed hello") }
-    if case .verified(let name, _, _, _) = bookB.received(proof: pA, on: "p-1") {
+    if case .verified(let name, _, _, _, _) = bookB.received(proof: pA, on: "p-1") {
         check(name == "iPhone 12", "ble book: B verifies A")
     } else { check(false, "ble book: B verifies A") }
     check(bookA.linkedNames == ["iPhone 14"] && bookA.linkIDs(forName: "iPhone 14") == ["c-1"], "ble book: linked names come from verified links only")
@@ -79,7 +79,7 @@ func runBLEHandshakeTests() {
             let peerCh = peerBook.opened("other", role: role == .central ? .peripheral : .central)
             guard case .sendProof = book.received(hello: BLEHello.make(identity: peer, name: "peer", nonce: peerCh)!, on: link),
                   case .sendProof(let peerProof) = peerBook.received(hello: BLEHello.make(identity: me, name: "me", nonce: ch)!, on: "other") else { return ["fail"] }
-            if case .verified(_, _, _, let d) = book.received(proof: peerProof, on: link), let d { drops.append(d) }
+            if case .verified(_, _, _, let d, _) = book.received(proof: peerProof, on: link), let d { drops.append(d) }
         }
         return drops
     }

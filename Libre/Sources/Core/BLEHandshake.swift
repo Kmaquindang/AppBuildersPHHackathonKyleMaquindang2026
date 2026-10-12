@@ -125,7 +125,9 @@ public struct BLEPeerBook: Sendable {
     public enum ProofResult: Equatable, Sendable {
         /// Link verified. `newPeer` is true when this is the first verified link to that key.
         /// `dropLink` is our own central link to close (tie-break: one link per pair).
-        case verified(name: String, keyID: String, newPeer: Bool, dropLink: String?)
+        /// `replaced` is an older link to the same key in the same role (the peer's radio address
+        /// changed, or the old link is stale): close it, the new one takes over.
+        case verified(name: String, keyID: String, newPeer: Bool, dropLink: String?, replaced: String? = nil)
         case rejected(String)
     }
 
@@ -174,6 +176,10 @@ public struct BLEPeerBook: Sendable {
         guard !link.verified else { return .rejected("already verified") }
         guard BLEHello.checkProof(proof, peer: hello, myChallenge: link.challenge, myKey: myKey) else { return .rejected("bad proof") }
         let newPeer = !links.values.contains { $0.verified && $0.hello?.signKey == hello.signKey }
+        // Same key, same role, older link: the peer came back under a new radio address (Android
+        // sees iPhones rotate theirs) or the old link has not noticed it died. Keep the new one.
+        let replaced = links.first { $0.key != linkID && $0.value.verified && $0.value.role == link.role && $0.value.hello?.signKey == hello.signKey }?.key
+        if let replaced { links.removeValue(forKey: replaced) }
         link.verified = true
         links[linkID] = link
         // Both devices opened a link as scanner: the one with the greater key drops its own.
@@ -185,7 +191,7 @@ public struct BLEPeerBook: Sendable {
             drop = central
             links.removeValue(forKey: central)
         }
-        return .verified(name: hello.name, keyID: hello.keyID, newPeer: newPeer, dropLink: drop)
+        return .verified(name: hello.name, keyID: hello.keyID, newPeer: newPeer && replaced == nil, dropLink: drop, replaced: replaced)
     }
 
     /// Link gone. Returns the peer's name and key if it was verified, and whether another
