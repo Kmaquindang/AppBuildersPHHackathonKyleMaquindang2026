@@ -63,6 +63,7 @@ runPeerSyncTests()
 runBatteryLogTests()
 runModerationTests()
 await runRuleGlossTests()
+runReplyLanguageTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 

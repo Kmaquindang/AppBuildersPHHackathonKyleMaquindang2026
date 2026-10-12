@@ -51,6 +51,9 @@ public struct BenchmarkResult: Equatable, Sendable {
     public var modelCalls: Int
     public var reply: String
     public var rulesUsed: [String] = []
+    /// Reply language (ReplyLanguage.detect), scored separately from grounding (issue #11).
+    public var replyLanguage: String? = nil
+    public var languageOK: Bool { replyLanguage == question.language }
 }
 
 public enum BenchmarkSuite {
@@ -172,9 +175,11 @@ public enum BenchmarkSuite {
         var (ok, why) = score(rulesUsed: out.rulesUsed, unverified: out.unverifiedRules, noRule: out.noRule, reply: full,
                               intent: out.intent.rawValue, expect: q.expect, rules: snapshot.activeRules)
         if let error = out.error { ok = false; why = "error: \(error)" }
-        return BenchmarkResult(question: q, model: out.model ?? model, correct: ok, reason: why, intent: out.intent.rawValue,
-                               latencyMs: wall, tokensPerSecond: out.tokensPerSecond, promptTokens: out.promptEvalCount,
-                               evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full, rulesUsed: out.rulesUsed)
+        var result = BenchmarkResult(question: q, model: out.model ?? model, correct: ok, reason: why, intent: out.intent.rawValue,
+                                     latencyMs: wall, tokensPerSecond: out.tokensPerSecond, promptTokens: out.promptEvalCount,
+                                     evalTokens: out.evalTokens, modelCalls: out.modelCalls, reply: full, rulesUsed: out.rulesUsed)
+        result.replyLanguage = ReplyLanguage.detect(full)
+        return result
     }
 }
 
@@ -214,12 +219,14 @@ public enum BenchmarkReport {
     }
 
     public static func csv(_ results: [BenchmarkResult]) -> String {
-        var lines = ["id,language,model,expect,correct,reason,intent,latency_ms,tok_per_s,prompt_tokens,eval_tokens,model_calls,question,reply,rules_used"]
+        var lines = ["id,language,model,expect,correct,reason,intent,latency_ms,tok_per_s,prompt_tokens,eval_tokens,model_calls,question,reply,rules_used,reply_language,language_ok"]
         for r in results {
-            lines.append([String(r.question.id), r.question.language, csvField(r.model), csvField(r.question.expect.label), r.correct ? "1" : "0",
-                          csvField(r.reason), r.intent, String(r.latencyMs), r.tokensPerSecond.map { String(format: "%.2f", $0) } ?? "",
-                          r.promptTokens.map(String.init) ?? "", r.evalTokens.map(String.init) ?? "", String(r.modelCalls),
-                          csvField(r.question.text), csvField(r.reply), csvField(r.rulesUsed.joined(separator: " "))].joined(separator: ","))
+            var fields: [String] = [String(r.question.id), r.question.language, csvField(r.model), csvField(r.question.expect.label), r.correct ? "1" : "0",
+                                    csvField(r.reason), r.intent, String(r.latencyMs), r.tokensPerSecond.map { String(format: "%.2f", $0) } ?? ""]
+            fields += [r.promptTokens.map(String.init) ?? "", r.evalTokens.map(String.init) ?? "", String(r.modelCalls),
+                       csvField(r.question.text), csvField(r.reply), csvField(r.rulesUsed.joined(separator: " "))]
+            fields += [r.replyLanguage ?? "unclear", r.languageOK ? "1" : "0"]
+            lines.append(fields.joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -258,11 +265,21 @@ public enum BenchmarkReport {
             func lang(_ l: String) -> String { s.byLanguage.first { $0.0 == l }.map { "\($0.1)/\($0.2)" } ?? "-" }
             out.append("| \(model) | \(s.correct)/\(s.total) | \(lang("en")) | \(lang("tl")) | \(lang("ceb")) | \(s.medianLatencyMs) | \(s.meanTokensPerSecond.map { String(format: "%.1f", $0) } ?? "-") | \(s.meanPromptTokens.map(String.init) ?? "-") |")
         }
+        // Reply language, scored separately (issue #11): the grounding scores above do not change.
+        out += ["", "Reply language (scored separately; a reply passes when ReplyLanguage detects the question's language):", "",
+                "| Model | Reply in the asker's language | English | Tagalog | Cebuano |", "|---|---|---|---|---|"]
         for (model, results) in runs {
-            out += ["", "## \(model): per question", "", "| # | Lang | Question | Expected | Result | Why | ms | tok/s | prompt tok |", "|---|---|---|---|---|---|---|---|---|"]
+            func lang(_ l: String) -> String {
+                let r = results.filter { $0.question.language == l }
+                return "\(r.filter(\.languageOK).count)/\(r.count)"
+            }
+            out.append("| \(model) | \(results.filter(\.languageOK).count)/\(results.count) | \(lang("en")) | \(lang("tl")) | \(lang("ceb")) |")
+        }
+        for (model, results) in runs {
+            out += ["", "## \(model): per question", "", "| # | Lang | Question | Expected | Result | Why | ms | tok/s | prompt tok | Reply language |", "|---|---|---|---|---|---|---|---|---|---|"]
             for r in results {
                 let q = r.question.text.replacingOccurrences(of: "|", with: "/")
-                out.append("| \(r.question.id) | \(r.question.language) | \(q) | \(r.question.expect.label) | \(r.correct ? "pass" : "FAIL") | \(r.reason.replacingOccurrences(of: "|", with: "/")) | \(r.latencyMs) | \(r.tokensPerSecond.map { String(format: "%.1f", $0) } ?? "-") | \(r.promptTokens.map(String.init) ?? "-") |")
+                out.append("| \(r.question.id) | \(r.question.language) | \(q) | \(r.question.expect.label) | \(r.correct ? "pass" : "FAIL") | \(r.reason.replacingOccurrences(of: "|", with: "/")) | \(r.latencyMs) | \(r.tokensPerSecond.map { String(format: "%.1f", $0) } ?? "-") | \(r.promptTokens.map(String.init) ?? "-") | \(r.replyLanguage ?? "unclear")\(r.languageOK ? "" : " (mismatch)") |")
             }
         }
         return out.joined(separator: "\n") + "\n"

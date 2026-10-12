@@ -18,6 +18,7 @@
 		AE1A5BBF6CB1724B6CE6028D /* BLEConnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */; };
 		3A81D74A84A31A89A2BEC6CD /* LinkStatusWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE4745C8959647761989137 /* LinkStatusWords.swift */; };
 		95F21BE6A4466B3141C5B4A8 /* AdvertiseWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */; };
+		F3D030F1FE1121E3A6078F75 /* ReplyLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240C6D9F9008E97818068C3E /* ReplyLanguage.swift */; };
 		CC4FF2274D98BE7BE3484F6D /* Moderation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 948D3637732C3016185BE860 /* Moderation.swift */; };
 		C0ED9F8CF53D5F3F40444DA3 /* BatteryLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F45B2B4E024B6A4EB135C66 /* BatteryLog.swift */; };
 		BEE08C63D22A6EEAB70CAE0D /* PeerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C607BC9781D1B948D08A76 /* PeerSync.swift */; };
@@ -96,6 +97,7 @@
 		174C9A01FDD55DFAA63CAE53 /* BLEConnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */; };
 		76CD3FD7DF8B55FCDCF4D13F /* LinkStatusWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE4745C8959647761989137 /* LinkStatusWords.swift */; };
 		F72DD3B10BAD9380548D119F /* AdvertiseWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */; };
+		1B098972E31F1F95D6C1B3C7 /* ReplyLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 240C6D9F9008E97818068C3E /* ReplyLanguage.swift */; };
 		BE3E2B110912A81762AF75EE /* Moderation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 948D3637732C3016185BE860 /* Moderation.swift */; };
 		40C087B7035090DD14AD4FED /* BatteryLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F45B2B4E024B6A4EB135C66 /* BatteryLog.swift */; };
 		9C0FB7A18F82E6541BDABEEE /* PeerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C607BC9781D1B948D08A76 /* PeerSync.swift */; };
@@ -217,6 +219,7 @@
 		6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEConnectPolicy.swift; sourceTree = "<group>"; };
 		6CE4745C8959647761989137 /* LinkStatusWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkStatusWords.swift; sourceTree = "<group>"; };
 		7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvertiseWatch.swift; sourceTree = "<group>"; };
+		240C6D9F9008E97818068C3E /* ReplyLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyLanguage.swift; sourceTree = "<group>"; };
 		948D3637732C3016185BE860 /* Moderation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moderation.swift; sourceTree = "<group>"; };
 		2F45B2B4E024B6A4EB135C66 /* BatteryLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryLog.swift; sourceTree = "<group>"; };
 		F4C607BC9781D1B948D08A76 /* PeerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSync.swift; sourceTree = "<group>"; };
@@ -402,6 +405,7 @@
 				6C089E8B7495C379E6940977 /* BLEConnectPolicy.swift */,
 				6CE4745C8959647761989137 /* LinkStatusWords.swift */,
 				7DAEA7A34C9BCD73CE81E5EF /* AdvertiseWatch.swift */,
+				240C6D9F9008E97818068C3E /* ReplyLanguage.swift */,
 				948D3637732C3016185BE860 /* Moderation.swift */,
 				2F45B2B4E024B6A4EB135C66 /* BatteryLog.swift */,
 				F4C607BC9781D1B948D08A76 /* PeerSync.swift */,
@@ -642,6 +646,7 @@
 				AE1A5BBF6CB1724B6CE6028D /* BLEConnectPolicy.swift in Sources */,
 				3A81D74A84A31A89A2BEC6CD /* LinkStatusWords.swift in Sources */,
 				95F21BE6A4466B3141C5B4A8 /* AdvertiseWatch.swift in Sources */,
+				F3D030F1FE1121E3A6078F75 /* ReplyLanguage.swift in Sources */,
 				CC4FF2274D98BE7BE3484F6D /* Moderation.swift in Sources */,
 				C0ED9F8CF53D5F3F40444DA3 /* BatteryLog.swift in Sources */,
 				BEE08C63D22A6EEAB70CAE0D /* PeerSync.swift in Sources */,
@@ -734,6 +739,7 @@
 				174C9A01FDD55DFAA63CAE53 /* BLEConnectPolicy.swift in Sources */,
 				76CD3FD7DF8B55FCDCF4D13F /* LinkStatusWords.swift in Sources */,
 				F72DD3B10BAD9380548D119F /* AdvertiseWatch.swift in Sources */,
+				1B098972E31F1F95D6C1B3C7 /* ReplyLanguage.swift in Sources */,
 				BE3E2B110912A81762AF75EE /* Moderation.swift in Sources */,
 				40C087B7035090DD14AD4FED /* BatteryLog.swift in Sources */,
 				9C0FB7A18F82E6541BDABEEE /* PeerSync.swift in Sources */,

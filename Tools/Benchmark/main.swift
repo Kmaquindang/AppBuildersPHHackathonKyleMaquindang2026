@@ -43,7 +43,7 @@ for model in wanted {
     print("run \(model): \(BenchmarkSuite.questions.count) questions")
     let results = await BenchmarkSuite.run(llm: client, model: model) { r in
         let tps = r.tokensPerSecond.map { String(format: "%.1f", $0) } ?? "-"
-        print(String(format: "  #%02d %@ %@ %d ms %@ tok/s", r.question.id, r.question.language, r.correct ? "PASS" : "FAIL", r.latencyMs, tps) + "  \(r.reason)")
+        print(String(format: "  #%02d %@ %@ %d ms %@ tok/s", r.question.id, r.question.language, r.correct ? "PASS" : "FAIL", r.latencyMs, tps) + "  lang=\(r.replyLanguage ?? "unclear")\(r.languageOK ? "" : "(mismatch)")  \(r.reason)")
     }
     if let running = try? await client.runningModels(), let m = running.first(where: { $0.name == model }) {
         memoryInUse[model] = RunningModel.gigabytes(m.size)
