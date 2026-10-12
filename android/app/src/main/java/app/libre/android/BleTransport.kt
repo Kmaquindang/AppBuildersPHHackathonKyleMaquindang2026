@@ -40,6 +40,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.util.Log
 import app.libre.core.BleChunker
 import app.libre.core.BleReassembler
@@ -51,6 +52,7 @@ import app.libre.core.SendQueue
 import app.libre.core.BleHello
 import app.libre.core.DeviceIdentity
 import app.libre.core.PeerBook
+import app.libre.core.ProbeResult
 import app.libre.mesh.Link
 import java.util.UUID
 
@@ -86,6 +88,8 @@ class BleTransport(
         val queue = SendQueue()   // lanes: control, urgent, bulk, media (Priority.kt)
         var inFlight = false
         var nextId = (Math.random() * 0xFFFFFFFFL).toLong()
+        val openedAt = SystemClock.elapsedRealtime()
+        var probeSentAt: Long? = null
     }
 
     private val thread = HandlerThread("libre-ble").also { it.start() }
@@ -285,14 +289,21 @@ class BleTransport(
             }
             FrameType.DATA -> if (book.isVerified(l.key)) l.name?.let { events.received(done.data, it) }
             FrameType.PROBE -> enqueue(l, "ok".toByteArray(), FrameType.PROBE_REPLY)
-            FrameType.PROBE_REPLY -> {}
+            FrameType.PROBE_REPLY -> {
+                val at = l.probeSentAt ?: return
+                val name = l.name ?: return
+                l.probeSentAt = null
+                val result = ProbeResult(ProbeResult.PROBE_BYTES, l.mtu, SystemClock.elapsedRealtime() - at)
+                Log.i(TAG, result.logLine(name, l.role.name.lowercase()))
+            }
         }
     }
 
     private fun verified(l: LinkState, r: PeerBook.ProofResult.Verified) {
         val name = r.name
         l.name = name
-        Log.i(TAG, "verified $name key=${r.keyId.take(8)} role=${l.role} mtu=${l.mtu}")
+        val secs = "%.1f".format(java.util.Locale.US, (SystemClock.elapsedRealtime() - l.openedAt) / 1000.0)
+        Log.i(TAG, "verified $name key=${r.keyId.take(8)} role=${l.role.name.lowercase()} mtu=${l.mtu} after_s=$secs")
         val dropId = r.dropLink
         if (dropId != null) {
             val central = links.remove(dropId)
@@ -306,6 +317,9 @@ class BleTransport(
         named = named.toMutableMap().also { it[name] = book.linkIds(name) }
         if (dropId == l.key) return
         if (r.newPeer) events.linked(name)
+        // One 4 KB speed probe per link, like the iPhone (rides the media lane).
+        l.probeSentAt = SystemClock.elapsedRealtime()
+        enqueue(l, ByteArray(ProbeResult.PROBE_BYTES), FrameType.PROBE)
     }
 
     private fun closed(key: String) {
