@@ -96,6 +96,16 @@ struct AdvancedSettingsView: View {
             #endif
             RoomAdvancedSection()
                 Section {
+                    Toggle("Send photos and voice notes over Bluetooth", isOn: Binding(
+                        get: { mesh.mediaOverBluetooth },
+                        set: { mesh.setMediaOverBluetooth($0) }
+                    ))
+                } header: {
+                    Text("Bluetooth")
+                } footer: {
+                    Text("Off: photos and voice notes wait for Wi-Fi when a device is reached only over Bluetooth. Text, @libre answers and tasks always go. Bluetooth is slow, so one photo can take a minute or more.")
+                }
+                Section {
                     TextField("Device id", text: $nameDraft)
                     Button("Save device id") {
                         mesh.rename(to: nameDraft)

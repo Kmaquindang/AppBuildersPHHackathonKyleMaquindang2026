@@ -45,6 +45,8 @@ import app.libre.core.BleChunker
 import app.libre.core.BleReassembler
 import app.libre.core.ConnectPolicy
 import app.libre.core.FrameType
+import app.libre.core.Lane
+import app.libre.core.SendQueue
 import app.libre.core.BleHello
 import app.libre.core.DeviceIdentity
 import app.libre.core.PeerBook
@@ -70,7 +72,6 @@ class BleTransport(
         val CHARACTERISTIC: UUID = UUID.fromString("05F51AD3-42F8-4ABD-A52C-BD6C6537FAF7")
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val TAG = "LibreBLE"
-        const val MAX_QUEUED_FRAMES = 6000
     }
 
     private enum class Role { CENTRAL, PERIPHERAL }
@@ -81,7 +82,7 @@ class BleTransport(
         var name: String? = null
         var mtu = 20
         var ready = false
-        val queue = ArrayDeque<ByteArray>()
+        val queue = SendQueue()   // lanes: control, urgent, bulk, media (Priority.kt)
         var inFlight = false
         var nextId = (Math.random() * 0xFFFFFFFFL).toLong()
     }
@@ -184,7 +185,7 @@ class BleTransport(
 
     // MARK: Send
 
-    override fun send(data: ByteArray, to: Set<String>): Set<String> {
+    override fun send(data: ByteArray, to: Set<String>, lane: Lane): Set<String> {
         if (data.size > BleChunker.MAX_MESSAGE_BYTES) return emptySet()
         val snapshot = named
         val targets = to.filter { !snapshot[it].isNullOrEmpty() }.toSet()
@@ -192,18 +193,19 @@ class BleTransport(
             for (name in targets) {
                 val key = named[name]?.firstOrNull() ?: continue
                 val l = links[key] ?: continue
-                if (l.ready) enqueue(l, data, FrameType.DATA)
+                if (l.ready) enqueue(l, data, FrameType.DATA, lane)
             }
         }
         return targets
     }
 
-    private fun enqueue(l: LinkState, data: ByteArray, type: FrameType) {
+    private fun enqueue(l: LinkState, data: ByteArray, type: FrameType, lane: Lane? = null) {
         val id = l.nextId and 0xFFFFFFFFL
         l.nextId = (l.nextId + 1) and 0xFFFFFFFFL
         val frames = BleChunker.frames(data, id, l.mtu, type) ?: return
-        if (l.queue.size + frames.size > MAX_QUEUED_FRAMES) { events.problem("Bluetooth link to ${l.name ?: "a device"} is busy."); return }
-        l.queue.addAll(frames)
+        // Hello, proof and probe replies jump the queue; the speed probe rides with media.
+        val ln = lane ?: if (type == FrameType.PROBE) Lane.MEDIA else Lane.CONTROL
+        if (!l.queue.push(frames, ln)) { events.problem("Bluetooth link to ${l.name ?: "a device"} is busy."); return }
         pump(l)
     }
 
@@ -215,7 +217,7 @@ class BleTransport(
                     if (l.inFlight) return
                     val g = l.gatt ?: return
                     val ch = l.remote ?: return
-                    val f = l.queue.firstOrNull() ?: return
+                    val f = l.queue.peek() ?: return
                     val ok = if (Build.VERSION.SDK_INT >= 33) {
                         g.writeCharacteristic(ch, f, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == BluetoothGatt.GATT_SUCCESS
                     } else {
@@ -223,28 +225,28 @@ class BleTransport(
                         ch.value = f
                         g.writeCharacteristic(ch)
                     }
-                    if (ok) { l.queue.removeFirst(); l.inFlight = true; framesSent++ }
+                    if (ok) { l.queue.pop(); l.inFlight = true; framesSent++ }
                     else handler.postDelayed({ pump(l) }, 20)
                 }
                 Role.PERIPHERAL -> {
                     if (notifyBusy) return
                     val s = server ?: return
                     val ch = serverChar ?: return
-                    val f = l.queue.firstOrNull() ?: return
+                    val f = l.queue.peek() ?: return
                     val ok = if (Build.VERSION.SDK_INT >= 33) {
                         s.notifyCharacteristicChanged(l.device, ch, false, f) == BluetoothGatt.GATT_SUCCESS
                     } else {
                         ch.value = f
                         s.notifyCharacteristicChanged(l.device, ch, false)
                     }
-                    if (ok) { l.queue.removeFirst(); notifyBusy = true; framesSent++ }
+                    if (ok) { l.queue.pop(); notifyBusy = true; framesSent++ }
                     else handler.postDelayed({ pump(l) }, 20)
                 }
             }
         } catch (e: SecurityException) { }
     }
 
-    private fun pumpPeripherals() { for (l in links.values) if (l.role == Role.PERIPHERAL && l.queue.isNotEmpty()) { pump(l); if (notifyBusy) return } }
+    private fun pumpPeripherals() { for (l in links.values) if (l.role == Role.PERIPHERAL && !l.queue.isEmpty()) { pump(l); if (notifyBusy) return } }
 
     // MARK: Link life
 

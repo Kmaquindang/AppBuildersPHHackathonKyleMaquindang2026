@@ -9,7 +9,8 @@ import java.nio.file.Files
 class FakeLink(var peers: MutableSet<String> = mutableSetOf()) : Link {
     val sent = mutableListOf<Pair<ByteArray, Set<String>>>()
     override val linkedPeers: Set<String> get() = peers
-    override fun send(data: ByteArray, to: Set<String>): Set<String> { sent += data to to; return to }
+    val lanes = mutableListOf<app.libre.core.Lane>()
+    override fun send(data: ByteArray, to: Set<String>, lane: app.libre.core.Lane): Set<String> { sent += data to to; lanes += lane; return to }
 }
 
 class MeshControllerTest {
@@ -52,5 +53,6 @@ class MeshControllerTest {
         val json = String(l.sent.last().first)
         assertTrue(json.contains("\"sealed\""))
         assertTrue(c.waiting.value.isNotEmpty())
+        assertEquals("@libre ask rides the urgent Bluetooth lane", app.libre.core.Lane.URGENT, l.lanes.last())
     }
 }

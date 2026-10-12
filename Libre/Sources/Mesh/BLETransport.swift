@@ -32,8 +32,6 @@ final class BLETransport: NSObject, @unchecked Sendable {
     static let serviceUUID = CBUUID(string: "BAA354FA-5C3F-4FD8-A2FB-A2F30E6C73F2")
     static let characteristicUUID = CBUUID(string: "05F51AD3-42F8-4ABD-A52C-BD6C6537FAF7")
     static let probeBytes = 4096
-    /// Frames waiting per link before new packets are refused (about 1 MB at MTU 182).
-    static let maxQueuedFrames = 6000
 
     private static let log = Logger(subsystem: "com.kmaquindang.libre", category: "ble")
 
@@ -48,7 +46,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         var name: String?   // set once the link is verified
         var mtu: Int = BLEFrame.minimumMTU
         var ready = false
-        var queue: [Data] = []
+        var queue = BLESendQueue()   // lanes: control, urgent, bulk, media (BLEPriority)
         var nextID = UInt32.random(in: 0...UInt32.max)
         var probeSentAt: Date?
         var openedAt = Date()
@@ -191,7 +189,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
     /// Sends `data` to each named peer that has a ready Bluetooth link. Returns who it was
     /// handed to. Frames are queued and paced by CoreBluetooth flow control.
     @discardableResult
-    func send(_ data: Data, to names: [String]) -> [String] {
+    func send(_ data: Data, to names: [String], lane: BLELane = .urgent) -> [String] {
         guard data.count <= BLEChunker.maxMessageBytes else { return [] }
         lock.lock()
         let targets = names.filter { !(namedLinks[$0] ?? []).isEmpty && !blocked.contains($0) }
@@ -201,7 +199,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         queue.async { [self] in
             for id in picks {
                 guard let link = links[id], link.ready else { continue }
-                enqueue(data, type: .data, on: link)
+                enqueue(data, type: .data, on: link, lane: lane)
             }
         }
         return targets
@@ -209,15 +207,16 @@ final class BLETransport: NSObject, @unchecked Sendable {
 
     // MARK: Frames
 
-    private func enqueue(_ data: Data, type: BLEFrameType, on link: Link) {
+    private func enqueue(_ data: Data, type: BLEFrameType, on link: Link, lane: BLELane? = nil) {
         let id = link.nextID
         link.nextID &+= 1
         guard let frames = BLEChunker.frames(data, type: type, messageID: id, mtu: link.mtu) else { return }
-        guard link.queue.count + frames.count <= BLETransport.maxQueuedFrames else {
+        // Hello, proof and probe replies jump the queue; the 4 KB speed probe rides with media.
+        let l = lane ?? (type == .probe ? .media : .control)
+        guard link.queue.push(frames, lane: l) else {
             onEvent(.problem("Bluetooth link to \(link.name ?? "a device") is busy; a packet waits for Wi-Fi or the outbox."))
             return
         }
-        link.queue.append(contentsOf: frames)
         pump(link)
     }
 
@@ -226,16 +225,15 @@ final class BLETransport: NSObject, @unchecked Sendable {
         switch link.role {
         case .central:
             guard let p = link.peripheral, let ch = link.remote else { return }
-            while !link.queue.isEmpty && p.canSendWriteWithoutResponse {
-                let f = link.queue.removeFirst()
+            while p.canSendWriteWithoutResponse, let f = link.queue.pop() {
                 p.writeValue(f, for: ch, type: .withoutResponse)
                 sent += 1; bytes += f.count
             }
         case .peripheral:
             guard let pm = peripheralManager, let ch = characteristic, let c = link.central else { return }
-            while let f = link.queue.first {
+            while let f = link.queue.peek() {
                 guard pm.updateValue(f, for: ch, onSubscribedCentrals: [c]) else { break }
-                link.queue.removeFirst()
+                link.queue.pop()
                 sent += 1; bytes += f.count
             }
         }
