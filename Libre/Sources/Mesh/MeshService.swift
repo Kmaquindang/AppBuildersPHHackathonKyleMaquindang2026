@@ -2190,6 +2190,17 @@ final class MeshService: ObservableObject {
         }
     }
 
+    /// One ble-log.txt line per received chat or answer, for device tests (issue #1): which radio
+    /// it came in on, hops travelled, and for answers the measured round trip and AI time.
+    /// Numbers only, never message text. scripts/ble_log_summary.py reads these lines.
+    private func logTiming(_ message: MeshMessage, roundTripMs: Int?) {
+        guard let link = receivingLink else { return }
+        var line = "MSG \(message.kind.rawValue) link=\(link.rawValue) hops=\(message.hopCount)"
+        if let roundTripMs { line += " rtt_ms=\(roundTripMs)" }
+        if let ai = message.latencyMs { line += " ai_ms=\(ai)" }
+        BLETransport.appendLog(line)
+    }
+
     private func receive(_ data: Data, from sender: String) {
         let message: MeshMessage
         switch MeshCodec.decodeLenient(data) {
@@ -2374,6 +2385,7 @@ final class MeshService: ObservableObject {
             }
             scheduleSave()
         }
+        if delivered.kind == .answer || delivered.kind == .chat { logTiming(delivered, roundTripMs: entry.roundTripMs) }
         appendEntry(entry, room: roomID)
 
         switch delivered.kind {
