@@ -17,6 +17,7 @@ import app.libre.core.AssistantMention
 import app.libre.core.Bytes
 import app.libre.core.Destination
 import app.libre.core.Lane
+import app.libre.core.RelayScheduler
 import app.libre.core.DeviceIdentity
 import app.libre.core.Governor
 import app.libre.core.Kind
@@ -311,12 +312,34 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
 
     // MARK: Receiving
 
+    /** Runs a relay after a delay in ms (the app posts it on the mesh thread). Null: relay at once (tests). */
+    var postDelayed: ((Long, () -> Unit) -> Unit)? = null
+    private class RelayJob(val data: ByteArray, val excluding: Set<String>)
+    private val relays = RelayScheduler<RelayJob>()
+    /** Relays not sent because every neighbor (or enough of a crowd) already had the packet. */
+    val relaysSaved: Int get() = relays.cancelled
+
+    /** Waits a short random time before relaying so a neighbor's copy can make ours unnecessary. */
+    private fun scheduleRelay(id: String, data: ByteArray, excluding: Set<String>, broadcast: Boolean) {
+        val peers = link?.linkedPeers ?: emptySet()
+        val targets = peers - excluding
+        val post = postDelayed
+        if (targets.isEmpty() || post == null) { sendRaw(data, excluding, queue = false); return }
+        val delay = relays.schedule(id, RelayJob(data, excluding), targets, broadcast, peers.size, now())
+        post(delay) { fireRelays() }
+    }
+
+    @Synchronized
+    fun fireRelays() {
+        for (p in relays.due(now())) sendRaw(p.item.data, p.item.excluding + p.heardFrom, queue = false)
+    }
+
     @Synchronized
     fun receive(data: ByteArray, from: String, viaLink: String = "Bluetooth") {
         val packet = Packet.parse(data) ?: return
-        val d = engine.handleIncoming(packet, from, now())
-        if (d.isDuplicate) return
-        d.forward?.let { sendRaw(it, d.forwardExcluding, queue = false) }
+        val d = engine.handleIncoming(packet, from, now(), link?.linkedPeers?.size ?: 0)
+        if (d.isDuplicate) { packet.id?.let { relays.heardDuplicate(it, from) }; return }
+        d.forward?.let { scheduleRelay(packet.id ?: "", it, d.forwardExcluding, packet.destination == null) }
         val delivered = d.deliver?.message ?: return
         val message = delivered.copy(hops = d.deliverHops)
         when (message.kind) {

@@ -53,6 +53,7 @@ runBLETests()
 runBLEHandshakeTests()
 runBLEConnectPolicyTests()
 runBLEPriorityTests()
+runRelaySchedulerTests()
 runAndroidInteropTests()
 
 print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")

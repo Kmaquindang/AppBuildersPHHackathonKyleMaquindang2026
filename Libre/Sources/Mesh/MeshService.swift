@@ -261,6 +261,17 @@ final class MeshService: ObservableObject {
 
     private let engine: RelayEngine
     private var transport: LinkHub?
+
+    /// A relay waiting for its jitter delay (RelayScheduler). `excluding` is the hop path.
+    private struct RelayJob: Sendable {
+        enum Kind: Sendable { case sealed(foreign: Bool, transient: Bool, lane: BLELane?), clear, opaque(Data) }
+        var message: MeshMessage
+        var excluding: Set<String>
+        var kind: Kind
+    }
+    private var relays = RelayScheduler<RelayJob>()
+    /// Relays cancelled because every neighbor (or enough of a crowd) already had the packet.
+    private(set) var relaysSaved = 0
     /// Which radio the packet being handled arrived on (set around receive()).
     private var receivingLink: LinkKind?
     private var sentAsks: [UUID: Date] = [:]
@@ -2180,13 +2191,17 @@ final class MeshService: ObservableObject {
             return
         }
 
-        let decision = engine.handleIncoming(message, from: sender)
-        if decision.isDuplicate { return }
+        let decision = engine.handleIncoming(message, from: sender, links: transport?.connectedPeerNames.count ?? 0)
+        if decision.isDuplicate {
+            // A neighbor sent us a copy: it has it, so our pending relay may not be needed.
+            if relays.heardDuplicate(message.id, from: sender) { relaysSaved += 1 }
+            return
+        }
 
         // Clear signals (room beacons, AI status): relayed with their short ttl, never queued.
         if message.kind == .beacon || message.kind == .aiStatus {
             if let forward = decision.forward {
-                sendClearForward(forward, excluding: decision.forwardExcluding)
+                scheduleRelay(RelayJob(message: forward, excluding: decision.forwardExcluding, kind: .clear))
             }
             if let d = decision.deliver { handleClearSignal(d) }
             return
@@ -2204,8 +2219,8 @@ final class MeshService: ObservableObject {
         }
         let transient = opened.map { $0.kind == .chunk || $0.kind == .mediaNack } ?? false
         if let forward = decision.forward {
-            transmit(forward, excluding: decision.forwardExcluding, foreign: notMine, queueIfUnsent: !transient,
-                     lane: opened.map { BLELane.of(kind: $0.kind, bytes: 0) })
+            scheduleRelay(RelayJob(message: forward, excluding: decision.forwardExcluding,
+                                   kind: .sealed(foreign: notMine, transient: transient, lane: opened.map { BLELane.of(kind: $0.kind, bytes: 0) })))
             relayedCount += 1
             if packetRoom == nil && message.kind == .sealed { foreignRelayedCount += 1 }
         }
@@ -2234,6 +2249,34 @@ final class MeshService: ObservableObject {
             return
         }
         handleDelivered(delivered, room: roomID)
+    }
+
+    /// Waits a short random time before relaying (RelayScheduler), so a neighbor's copy can make
+    /// ours unnecessary. With no neighbor to send to, it goes now (and parks in the outbox).
+    private func scheduleRelay(_ job: RelayJob) {
+        let peers = Set(transport?.connectedPeerNames ?? []).subtracting(blocked)
+        let targets = peers.subtracting(job.excluding)
+        guard !targets.isEmpty else { runRelay(job, alsoExcluding: []); return }
+        let delay = relays.schedule(job.message.id, item: job, targets: targets, broadcast: job.message.isBroadcast, links: peers.count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated { self?.fireRelays() }
+        }
+    }
+
+    private func fireRelays() {
+        for p in relays.due() { runRelay(p.item, alsoExcluding: p.heardFrom) }
+    }
+
+    private func runRelay(_ job: RelayJob, alsoExcluding heard: Set<String>) {
+        let excluding = job.excluding.union(heard)
+        switch job.kind {
+        case .sealed(let foreign, let transient, let lane):
+            transmit(job.message, excluding: excluding, foreign: foreign, queueIfUnsent: !transient, lane: lane)
+        case .clear:
+            sendClearForward(job.message, excluding: excluding)
+        case .opaque(let data):
+            if let transport, !transport.send(data, excluding: excluding).isEmpty { relayedCount += 1 }
+        }
     }
 
     /// Relays a beacon or AI status without sealing (they are clear by design).
@@ -2344,11 +2387,13 @@ final class MeshService: ObservableObject {
 
     /// A packet from a newer Pasa (or an unknown kind): pass it on untouched, never show it.
     private func relayOpaque(_ packet: OpaquePacket, from sender: String) {
-        let decision = engine.handleIncoming(packet.envelope, from: sender)
-        if decision.isDuplicate { return }
-        if let forward = decision.forward, let data = packet.rewritten(ttl: forward.ttl, hops: forward.hops),
-           let transport, !transport.send(data, excluding: decision.forwardExcluding).isEmpty {
-            relayedCount += 1
+        let decision = engine.handleIncoming(packet.envelope, from: sender, links: transport?.connectedPeerNames.count ?? 0)
+        if decision.isDuplicate {
+            if relays.heardDuplicate(packet.envelope.id, from: sender) { relaysSaved += 1 }
+            return
+        }
+        if let forward = decision.forward, let data = packet.rewritten(ttl: forward.ttl, hops: forward.hops) {
+            scheduleRelay(RelayJob(message: forward, excluding: decision.forwardExcluding, kind: .opaque(data)))
         }
         lastProblem = "\(label(for: packet.envelope.origin)) runs a newer Libre (format v\(packet.version)). Its messages are passed on but cannot be shown here. Update Libre on this device."
     }
