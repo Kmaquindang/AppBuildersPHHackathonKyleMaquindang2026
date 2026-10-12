@@ -171,11 +171,13 @@ fun MainScreen(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
 fun ChatPane(app: LibreApp) {
     val entries by app.mesh.entries.collectAsState()
     val waiting by app.mesh.waiting.collectAsState()
+    val partials by app.mesh.partials.collectAsState()
     var text by remember { mutableStateOf("") }
     var details by remember { mutableStateOf<Entry?>(null) }
     var doc by remember { mutableStateOf<DocChip?>(null) }
     val list = rememberLazyListState()
     LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.animateScrollToItem(entries.size - 1) }
+    LaunchedEffect(partials) { if (partials.isNotEmpty()) list.scrollToItem(maxOf(0, list.layoutInfo.totalItemsCount - 1)) }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp), state = list) {
             if (entries.isEmpty()) item {
@@ -183,7 +185,9 @@ fun ChatPane(app: LibreApp) {
                     Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             items(entries, key = { it.id }) { e -> Bubble(e, onDetails = { details = e }, onDoc = { doc = it }) }
-            if (waiting.isNotEmpty()) item {
+            // Streamed answers (issue #2): the text so far, replaced by the whole answer when it arrives.
+            items(partials, key = { "partial-" + it.askId }) { p -> PartialBubble(p.text) }
+            if (waiting.isNotEmpty() && partials.isEmpty()) item {
                 Text("Libre is thinking...", Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -204,6 +208,19 @@ fun ChatPane(app: LibreApp) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/** An answer still being written: Libre's bubble with the text so far. Wraps, never cut off. */
+@Composable
+fun PartialBubble(text: String) {
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalAlignment = Alignment.Start) {
+        Text("Libre is writing", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp, bottom = 2.dp))
+        Text(text, color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.widthIn(max = 300.dp).background(if (dark) LibreColors.IncomingDark else LibreColors.Incoming, RoundedCornerShape(18.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp))
+    }
+}
+
 @Composable
 fun Bubble(e: Entry, onDetails: () -> Unit, onDoc: (DocChip) -> Unit) {
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
