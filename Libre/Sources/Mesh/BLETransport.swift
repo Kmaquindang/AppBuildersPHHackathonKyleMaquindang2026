@@ -64,6 +64,9 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private var serviceAdded = false
     private var links: [String: Link] = [:]   // "c-" + peripheral id or "p-" + central id
     private var pending: [UUID: CBPeripheral] = [:]   // connecting as central
+    private var heard: [UUID: CBPeripheral] = [:]     // scanned, waiting for a connect slot
+    private var policy: BLEConnectPolicy
+    private var tickTimer: DispatchSourceTimer?
     private var dropped: [UUID: String] = [:]          // central links dropped by the tie-break (peripheral id -> peer key id)
     private var book: BLEPeerBook
     private let isHub: Bool
@@ -89,6 +92,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         var b = BLEPeerBook(identity: identity)
         _ = b.setBlocked(blocked)
         self.book = b
+        self.policy = BLEConnectPolicy(config: isHub ? .hub : .phone)
         super.init()
     }
 
@@ -107,6 +111,12 @@ final class BLETransport: NSObject, @unchecked Sendable {
             timer.setEventHandler { [weak self] in self?.rescan() }
             timer.resume()
             rescanTimer = timer
+            // Connect queue: time out slow connects and start the next ones.
+            let tick = DispatchSource.makeTimerSource(queue: queue)
+            tick.schedule(deadline: .now() + 2, repeating: 2)
+            tick.setEventHandler { [weak self] in self?.connectTick() }
+            tick.resume()
+            tickTimer = tick
         }
     }
 
@@ -116,6 +126,8 @@ final class BLETransport: NSObject, @unchecked Sendable {
             running = false
             rescanTimer?.cancel()
             rescanTimer = nil
+            tickTimer?.cancel()
+            tickTimer = nil
             centralManager?.stopScan()
             for link in links.values { if let p = link.peripheral { centralManager?.cancelPeripheralConnection(p) } }
             for p in pending.values { centralManager?.cancelPeripheralConnection(p) }
@@ -124,8 +136,10 @@ final class BLETransport: NSObject, @unchecked Sendable {
             let names = Set(links.values.compactMap { $0.name })
             links.removeAll()
             pending.removeAll()
+            heard.removeAll()
             dropped.removeAll()
             book.reset()
+            policy.reset()
             serviceAdded = false
             centralManager = nil
             peripheralManager = nil
@@ -265,7 +279,12 @@ final class BLETransport: NSObject, @unchecked Sendable {
             }
         case .proof:
             switch book.received(proof: done.data, on: link.id) {
-            case .verified(let name, let keyID, let newPeer, let dropLink):
+            case .verified(let name, let keyID, let newPeer, let dropLink, let replaced):
+                if let replaced, links[replaced] != nil {
+                    note("BLE \(name) came back on a new link; closing the old one")
+                    drop(replaced)
+                }
+                if let p = link.peripheral { policy.verified(p.identifier.uuidString) }
                 verified(link, name: name, keyID: keyID, newPeer: newPeer, dropLink: dropLink)
             case .rejected(let why):
                 note("BLE proof refused role=\(link.role.rawValue): \(why)")
@@ -297,6 +316,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         if let dropID = dropLink, let central = links[dropID], let p = central.peripheral {
             // One link per pair: the device whose key sorts last drops the link it opened.
             dropped[p.identifier] = keyID
+            policy.exclude(p.identifier.uuidString)
             links.removeValue(forKey: dropID)
             reassembler.reset(link: dropID)
             lock.lock(); namedLinks[name] = book.linkIDs(forName: name); lock.unlock()
@@ -326,7 +346,12 @@ final class BLETransport: NSObject, @unchecked Sendable {
         // The peer's link to us died: reconnect the one we dropped in the tie-break.
         if link.role == .peripheral, let (pid, _) = dropped.first(where: { $0.value == gone.keyID }) {
             dropped.removeValue(forKey: pid)
-            if let p = centralManager?.retrievePeripherals(withIdentifiers: [pid]).first { connect(p) }
+            policy.include(pid.uuidString)
+            if let p = centralManager?.retrievePeripherals(withIdentifiers: [pid]).first {
+                heard[pid] = p
+                policy.discovered(pid.uuidString, rssi: 127)
+                startConnects()
+            }
         }
         if !still { onEvent(.state(name, .disconnected)) }
     }
@@ -356,10 +381,24 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private func ck(_ p: CBPeripheral) -> String { "c-" + p.identifier.uuidString }
     private func pk(_ c: CBCentral) -> String { "p-" + c.identifier.uuidString }
 
-    private func connect(_ p: CBPeripheral) {
-        guard let c = centralManager, pending[p.identifier] == nil, links[ck(p)] == nil else { return }
-        pending[p.identifier] = p
-        c.connect(p, options: nil)
+    /// Starts the connects the policy allows now (cap, signal floor, strongest first, backoff).
+    private func startConnects() {
+        guard running, let c = centralManager, c.state == .poweredOn else { return }
+        for id in policy.next(linked: links.count) {
+            guard let uuid = UUID(uuidString: id), let p = heard[uuid] ?? pending[uuid] else { policy.disconnected(id); continue }
+            guard links[ck(p)] == nil else { policy.connected(id); continue }
+            pending[uuid] = p
+            c.connect(p, options: nil)
+        }
+    }
+
+    private func connectTick() {
+        for id in policy.timedOut() {
+            guard let uuid = UUID(uuidString: id), let p = pending.removeValue(forKey: uuid) else { continue }
+            centralManager?.cancelPeripheralConnection(p)
+            note("BLE connect timed out; backing off")
+        }
+        startConnects()
     }
 
     private func setRadio(_ s: String) {
@@ -388,21 +427,28 @@ extension BLETransport: CBCentralManagerDelegate, CBPeripheralDelegate {
         guard central.state == .poweredOn else {
             for id in Array(links.keys) where links[id]?.role == .central { closed(id) }
             pending.removeAll()
+            heard.removeAll()
+            policy.reset()
             return
         }
         central.scanForPeripherals(withServices: [BLETransport.serviceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard dropped[peripheral.identifier] == nil else { return }
-        if pending[peripheral.identifier] == nil && links[ck(peripheral)] == nil {
-            note("BLE found a Libre device rssi=\(RSSI) after_start_s=\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))")
+        guard dropped[peripheral.identifier] == nil, links[ck(peripheral)] == nil else { return }
+        if policy.discovered(peripheral.identifier.uuidString, rssi: RSSI.intValue) {
+            if heard[peripheral.identifier] == nil {
+                note("BLE found a Libre device rssi=\(RSSI) after_start_s=\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))")
+            }
+            heard[peripheral.identifier] = peripheral
+            startConnects()
         }
-        connect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         pending.removeValue(forKey: peripheral.identifier)
+        heard.removeValue(forKey: peripheral.identifier)
+        policy.connected(peripheral.identifier.uuidString)
         let link = Link(id: ck(peripheral), role: .central)
         link.peripheral = peripheral
         links[ck(peripheral)] = link
@@ -412,14 +458,22 @@ extension BLETransport: CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         pending.removeValue(forKey: peripheral.identifier)
+        let wait = policy.failed(peripheral.identifier.uuidString, .other)
+        note("BLE connect failed; retry in \(Int(wait)) s")
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         pending.removeValue(forKey: peripheral.identifier)
         let wasLinked = links[ck(peripheral)] != nil
         closed(ck(peripheral))
-        // Out of range or the app went away: ask again; iOS completes it when the peer is back.
-        if wasLinked, running, dropped[peripheral.identifier] == nil { connect(peripheral) }
+        policy.disconnected(peripheral.identifier.uuidString)
+        // Out of range or the app went away: queue it again; the next scan result or the
+        // connect queue brings it back (with backoff if it keeps failing).
+        if wasLinked, running, dropped[peripheral.identifier] == nil {
+            heard[peripheral.identifier] = peripheral
+            policy.discovered(peripheral.identifier.uuidString, rssi: 127)
+            startConnects()
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
