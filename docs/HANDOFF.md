@@ -29,7 +29,7 @@ An internal project: an offline team chat that runs device to device (no interne
 - **Tested on real devices (Mac plus two iPhones, Oct 9):** Wi-Fi mesh, 2-hop relay (rule in 522 ms), `@libre` answers over 2 hops, rooms, AI features. Benchmark on an M3 16 GB with qwen3:8b: best 19/20, median about 2.6 s, about 16 to 18 tok/s (see docs/benchmarks). Knowledge QA 6/6 synthetic questions. Browser gateway checked with curl and headless Chrome only.
 - **Failed on device:** Bluetooth only (Wi-Fi off), Oct 11, before the Bluetooth link existed.
 - **Unit tested only, never on a device:** the whole Bluetooth stack (signed hello, caps, lanes, relay jitter, advertiser watch, link status UI), all Bluetooth speeds, the Android app, background behavior, battery use, voice transcription end to end, media transfer speeds, long-conversation compaction.
-- **Known misses:** benchmark #8 (English question misses a Tagalog-titled rule, cross-language retrieval); Tagalog sometimes answered in Cebuano.
+- **Known misses:** Tagalog sometimes answered in Cebuano (issue #11). Benchmark #8 (cross-language retrieval) fixed Oct 12 with rule glosses: 20/20 in two runs (docs/benchmarks/benchmark-2026-10-12-1754.md and -1758.md).
 
 ## Rules for anyone working on Libre
 - **Never copy bitchat code.** bitchat for iOS is public domain, but bitchat-android is GPL v3; copying or closely porting it would force Libre's Android app under GPL. Ideas from their docs only. Write our own code and say "our own design" in new file headers.

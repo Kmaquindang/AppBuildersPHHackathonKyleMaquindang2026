@@ -62,6 +62,7 @@ runBLETrustTests()
 runPeerSyncTests()
 runBatteryLogTests()
 runModerationTests()
+await runRuleGlossTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 

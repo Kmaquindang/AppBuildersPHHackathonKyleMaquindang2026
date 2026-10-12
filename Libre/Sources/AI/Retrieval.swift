@@ -89,12 +89,17 @@ public enum KnowledgeRetriever {
         return total
     }
 
+    /// - Parameter glosses: rule id -> the local model's short English and Tagalog wording of the
+    ///   rule (RuleGlosser, issue #8), so a question in one language finds a rule written in
+    ///   another. Its words count like body words: a lone shared word stays a weak match (a gloss
+    ///   counted like a title made "foreman" strong and broke benchmark #19 in two runs, Oct 12).
     public static func select(question: String, rules allRules: [RuleEntry], notes: [Note],
                               maxRules: Int = 8, maxNotes: Int = 3,
-                              budgetTokens: Int = PromptBudget.knowledgeTokens) -> Selection {
+                              budgetTokens: Int = PromptBudget.knowledgeTokens,
+                              glosses: [UUID: String] = [:]) -> Selection {
         let rules = allRules.filter { !$0.isRetired }
         let query = terms(question)
-        let ruleDocs = rules.map { (terms($0.title), terms($0.body)) }
+        let ruleDocs = rules.map { (terms($0.title), terms($0.body) + terms(glosses[$0.id] ?? "")) }
         let noteDocs = notes.map { (terms($0.title), terms($0.summary + " " + $0.decisions.joined(separator: " "))) }
         var df: [String: Int] = [:]
         for doc in ruleDocs + noteDocs { for t in Set(doc.0 + doc.1) { df[t, default: 0] += 1 } }
