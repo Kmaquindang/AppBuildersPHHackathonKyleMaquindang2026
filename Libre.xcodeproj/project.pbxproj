@@ -88,6 +88,7 @@
 		5C7A6DDE45A4253B435D4C19 /* ExecutiveAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 737A3FE67450D62B7A0092EC /* ExecutiveAssistant.swift */; };
 		5FA6165B0DC52B836D0566C3 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB350FB658F2EBFC27F077E5 /* TasksView.swift */; };
 		613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */; };
+		7A3C58BE9A1AF348B0B8BDE1 /* RuleGlosser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B9374F9B3D36D8EA68FEB1 /* RuleGlosser.swift */; };
 		630F9BF63AE308FFE4AB9D7B /* PeerStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5443A0BEB0DA4E043F3E9A97 /* PeerStripView.swift */; };
 		64F48D4AA5857840CAD71DDF /* Timeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C632BFB760E3187EF396C9B /* Timeline.swift */; };
 		D8EE56D8CEC66DAC00C32A76 /* BLEFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */; };
@@ -171,6 +172,7 @@
 		8CF7B0FE975619DE4B515B7B /* KnowledgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */; };
 		2E84A0E277444B77776C9B07 /* SnapshotRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */; };
 		DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */; };
+		A303F6B96B4A578A54D78614 /* RuleGlosser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B9374F9B3D36D8EA68FEB1 /* RuleGlosser.swift */; };
 		E026911E7F1970D6B7261EC7 /* AIResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE00B82803B5BC7E8189CB /* AIResponder.swift */; };
 		EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB350FB658F2EBFC27F077E5 /* TasksView.swift */; };
 		EC1F0F60699E3B51F294312E /* RelayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */; };
@@ -228,6 +230,7 @@
 		B3316B989EEF36FD80DA1993 /* KnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeView.swift; sourceTree = "<group>"; };
 		7088E974F7CA0C9E4B2F6D20 /* SnapshotRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotRunner.swift; sourceTree = "<group>"; };
 		56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
+		77B9374F9B3D36D8EA68FEB1 /* RuleGlosser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuleGlosser.swift; sourceTree = "<group>"; };
 		5AFE00B82803B5BC7E8189CB /* AIResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIResponder.swift; sourceTree = "<group>"; };
 		5B9288DEC8E589C86F79C39E /* Info-iOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iOS.plist"; sourceTree = "<group>"; };
 		657DCA9C01318048A5A2BAED /* SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SETUP.md; sourceTree = "<group>"; };
@@ -440,6 +443,7 @@
 				79D512A643AFFFF7957CC39D /* CitationGuard.swift */,
 				E8669A129346743B9AEBA225 /* AnswerStyle.swift */,
 				56C6EC7738B8D8B0130B3459 /* OllamaClient.swift */,
+				77B9374F9B3D36D8EA68FEB1 /* RuleGlosser.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -602,6 +606,7 @@
 				4B049D31AF166999BAA8E0C9 /* BLETransport.swift in Sources */,
 				C1F5594115CCD59706B4BDA6 /* NameMatcher.swift in Sources */,
 				613752DA5F8B7DC75CE07AE6 /* OllamaClient.swift in Sources */,
+				7A3C58BE9A1AF348B0B8BDE1 /* RuleGlosser.swift in Sources */,
 				FAC18A04EE738239F7B5CBFA /* OrgMemory.swift in Sources */,
 				5A450D0E7537FE86BF65DB46 /* OrgModels.swift in Sources */,
 				7BC8C733359CC8858ABF1240 /* LibraryModels.swift in Sources */,
@@ -693,6 +698,7 @@
 				ACCBD3855E844C07981BFFD4 /* BLETransport.swift in Sources */,
 				A6576C652F51E68A02794362 /* NameMatcher.swift in Sources */,
 				DAA60D3698509F9FE6D6F445 /* OllamaClient.swift in Sources */,
+				A303F6B96B4A578A54D78614 /* RuleGlosser.swift in Sources */,
 				CF76773ED37D75F5D75C8358 /* OrgMemory.swift in Sources */,
 				5A315A6B276143E804C4995A /* OrgModels.swift in Sources */,
 				F2F9901F857E5BDC755381E6 /* LibraryModels.swift in Sources */,

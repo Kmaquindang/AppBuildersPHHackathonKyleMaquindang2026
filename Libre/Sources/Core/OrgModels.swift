@@ -216,6 +216,10 @@ public struct OrgSnapshot: Codable, Hashable, Sendable {
     public var thread: [ThreadTurn]? = nil
     /// AI Mac only: rolling "room so far" summary of the oldest thread turns.
     public var roomSummary: RoomSummary? = nil
+    /// AI Mac only: short English and Tagalog wording of each rule, made by the local model when
+    /// the rule is saved (RuleGlosser), so a question in one language finds a rule written in
+    /// another (issue #8). Keyed by "<rule id>|v<version>"; never sent to phones.
+    public var ruleGlosses: [String: String]? = nil
 
     public init() {}
 

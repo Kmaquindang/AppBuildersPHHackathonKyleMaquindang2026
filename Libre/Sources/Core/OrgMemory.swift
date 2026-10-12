@@ -96,6 +96,30 @@ public final class OrgMemory {
 
     // MARK: Rules
 
+    // MARK: Rule glosses (cross-language retrieval, issue #8)
+
+    static func glossKey(_ rule: RuleEntry) -> String { "\(rule.id.uuidString)|v\(rule.version)" }
+
+    /// Gloss of the rule's current version, if the local model made one.
+    public func gloss(for rule: RuleEntry) -> String? { snapshot.ruleGlosses?[OrgMemory.glossKey(rule)] }
+
+    /// Rule id -> gloss of its current version, for retrieval.
+    public var glossMap: [UUID: String] {
+        Dictionary(uniqueKeysWithValues: rules.compactMap { r in gloss(for: r).map { (r.id, $0) } })
+    }
+
+    /// Rules in force with no gloss for their current version yet.
+    public var rulesNeedingGloss: [RuleEntry] { rules.filter { gloss(for: $0) == nil } }
+
+    /// Stores a gloss and drops glosses of versions and rules that no longer exist.
+    public func setGloss(_ text: String, for rule: RuleEntry) {
+        var glosses = snapshot.ruleGlosses ?? [:]
+        glosses[OrgMemory.glossKey(rule)] = text
+        let live = Set(rules.map(OrgMemory.glossKey))
+        snapshot.ruleGlosses = glosses.filter { live.contains($0.key) }
+        save()
+    }
+
     /// Rules and skills in force. Tombstones of deleted rules are left out.
     public var rules: [RuleEntry] { snapshot.activeRules }
     /// Everything, tombstones included. Used by sync-on-link so stale caches learn about deletions.
