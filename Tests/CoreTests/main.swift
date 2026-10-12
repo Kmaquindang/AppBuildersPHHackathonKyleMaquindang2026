@@ -59,6 +59,7 @@ runLinkStatusWordsTests()
 runAndroidInteropTests()
 runBLERestoreTests()
 runPeerSyncTests()
+runBatteryLogTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 

@@ -15,6 +15,9 @@
 
 import Foundation
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 #if os(macOS)
 import AppKit
 #endif
@@ -293,6 +296,10 @@ final class MeshService: ObservableObject {
     private var housekeeping: Timer?
     private var savePending = false
     private var lastBackfillRequest = Date.distantPast
+    /// Device tests (issue #7): last battery line, and the synthetic chat timer (debug builds).
+    private var lastBatteryLog: Date?
+    private var syntheticTimer: Timer?
+    private var syntheticCount = 0
     /// Phone-to-phone sync (PeerSync): when each peer was last asked, and last answered.
     private var peerSyncAsked: [String: Date] = [:]
     private var peerSyncAnswered: [String: Date] = [:]
@@ -831,6 +838,12 @@ final class MeshService: ObservableObject {
         transport = newTransport
         newTransport.start()
         startHousekeeping()
+        #if DEBUG
+        // Battery runs (issue #7): open -a Libre --args -LibreSyntheticChatEvery 60 makes this
+        // device send one synthetic team chat every 60 s. Debug builds only.
+        let every = UserDefaults.standard.double(forKey: "LibreSyntheticChatEvery")
+        if every >= 5 { startSyntheticChat(every: every) }
+        #endif
         #if os(macOS)
         updateAwakeActivity()
         startOllamaWatch()
@@ -875,6 +888,9 @@ final class MeshService: ObservableObject {
 
     /// App came back to the foreground: restart discovery, send what is queued, catch up.
     func appBecameActive() {
+        #if os(iOS)
+        logBattery(force: true)
+        #endif
         // macOS reports "active" every time the window gets focus: never restart a running
         // browser for that. iOS suspends Multipeer in the background, so after real time away a
         // (debounced) restart is asked for; otherwise found peers are only re-invited.
@@ -897,6 +913,7 @@ final class MeshService: ObservableObject {
     func appWentToBackground() {
         #if os(iOS)
         backgroundedAt = Date()
+        logBattery(force: true)
         #endif
         markAway()
     }
@@ -929,6 +946,7 @@ final class MeshService: ObservableObject {
         for name in stale { peerStates.removeValue(forKey: name) }
         if !engine.outbox.isEmpty && connectedCount > 0 { flushOutbox() }
         refreshWaitingAsks(now: now)
+        logBattery(now: now)
         if !answerStreams.expire(now: now).isEmpty { publishPartialAnswers() }
         sendDueNacks()
         nackAnswered = nackAnswered.filter { now.timeIntervalSince($0.value) < 60 }
@@ -2109,6 +2127,43 @@ final class MeshService: ObservableObject {
     }
 
     /// AI Mac side: send the phone what it missed, at most 200 messages, in small chunks.
+    /// Battery line for device tests (issue #7): every 5 minutes while the app runs, and on each
+    /// foreground or background change. iPhone only; numbers only.
+    private func logBattery(force: Bool = false, now: Date = Date()) {
+        #if os(iOS)
+        guard force || BatteryLog.due(last: lastBatteryLog, now: now) else { return }
+        lastBatteryLog = now
+        let device = UIDevice.current
+        device.isBatteryMonitoringEnabled = true
+        let level = device.batteryLevel
+        var info = utsname()
+        uname(&info)
+        let model = withUnsafeBytes(of: &info.machine) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+        BLETransport.appendLog(BatteryLog.line(
+            percent: level < 0 ? nil : Int((level * 100).rounded()),
+            charging: device.batteryState == .charging || device.batteryState == .full,
+            links: connectedCount, brightness: Double(UIScreen.main.brightness),
+            foreground: UIApplication.shared.applicationState == .active,
+            os: "iOS " + device.systemVersion, model: model))
+        #endif
+    }
+
+    #if DEBUG
+    private func startSyntheticChat(every: TimeInterval) {
+        syntheticTimer?.invalidate()
+        BLETransport.appendLog("SYNTH every_s=\(Int(every))")
+        syntheticTimer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.syntheticCount += 1
+                    self.send("Synthetic test message \(self.syntheticCount) (battery run, no real content)")
+                }
+            }
+        }
+    }
+    #endif
+
     /// Phones: ask a newly linked device for the active room's recent team chat this phone lacks.
     private func requestPeerSync(from device: String, now: Date = Date()) {
         guard !isAIPeer, now.timeIntervalSince(peerSyncAsked[device] ?? .distantPast) >= PeerSync.askEvery else { return }
