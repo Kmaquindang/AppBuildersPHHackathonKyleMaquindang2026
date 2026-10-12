@@ -392,6 +392,8 @@ Install (debug build):
 3. `adb install -r libre-android-debug.apk`
 4. Build it yourself: `cd android && ./gradlew assembleDebug` (JDK 17 and the Android SDK; the APK lands in `app/build/outputs/apk/debug/`). Tests: `./gradlew testDebugUnitTest`.
 
+First real-phone test: follow [docs/DEVICE_TEST_ANDROID.md](docs/DEVICE_TEST_ANDROID.md). Like the iPhone, each Bluetooth link sends one 4 KB speed probe, and the app writes link timings, probe speed and per-message lines (link, hops, round trip; never text) to logcat under the tags `LibreBLE` and `LibreMesh`. `scripts/ble_log_summary.py` reads a logcat dump. Unit tested only, not yet run on a phone.
+
 Limits: Bluetooth only (no Wi-Fi link, no browser gateway needed), works only while the app is open (no background service), cannot send photos or voice notes (received photos show as a placeholder), never an admin (cannot make rooms, admit or kick), no task editing, debug build only (not signed for the Play Store).
 
 ## Android and other phones (browser)
