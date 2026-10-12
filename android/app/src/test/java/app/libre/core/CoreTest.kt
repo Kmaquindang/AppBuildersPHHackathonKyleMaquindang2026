@@ -15,7 +15,7 @@ class CoreTest {
     @Test fun malformedFramesRefused() {
         val good = BleFrame(FrameType.DATA, 1, 0, 2, byteArrayOf(9)).encoded()
         assertNull(BleFrame.decode(good.copyOf().also { it[0] = 0 }))
-        assertNull(BleFrame.decode(good.copyOf().also { it[1] = 2 }))
+        assertNull(BleFrame.decode(good.copyOf().also { it[1] = 1 }))
         assertNull(BleFrame.decode(good.copyOf().also { it[2] = 77 }))
         assertNull(BleFrame.decode(good.copyOf().also { it[9] = 0; it[10] = 0 }))
         assertNull(BleFrame.decode(good.copyOf().also { it[8] = 2 }))
@@ -59,14 +59,6 @@ class CoreTest {
         var late: ByteArray? = null
         for (f in f3.drop(1)) r3.add(f, "L", now = 5000)?.let { late = it.data }
         assertNull("never a corrupt message after a timeout", late)
-    }
-
-    @Test fun tieBreakUsesSwiftOrdering() {
-        assertTrue(LinkRules.dropOwnCentralLink("iPhone 14", "iPhone 12", true))
-        assertFalse(LinkRules.dropOwnCentralLink("iPhone 12", "iPhone 14", true))
-        assertFalse(LinkRules.dropOwnCentralLink("iPhone 14", "iPhone 12", false))
-        assertTrue(LinkRules.swiftGreater("iPhone", "Pixel-A1".lowercase()) == ("iPhone" > "pixel-a1"))
-        assertTrue(LinkRules.swiftGreater("Pixel-A1", "MacBook Air"))
     }
 
     @Test fun relayDedupeTtlPath() {

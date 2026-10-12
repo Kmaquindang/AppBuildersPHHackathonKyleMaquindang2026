@@ -23,10 +23,10 @@ final class LinkHub: @unchecked Sendable {
     /// Packets bigger than this over Bluetooth are media chunks (photos, voice): warn they are slow.
     static let slowPacketBytes = 8 * 1024
 
-    init(displayName: String, blocked: Set<String>, onEvent: @escaping @Sendable (TransportEvent) -> Void) {
+    init(displayName: String, identity: DeviceIdentity, isHub: Bool = false, blocked: Set<String>, onEvent: @escaping @Sendable (TransportEvent) -> Void) {
         self.onEvent = onEvent
         wifi = MeshTransport(displayName: displayName, blocked: blocked) { [weak self] e in self?.handle(e, link: .wifi) }
-        bluetooth = BLETransport(displayName: displayName, blocked: blocked) { [weak self] e in self?.handle(e, link: .bluetooth) }
+        bluetooth = BLETransport(displayName: displayName, identity: identity, isHub: isHub, blocked: blocked) { [weak self] e in self?.handle(e, link: .bluetooth) }
     }
 
     // MARK: Control (main thread, like MeshTransport)

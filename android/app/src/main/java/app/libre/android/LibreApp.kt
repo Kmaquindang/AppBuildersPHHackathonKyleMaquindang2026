@@ -25,7 +25,7 @@ class LibreApp : Application() {
     /** Starts Bluetooth once onboarding is done and permissions are granted. */
     fun startBluetooth() {
         if (ble != null || !mesh.profile.value.onboarded) return
-        val t = BleTransport(this, mesh.meshName(), object : BleTransport.Events {
+        val t = BleTransport(this, mesh.meshName(), mesh.identity, object : BleTransport.Events {
             override fun linked(name: String) = this@LibreApp.run { it.peerLinked(name) }
             override fun unlinked(name: String) = this@LibreApp.run { it.peerUnlinked(name) }
             override fun received(data: ByteArray, from: String) = this@LibreApp.run { it.receive(data, from) }

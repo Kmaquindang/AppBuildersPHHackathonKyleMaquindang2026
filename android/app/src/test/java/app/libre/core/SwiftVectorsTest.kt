@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -113,6 +114,19 @@ class SwiftVectorsTest {
         // Same header and the same box, so the inner JSON Kotlin writes opens to the same message.
         assertEquals(outer.copy(sealed = null), again.copy(sealed = null))
         assertEquals(inner, RoomEnvelope.open(again, town.id, town.key))
+    }
+
+    @Test fun signedHelloFromSwiftVerifies() {
+        val h = BleHello.open(v.h("signedHello"))
+        assertNotNull("Swift signed hello verifies in Kotlin", h)
+        assertEquals("MacBook Air", h!!.name)
+        assertTrue(h.isHub)
+        assertArrayEquals(v.h("adminSignKey"), h.signKey)
+        assertArrayEquals(v.h("helloNonce"), h.nonce)
+        // The Mac's proof over the joiner's challenge.
+        assertTrue("Swift proof verifies in Kotlin", BleHello.checkProof(v.h("proofForJoiner"), h, v.h("joinerNonce"), Vectors.joiner.signKey))
+        assertFalse("proof is bound to the challenge", BleHello.checkProof(v.h("proofForJoiner"), h, ByteArray(16), Vectors.joiner.signKey))
+        assertEquals((v.v["keyGreaterAdminJoiner"] as JsonPrimitive).content.toBoolean(), BleHello.keyGreater(h.signKey, Vectors.joiner.signKey))
     }
 
     @Test fun framesMatchSwift() {
