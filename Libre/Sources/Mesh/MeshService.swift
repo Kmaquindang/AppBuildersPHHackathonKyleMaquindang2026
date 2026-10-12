@@ -101,6 +101,9 @@ final class RoomContext {
 
 @MainActor
 final class MeshService: ObservableObject {
+    /// The app's one instance (LibreApp and the iOS Bluetooth relaunch path share it).
+    static let shared = MeshService()
+
     // MARK: Published state
 
     @Published private(set) var displayName: String
