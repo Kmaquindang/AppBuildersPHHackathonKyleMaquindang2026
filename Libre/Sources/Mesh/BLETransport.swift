@@ -60,6 +60,8 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private var peripheralManager: CBPeripheralManager?
     private var characteristic: CBMutableCharacteristic?
     private var serviceAdded = false
+    /// Retries the service add and advertising if they fail or stop (AdvertiseWatch).
+    private var advertiseWatch = AdvertiseWatch()
     private var links: [String: Link] = [:]   // "c-" + peripheral id or "p-" + central id
     private var pending: [UUID: CBPeripheral] = [:]   // connecting as central
     private var heard: [UUID: CBPeripheral] = [:]     // scanned, waiting for a connect slot
@@ -91,6 +93,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         _ = b.setBlocked(blocked)
         self.book = b
         self.policy = BLEConnectPolicy(config: isHub ? .hub : .phone)
+        self.advertiseWatch = AdvertiseWatch(isHub: isHub)
         super.init()
     }
 
@@ -391,6 +394,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
     }
 
     private func connectTick() {
+        watchAdvertising()
         for id in policy.timedOut() {
             guard let uuid = UUID(uuidString: id), let p = pending.removeValue(forKey: uuid) else { continue }
             centralManager?.cancelPeripheralConnection(p)
@@ -528,6 +532,25 @@ extension BLETransport: CBPeripheralManagerDelegate {
             return
         }
         guard !serviceAdded else { return }
+        addServiceAndAdvertise(peripheral)
+    }
+
+    /// Peripheral side health: re-add the service or restart advertising when it failed or stopped.
+    func watchAdvertising() {
+        guard running, let p = peripheralManager else { return }
+        guard advertiseWatch.check(poweredOn: p.state == .poweredOn, advertising: p.isAdvertising) == .restart else { return }
+        if serviceAdded { advertiseWatch.attempted(); startAdvertising(p) } else { addServiceAndAdvertise(p) }
+    }
+
+    private func startAdvertising(_ peripheral: CBPeripheralManager) {
+        peripheral.stopAdvertising()
+        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [BLETransport.serviceUUID],
+                                     CBAdvertisementDataLocalNameKey: "Libre"])
+    }
+
+    private func addServiceAndAdvertise(_ peripheral: CBPeripheralManager) {
+        advertiseWatch.attempted()
+        peripheral.removeAllServices()
         let ch = CBMutableCharacteristic(type: BLETransport.characteristicUUID,
                                          properties: [.writeWithoutResponse, .notify],
                                          value: nil, permissions: [.writeable])
@@ -541,16 +564,16 @@ extension BLETransport: CBPeripheralManagerDelegate {
     func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
         if let error {
             serviceAdded = false
-            onEvent(.problem("Bluetooth service failed: \(error.localizedDescription)"))
+            advertiseWatch.failed()
+            onEvent(.problem("Bluetooth service failed: \(error.localizedDescription). Trying again."))
             return
         }
-        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [BLETransport.serviceUUID],
-                                     CBAdvertisementDataLocalNameKey: "Libre"])
+        startAdvertising(peripheral)
     }
 
     func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
-        if let error { onEvent(.problem("Bluetooth advertising failed: \(error.localizedDescription)")) }
-        else { note("BLE advertising as \(displayName)") }
+        if let error { advertiseWatch.failed(); onEvent(.problem("Bluetooth advertising failed: \(error.localizedDescription). Trying again.")) }
+        else { advertiseWatch.started(); note("BLE advertising as \(displayName)") }
     }
 
     func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
