@@ -122,6 +122,12 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
     /** Asks sent from here that have no answer yet (ids). */
     private val _waiting = MutableStateFlow<Set<String>>(emptySet())
     val waiting: StateFlow<Set<String>> = _waiting
+    /** When each waiting ask was sent, for the measured round trip. */
+    private val askSentAt = HashMap<String, Long>()
+    /** One line per received chat or answer for device tests (issue #1, same format as the
+     *  iPhone's ble-log.txt): link, hops, round trip, AI time. Numbers only, never text.
+     *  LibreApp sends it to logcat (tag LibreMesh). */
+    var timingLog: (String) -> Unit = {}
 
     private val engine: RelayEngine
     private val outbox = mutableListOf<Pair<ByteArray, Long>>()
@@ -246,7 +252,7 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
         val sentTo = transmit(m, room, queue = true)
         addEntry(room.id, Entry(id = m.id, kind = kind, body = text, origin = m.origin, senderName = m.senderName, createdAt = m.createdAt,
             receivedAt = now(), mine = true, hops = m.hops, link = if (sentTo.isEmpty()) null else "Bluetooth", sentTo = sentTo.sorted()))
-        if (kind == Kind.ASK) _waiting.value = _waiting.value + m.id
+        if (kind == Kind.ASK) { _waiting.value = _waiting.value + m.id; askSentAt[m.id] = now() }
         return true
     }
 
@@ -406,6 +412,14 @@ class MeshController(private val dir: File, private val now: () -> Long = { Syst
                     docRefs = m.docRefs?.map { DocChip(it.title, it.page, it.version, it.excerpt) } ?: emptyList(), noRule = m.noRule == true,
                     model = m.model ?: (m.proof?.get("model") as? JsonPrimitive)?.content, proofLine = proof, backfilled = backfilled))
                 m.replyTo?.let { _waiting.value = _waiting.value - it }
+                if (!backfilled) {
+                    val rtt = m.replyTo?.takeIf { m.kind == Kind.ANSWER }?.let { askSentAt.remove(it) }?.let { now() - it }
+                    timingLog(buildString {
+                        append("MSG ${m.kind} link=${viaLink.lowercase()} hops=${maxOf(0, m.hops.size - 1)}")
+                        rtt?.let { append(" rtt_ms=$it") }
+                        m.latencyMs?.let { append(" ai_ms=$it") }
+                    })
+                }
             }
             Kind.MEDIA -> addEntry(roomId, Entry(id = m.id, kind = m.kind, body = "Photo or voice note. Open Libre on an iPhone or Mac to see it.",
                 origin = m.origin, senderName = m.senderName, createdAt = m.createdAt, receivedAt = now(), mine = false, hops = m.hops, link = viaLink))
