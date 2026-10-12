@@ -6,8 +6,8 @@
 // (the negotiated MTU minus headers), so every encoded MeshMessage is cut into frames:
 //
 //   byte 0      magic 0x4C ("L")
-//   byte 1      version (1)
-//   byte 2      type: 0 data, 1 hello (sender's mesh name), 2 probe (speed test), 3 probe reply
+//   byte 1      version (2 since the signed hello, Oct 12, 2026)
+//   byte 2      type: 0 data, 1 signed hello (BLEHandshake), 2 probe (speed test), 3 probe reply, 4 proof
 //   bytes 3-6   message id (UInt32, big endian, per sender)
 //   bytes 7-8   chunk index (UInt16)
 //   bytes 9-10  chunk count (UInt16)
@@ -32,11 +32,12 @@ public enum BLEFrameType: UInt8, Sendable {
     case hello = 1
     case probe = 2
     case probeReply = 3
+    case proof = 4
 }
 
 public struct BLEFrame: Equatable, Sendable {
     public static let magic: UInt8 = 0x4C
-    public static let version: UInt8 = 1
+    public static let version: UInt8 = 2   // 2 = signed hello + proof (Oct 12, 2026); version 1 frames are ignored
     public static let headerSize = 11
     /// The smallest ATT payload a BLE link allows (default MTU 23 minus 3).
     public static let minimumMTU = 20
@@ -225,12 +226,6 @@ public enum LinkRouter {
         let order = ["connected", "connecting", "discovered", "disconnected"]
         let states = [a, b].compactMap { $0 }
         return states.min { (order.firstIndex(of: $0) ?? 9) < (order.firstIndex(of: $1) ?? 9) }
-    }
-
-    /// Two devices that both scan and advertise open two BLE links to each other. The device
-    /// whose name sorts last drops the link it opened as the scanner, so one link stays.
-    public static func dropOwnCentralLink(myName: String, peerName: String, alsoLinkedAsPeripheral: Bool) -> Bool {
-        alsoLinkedAsPeripheral && myName > peerName
     }
 }
 

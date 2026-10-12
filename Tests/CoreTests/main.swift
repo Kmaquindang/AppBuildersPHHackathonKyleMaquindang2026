@@ -50,6 +50,7 @@ runTownSquareTests()
 runNoAIHostTests()
 await runWebGatewayTests()
 runBLETests()
+runBLEHandshakeTests()
 runAndroidInteropTests()
 
 print("Libre core tests: \(TestCounter.passes) passed, \(TestCounter.failures) failed")

@@ -26,6 +26,8 @@ class KotlinVectorsTest {
         val epochAsk = RoomEnvelope.seal(ask, room.id, epochKey, v.v["manifestEpoch"].toString().toInt(), ByteArray(12) { (it + 1).toByte() })
         val data = ByteArray(700) { (it * 13 + 3).toByte() }
         val frames = BleChunker.frames(data, 0x01020304, 185)!!
+        val joinerHello = BleHello.make(v.joiner, "Pixel-A1", v.h("joinerNonce"))!!
+        val macHello = BleHello.open(v.h("signedHello"))!!
         return JsonObject(sortedMapOf(
             "joinRequestBlob" to JsonPrimitive(join.toJson().toString()),
             "townSealedJSON" to JsonPrimitive(String(MeshCodec.encode(sealed))),
@@ -33,6 +35,9 @@ class KotlinVectorsTest {
             "epochKeyUsed" to JsonPrimitive(v.s("epochKey")),
             "frames" to JsonArray(frames.map { JsonPrimitive(Bytes.hex(it)) }),
             "framesData" to JsonPrimitive(Bytes.hex(data)),
+            "signedHello" to JsonPrimitive(Bytes.hex(joinerHello)),
+            "proofForAdmin" to JsonPrimitive(Bytes.hex(BleHello.proof(v.joiner, macHello))),
+            "adminNonce" to JsonPrimitive(v.s("helloNonce")),
         ))
     }
 

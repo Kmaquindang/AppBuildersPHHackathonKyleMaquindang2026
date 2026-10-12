@@ -4,11 +4,12 @@
 // - GATT server (peripheral): advertises the Libre service UUID with one characteristic
 //   (write without response + notify, plus the standard CCCD so centrals can subscribe).
 // - GATT client (central): scans for the service, connects, asks for MTU 517, subscribes, writes.
-// After a link is ready each side sends a hello frame with its mesh name; data frames carry the
+// After a link is ready each side sends a signed hello (key, challenge, mesh name) and answers the
+// other side's challenge with a proof (BleHandshake.kt); only verified links carry data. Data frames carry the
 // sealed MeshMessage bytes, cut to the link's MTU (BleChunker) and put back together per link
 // (BleReassembler). Flow control: one write in flight per client link (next one after
 // onCharacteristicWrite), one notification in flight on the server (next after onNotificationSent).
-// Two links between the same pair: the device whose name sorts last drops the one it opened.
+// Two links between the same pair: the device whose key sorts last drops the one it opened.
 // All Bluetooth state lives on one HandlerThread.
 package app.libre.android
 
@@ -40,7 +41,9 @@ import android.util.Log
 import app.libre.core.BleChunker
 import app.libre.core.BleReassembler
 import app.libre.core.FrameType
-import app.libre.core.LinkRules
+import app.libre.core.BleHello
+import app.libre.core.DeviceIdentity
+import app.libre.core.PeerBook
 import app.libre.mesh.Link
 import java.util.UUID
 
@@ -48,6 +51,7 @@ import java.util.UUID
 class BleTransport(
     private val context: Context,
     private val displayName: String,
+    identity: DeviceIdentity,
     private val events: Events,
 ) : Link {
     interface Events {
@@ -87,7 +91,8 @@ class BleTransport(
     private var notifyBusy = false
     private val links = HashMap<String, LinkState>()
     private val pending = HashSet<String>()
-    private val dropped = HashMap<String, String>()   // central device address -> peer name (tie-break)
+    private val dropped = HashMap<String, String>()   // central device address -> peer key id (tie-break)
+    private val book = PeerBook(identity)
     private val reassembler = BleReassembler()
     private val serverMtu = HashMap<String, Int>()   // MTU a central negotiated with our server, by address
     private var running = false
@@ -130,7 +135,7 @@ class BleTransport(
             server?.close()
         } catch (e: SecurityException) { }
         val names = links.values.mapNotNull { it.name }.toSet()
-        links.clear(); pending.clear(); dropped.clear(); server = null
+        links.clear(); pending.clear(); dropped.clear(); book.reset(); server = null
         named = emptyMap()
         names.forEach(events::unlinked)
     }
@@ -144,6 +149,16 @@ class BleTransport(
             } catch (e: SecurityException) { }
             handler.postDelayed(this, 25_000)
         }
+    }
+
+    /** Blocking follows the device key: a blocked device's links close and stay refused. */
+    fun setBlocked(names: Set<String>) = handler.post { for (k in book.setBlocked(names)) drop(k) }
+
+    private fun drop(key: String) {
+        val l = links[key] ?: return
+        try { l.gatt?.disconnect(); l.gatt?.close() } catch (e: SecurityException) { }
+        if (l.role == Role.PERIPHERAL) try { server?.cancelConnection(l.device) } catch (e: SecurityException) { }
+        closed(key)
     }
 
     // MARK: Send
@@ -216,50 +231,58 @@ class BleTransport(
         if (l.ready) return
         l.ready = true
         Log.i(TAG, "link open role=${l.role} mtu=${l.mtu}")
-        enqueue(l, displayName.toByteArray(Charsets.UTF_8), FrameType.HELLO)
+        val challenge = book.opened(l.key, if (l.role == Role.CENTRAL) PeerBook.Role.CENTRAL else PeerBook.Role.PERIPHERAL)
+        val hello = BleHello.make(book.identity, displayName, challenge) ?: run { Log.w(TAG, "hello not made"); return }
+        enqueue(l, hello, FrameType.HELLO)
     }
 
     private fun received(raw: ByteArray, l: LinkState) {
         val done = reassembler.add(raw, l.key) ?: return
         when (done.type) {
-            FrameType.HELLO -> {
-                val name = String(done.data, Charsets.UTF_8)
-                if (name.isEmpty() || name == displayName || l.name != null) return
-                named(l, name)
+            FrameType.HELLO -> when (val r = book.opened(l.key, if (l.role == Role.CENTRAL) PeerBook.Role.CENTRAL else PeerBook.Role.PERIPHERAL)
+                .let { book.receivedHello(done.data, l.key) }) {
+                is PeerBook.HelloResult.SendProof -> enqueue(l, r.proof, FrameType.PROOF)
+                is PeerBook.HelloResult.Rejected -> { Log.i(TAG, "hello refused: ${r.why}"); if (r.why != "second hello") drop(l.key) }
             }
-            FrameType.DATA -> l.name?.let { events.received(done.data, it) }
+            FrameType.PROOF -> when (val r = book.receivedProof(done.data, l.key)) {
+                is PeerBook.ProofResult.Verified -> verified(l, r)
+                is PeerBook.ProofResult.Rejected -> { Log.i(TAG, "proof refused: ${r.why}"); drop(l.key) }
+            }
+            FrameType.DATA -> if (book.isVerified(l.key)) l.name?.let { events.received(done.data, it) }
             FrameType.PROBE -> enqueue(l, "ok".toByteArray(), FrameType.PROBE_REPLY)
             FrameType.PROBE_REPLY -> {}
         }
     }
 
-    private fun named(l: LinkState, name: String) {
+    private fun verified(l: LinkState, r: PeerBook.ProofResult.Verified) {
+        val name = r.name
         l.name = name
-        Log.i(TAG, "hello from $name role=${l.role} mtu=${l.mtu}")
-        val central = if (l.role == Role.CENTRAL) l else links.values.firstOrNull { it.role == Role.CENTRAL && it.name == name }
-        val alsoPeripheral = links.values.any { it.role == Role.PERIPHERAL && it.name == name }
-        if (central != null && LinkRules.dropOwnCentralLink(displayName, name, alsoPeripheral)) {
-            dropped[central.device.address] = name
-            links.remove(central.key)
-            reassembler.reset(central.key)
-            named = named.toMutableMap().also { m -> m[name] = (m[name] ?: emptyList()) - central.key }
-            try { central.gatt?.disconnect(); central.gatt?.close() } catch (e: SecurityException) { }
-            if (central === l) return
+        Log.i(TAG, "verified $name key=${r.keyId.take(8)} role=${l.role} mtu=${l.mtu}")
+        val dropId = r.dropLink
+        if (dropId != null) {
+            val central = links.remove(dropId)
+            if (central != null) {
+                dropped[central.device.address] = r.keyId
+                reassembler.reset(dropId)
+                try { central.gatt?.disconnect(); central.gatt?.close() } catch (e: SecurityException) { }
+            }
         }
-        val was = !named[name].isNullOrEmpty()
-        val list = (named[name] ?: emptyList()) + l.key
-        named = named.toMutableMap().also { it[name] = if (l.role == Role.CENTRAL) listOf(l.key) + (list - l.key) else list }
-        if (!was) events.linked(name)
+        named = named.toMutableMap().also { it[name] = book.linkIds(name) }
+        if (dropId == l.key) return
+        if (r.newPeer) events.linked(name)
     }
 
     private fun closed(key: String) {
-        val l = links.remove(key) ?: return
+        val l = links.remove(key)
+        val gone = book.closed(key)
+        l ?: return
         reassembler.reset(key)
         val name = l.name ?: return
-        val rest = (named[name] ?: emptyList()) - key
+        gone ?: return
+        val rest = book.linkIds(name)
         named = named.toMutableMap().also { if (rest.isEmpty()) it.remove(name) else it[name] = rest }
-        if (l.role == Role.PERIPHERAL) dropped.entries.removeIf { it.value == name }
-        if (rest.isEmpty()) events.unlinked(name)
+        if (l.role == Role.PERIPHERAL) dropped.entries.removeIf { it.value == gone.keyId }
+        if (!gone.stillLinked) events.unlinked(name)
     }
 
     // MARK: Server (peripheral)

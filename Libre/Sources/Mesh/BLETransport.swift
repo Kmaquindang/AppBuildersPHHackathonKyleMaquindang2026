@@ -6,8 +6,8 @@
 // - Peripheral: advertises the Libre service with one characteristic (write without response +
 //   notify). Scanners write frames to it; it notifies frames back.
 // - Central: scans for the Libre service, connects, subscribes, and writes.
-// Two devices that both scan open two links to each other; after the hello the device whose
-// name sorts last drops the link it opened (LinkRouter.dropOwnCentralLink), so one stays.
+// Two devices that both scan open two links to each other; once both are verified the device
+// whose key sorts last drops the link it opened (BLEPeerBook), so one stays.
 //
 // Bytes are the same encoded, room-sealed MeshMessage packets that MeshTransport moves. They
 // are cut into frames that fit the link's largest single write (BLEChunker, Core) and put back
@@ -16,8 +16,10 @@
 // a peripheral notifies until updateValue returns false and resumes in
 // peripheralManagerIsReady(toUpdateSubscribers:).
 //
-// Peers are named by a hello frame carrying the same display name MultipeerConnectivity uses,
-// so RelayEngine, peer states and hop paths treat a peer the same on either link.
+// Peers prove who they are with a signed hello plus a proof over a fresh challenge
+// (BLEHandshake.swift). Links are keyed by the peer's device key; the mesh name from the signed
+// hello is what RelayEngine, peer states and hop paths see, the same as on Wi-Fi. Data frames
+// from a link that is not verified yet are dropped.
 // After the hello each side sends one 4 KB probe and times the reply (speed shown in logs and
 // the Connection sheet). Threading: all CoreBluetooth work runs on one serial queue; the small
 // snapshot that send() reads from the main thread sits behind a lock.
@@ -43,7 +45,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
         var peripheral: CBPeripheral?
         var central: CBCentral?
         var remote: CBCharacteristic?
-        var name: String?
+        var name: String?   // set once the link is verified
         var mtu: Int = BLEFrame.minimumMTU
         var ready = false
         var queue: [Data] = []
@@ -62,7 +64,9 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private var serviceAdded = false
     private var links: [String: Link] = [:]   // "c-" + peripheral id or "p-" + central id
     private var pending: [UUID: CBPeripheral] = [:]   // connecting as central
-    private var dropped: [UUID: String] = [:]          // central links dropped by the tie-break
+    private var dropped: [UUID: String] = [:]          // central links dropped by the tie-break (peripheral id -> peer key id)
+    private var book: BLEPeerBook
+    private let isHub: Bool
     private var reassembler = BLEReassembler()
     private var rescanTimer: DispatchSourceTimer?
     private var running = false
@@ -77,10 +81,14 @@ final class BLETransport: NSObject, @unchecked Sendable {
     private(set) var framesSent = 0
     private(set) var bytesSent = 0
 
-    init(displayName: String, blocked: Set<String>, onEvent: @escaping @Sendable (TransportEvent) -> Void) {
+    init(displayName: String, identity: DeviceIdentity, isHub: Bool = false, blocked: Set<String>, onEvent: @escaping @Sendable (TransportEvent) -> Void) {
         self.displayName = MeshTransport.sanitize(displayName)
         self.blocked = blocked
         self.onEvent = onEvent
+        self.isHub = isHub
+        var b = BLEPeerBook(identity: identity)
+        _ = b.setBlocked(blocked)
+        self.book = b
         super.init()
     }
 
@@ -117,6 +125,7 @@ final class BLETransport: NSObject, @unchecked Sendable {
             links.removeAll()
             pending.removeAll()
             dropped.removeAll()
+            book.reset()
             serviceAdded = false
             centralManager = nil
             peripheralManager = nil
@@ -136,6 +145,10 @@ final class BLETransport: NSObject, @unchecked Sendable {
 
     func setBlocked(_ names: Set<String>) {
         lock.lock(); blocked = names; lock.unlock()
+        queue.async { [self] in
+            // Blocking follows the device key; an existing link to a blocked device is closed.
+            for id in book.setBlocked(names) { drop(id) }
+        }
     }
 
     // MARK: Read from main
@@ -221,17 +234,45 @@ final class BLETransport: NSObject, @unchecked Sendable {
         guard !link.ready else { return }
         link.ready = true
         note("BLE link open role=\(link.role.rawValue) mtu=\(link.mtu)")
-        enqueue(Data(displayName.utf8), type: .hello, on: link)
+        let challenge = book.opened(link.id, role: link.role == .central ? .central : .peripheral)
+        guard let hello = BLEHello.make(identity: book.identity, name: displayName, nonce: challenge, hub: isHub) else {
+            note("BLE hello not made (name too long?)")
+            return
+        }
+        enqueue(hello, type: .hello, on: link)
+    }
+
+    /// Closes one link (blocked, refused hello, or tie-break).
+    private func drop(_ id: String) {
+        guard let link = links[id] else { return }
+        if let p = link.peripheral { centralManager?.cancelPeripheralConnection(p) }
+        closed(id)
     }
 
     private func received(_ raw: Data, on link: Link) {
         guard let done = reassembler.add(raw, link: link.id) else { return }
         switch done.type {
         case .hello:
-            guard let name = String(data: done.data, encoding: .utf8), !name.isEmpty, name != displayName else { return }
-            named(link, name)
+            // A central's first writes can arrive before its subscribe: open the book entry now
+            // (linkReady later reuses the same challenge for our hello).
+            _ = book.opened(link.id, role: link.role == .central ? .central : .peripheral)
+            switch book.received(hello: done.data, on: link.id) {
+            case .sendProof(let proof):
+                enqueue(proof, type: .proof, on: link)
+            case .rejected(let why):
+                note("BLE hello refused role=\(link.role.rawValue): \(why)")
+                if why != "second hello" { drop(link.id) }
+            }
+        case .proof:
+            switch book.received(proof: done.data, on: link.id) {
+            case .verified(let name, let keyID, let newPeer, let dropLink):
+                verified(link, name: name, keyID: keyID, newPeer: newPeer, dropLink: dropLink)
+            case .rejected(let why):
+                note("BLE proof refused role=\(link.role.rawValue): \(why)")
+                drop(link.id)
+            }
         case .data:
-            guard let name = link.name else { return }
+            guard let name = link.name, book.isVerified(link.id) else { return }
             lock.lock(); let isBlocked = blocked.contains(name); lock.unlock()
             if isBlocked { return }
             onEvent(.received(done.data, from: name, link: .bluetooth))
@@ -246,32 +287,24 @@ final class BLETransport: NSObject, @unchecked Sendable {
         }
     }
 
-    private func named(_ link: Link, _ name: String) {
-        guard link.name == nil else { return }
-        link.name = name
+    private func verified(_ link: Link, name: String, keyID: String, newPeer: Bool, dropLink: String?) {
         let secs = String(format: "%.1f", Date().timeIntervalSince(link.openedAt))
-        note("BLE hello from \(name) role=\(link.role.rawValue) mtu=\(link.mtu) after_s=\(secs)")
-        // One link per pair: the device whose name sorts last drops the link it opened.
-        let central = link.role == .central ? link : links.values.first { $0.role == .central && $0.name == name }
-        let alsoPeripheral = links.values.contains { $0.role == .peripheral && $0.name == name }
-        if let central, central.role == .central,
-           LinkRouter.dropOwnCentralLink(myName: displayName, peerName: name, alsoLinkedAsPeripheral: alsoPeripheral),
-           let p = central.peripheral {
-            dropped[p.identifier] = name
-            links.removeValue(forKey: central.id)
-            reassembler.reset(link: central.id)
-            lock.lock(); namedLinks[name]?.removeAll { $0 == central.id }; lock.unlock()
+        note("BLE verified \(name) key=\(keyID.prefix(8)) role=\(link.role.rawValue) mtu=\(link.mtu) after_s=\(secs)")
+        link.name = name
+        lock.lock()
+        namedLinks[name] = book.linkIDs(forName: name)
+        lock.unlock()
+        if let dropID = dropLink, let central = links[dropID], let p = central.peripheral {
+            // One link per pair: the device whose key sorts last drops the link it opened.
+            dropped[p.identifier] = keyID
+            links.removeValue(forKey: dropID)
+            reassembler.reset(link: dropID)
+            lock.lock(); namedLinks[name] = book.linkIDs(forName: name); lock.unlock()
             centralManager?.cancelPeripheralConnection(p)
             note("BLE kept one link to \(name)")
             if central === link { return }
         }
-        lock.lock()
-        let wasLinked = !(namedLinks[name] ?? []).isEmpty
-        namedLinks[name, default: []].append(link.id)
-        // A central link writes without waiting on the peer's notify queue: list it first.
-        if link.role == .central, let ids = namedLinks[name] { namedLinks[name] = [link.id] + ids.filter { $0 != link.id } }
-        lock.unlock()
-        if !wasLinked {
+        if newPeer {
             onEvent(.found(name))
             onEvent(.state(name, .connected))
         }
@@ -280,17 +313,18 @@ final class BLETransport: NSObject, @unchecked Sendable {
     }
 
     private func closed(_ id: String) {
-        guard let link = links.removeValue(forKey: id) else { return }
+        guard let link = links.removeValue(forKey: id) else { _ = book.closed(id); return }
         reassembler.reset(link: id)
-        guard let name = link.name else { return }
+        let gone = book.closed(id)
+        guard let name = link.name, let gone else { return }
         lock.lock()
-        namedLinks[name]?.removeAll { $0 == id }
-        let still = !(namedLinks[name] ?? []).isEmpty
-        if !still { namedLinks.removeValue(forKey: name) }
+        let ids = book.linkIDs(forName: name)
+        if ids.isEmpty { namedLinks.removeValue(forKey: name) } else { namedLinks[name] = ids }
         lock.unlock()
+        let still = gone.stillLinked
         note("BLE link closed \(name) role=\(link.role.rawValue)")
         // The peer's link to us died: reconnect the one we dropped in the tie-break.
-        if link.role == .peripheral, let (pid, _) = dropped.first(where: { $0.value == name }) {
+        if link.role == .peripheral, let (pid, _) = dropped.first(where: { $0.value == gone.keyID }) {
             dropped.removeValue(forKey: pid)
             if let p = centralManager?.retrievePeripherals(withIdentifiers: [pid]).first { connect(p) }
         }

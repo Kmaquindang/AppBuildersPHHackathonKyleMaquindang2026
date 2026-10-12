@@ -787,7 +787,7 @@ final class MeshService: ObservableObject {
 
     func start() {
         guard transport == nil else { return }
-        let newTransport = LinkHub(displayName: displayName, blocked: blocked) { [weak self] event in
+        let newTransport = LinkHub(displayName: displayName, identity: identity, isHub: isAIPeer, blocked: blocked) { [weak self] event in
             guard let service = self else { return }
             // Main queue keeps events in arrival order (unstructured Tasks do not promise that).
             DispatchQueue.main.async {

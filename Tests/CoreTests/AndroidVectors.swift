@@ -88,6 +88,19 @@ func writeAndroidVectors(to path: String) {
     }
     v["frames"] = frames
     v["hello"] = hex(BLEFrame(type: .hello, messageID: 0, index: 0, count: 1, payload: Data("iPhone 14".utf8)).encoded())
+    // 4b. Signed Bluetooth hello and proof (BLEHandshake.swift). CryptoKit signatures are not
+    // deterministic, so Kotlin verifies these rather than comparing bytes.
+    let helloNonce = bytes(16, 7)
+    let swiftHello = BLEHello.make(identity: F.adminIdentity, name: "MacBook Air", nonce: helloNonce, hub: true)!
+    v["signedHello"] = hex(swiftHello)
+    v["adminSignKey"] = hex(F.adminIdentity.signKey)
+    v["helloNonce"] = hex(helloNonce)
+    // The Mac's proof over the joiner's challenge (joiner is the Kotlin side in the tests).
+    let joinerNonce = bytes(16, 8)
+    let joinerHello = BLEHello.open(BLEHello.make(identity: F.joinerIdentity, name: "Pixel-A1", nonce: joinerNonce)!)!
+    v["joinerNonce"] = hex(joinerNonce)
+    v["proofForJoiner"] = hex(BLEHello.proof(identity: F.adminIdentity, peer: joinerHello)!)
+    v["keyGreaterAdminJoiner"] = BLEHello.keyGreater(F.adminIdentity.signKey, F.joinerIdentity.signKey)
 
     // 5. Code room governance: admin sets up, joiner asks, admin admits, then admin chats.
     var adminRoom = Room.fromCode(name: F.roomName, creator: "MacBook Air", now: F.t0)!
@@ -178,6 +191,17 @@ func runAndroidInteropTests() {
         room.gov = gov
         let inner = RoomEnvelope.open(outer, in: room)
         check(inner?.kind == .ask && inner?.destination == .role("ai"), "android interop: Kotlin @libre ask (epoch key) opens in Swift as an ask to the AI role")
+    }
+    // Signed hello and proof made in Kotlin verify in Swift.
+    if let helloHex = k["signedHello"] as? String, let proofHex = k["proofForAdmin"] as? String, let nonceHex = k["adminNonce"] as? String {
+        let h = BLEHello.open(unhex(helloHex))
+        check(h?.name == "Pixel-A1" && h?.signKey == F.joinerIdentity.signKey, "android interop: Kotlin signed Bluetooth hello verifies in Swift")
+        if let h {
+            check(BLEHello.checkProof(unhex(proofHex), peer: h, myChallenge: unhex(nonceHex), myKey: F.adminIdentity.signKey),
+                  "android interop: Kotlin proof over the Mac's challenge verifies in Swift")
+        }
+    } else {
+        check(false, "android interop: Kotlin signed hello present")
     }
     // Frames cut by Kotlin reassemble in Swift.
     if let frames = k["frames"] as? [String], let expect = k["framesData"] as? String {

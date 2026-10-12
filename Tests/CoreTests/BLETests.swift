@@ -25,7 +25,7 @@ func runBLETests() {
         let e = f.encoded()
         check(e.count == BLEFrame.headerSize + 3, "ble frame: header is 11 bytes plus payload")
         check(BLEFrame.decode(e) == f, "ble frame: encode then decode gives the same frame")
-        check(e[0] == 0x4C && e[1] == 1, "ble frame: magic L and version 1")
+        check(e[0] == 0x4C && e[1] == 2, "ble frame: magic L and version 2 (signed hello)")
         let hello = BLEFrame(type: .hello, messageID: 0, index: 0, count: 1, payload: Data("iPhone 14".utf8))
         check(BLEFrame.decode(hello.encoded())?.type == .hello, "ble frame: hello type survives")
     }
@@ -34,12 +34,12 @@ func runBLETests() {
     do {
         let good = BLEFrame(type: .data, messageID: 1, index: 0, count: 2, payload: Data([9])).encoded()
         var badMagic = good; badMagic[0] = 0x00
-        var badVersion = good; badVersion[1] = 2
+        var badVersion = good; badVersion[1] = 1
         var badType = good; badType[2] = 77
         var zeroCount = good; zeroCount[9] = 0; zeroCount[10] = 0
         var indexPast = good; indexPast[8] = 2
         check(BLEFrame.decode(badMagic) == nil, "ble frame: wrong magic refused")
-        check(BLEFrame.decode(badVersion) == nil, "ble frame: unknown version refused")
+        check(BLEFrame.decode(badVersion) == nil, "ble frame: old version 1 (unsigned hello) refused")
         check(BLEFrame.decode(badType) == nil, "ble frame: unknown type refused")
         check(BLEFrame.decode(zeroCount) == nil, "ble frame: zero chunk count refused")
         check(BLEFrame.decode(indexPast) == nil, "ble frame: index past count refused")
@@ -156,9 +156,6 @@ func runBLETests() {
         check(big.wifi == ["Mac"] && big.bluetooth.isEmpty && big.tooBigForBluetooth == ["iPhone 12"], "link router: a packet over the BLE cap is not sent over Bluetooth")
         check(LinkRouter.merged("disconnected", "connected") == "connected", "link router: connected on either link means connected")
         check(LinkRouter.merged(nil, "connecting") == "connecting" && LinkRouter.merged(nil, nil) == nil, "link router: merged state with one or no link")
-        check(LinkRouter.dropOwnCentralLink(myName: "iPhone 14", peerName: "iPhone 12", alsoLinkedAsPeripheral: true), "link router: the name that sorts last drops its scanner link")
-        check(!LinkRouter.dropOwnCentralLink(myName: "iPhone 12", peerName: "iPhone 14", alsoLinkedAsPeripheral: true), "link router: the other side keeps its link")
-        check(!LinkRouter.dropOwnCentralLink(myName: "iPhone 14", peerName: "iPhone 12", alsoLinkedAsPeripheral: false), "link router: a single link is never dropped")
         check(LinkKind.bluetooth.via == "via Bluetooth", "link kind: Details label")
     }
 

@@ -1,9 +1,9 @@
 // Framing.kt: Bluetooth LE frames, byte for byte as Libre/Sources/Core/BLEFraming.swift.
-//   byte 0 magic 0x4C, byte 1 version 1, byte 2 type (0 data, 1 hello, 2 probe, 3 probe reply),
+//   byte 0 magic 0x4C, byte 1 version 2, byte 2 type (0 data, 1 signed hello, 2 probe, 3 probe reply, 4 proof),
 //   bytes 3-6 message id (UInt32 BE), 7-8 index (UInt16 BE), 9-10 count (UInt16 BE), then payload.
 package app.libre.core
 
-enum class FrameType(val raw: Int) { DATA(0), HELLO(1), PROBE(2), PROBE_REPLY(3);
+enum class FrameType(val raw: Int) { DATA(0), HELLO(1), PROBE(2), PROBE_REPLY(3), PROOF(4);
     companion object { fun of(b: Int) = entries.firstOrNull { it.raw == b } }
 }
 
@@ -19,7 +19,7 @@ data class BleFrame(val type: FrameType, val messageId: Long, val index: Int, va
 
     companion object {
         const val MAGIC = 0x4C
-        const val VERSION = 1
+        const val VERSION = 2   // 2 = signed hello + proof (BleHandshake.kt)
         const val HEADER = 11
         const val MIN_MTU = 20
 
@@ -115,18 +115,5 @@ class BleReassembler(private val timeoutMs: Long = 60_000) {
             dropped += before - forLink.size
         }
         for (f in finished.values) f.entries.removeIf { now - it.value >= timeoutMs }
-    }
-}
-
-object LinkRules {
-    /** The device whose name sorts last drops the link it opened as the scanner (Swift String <). */
-    fun dropOwnCentralLink(myName: String, peerName: String, alsoLinkedAsPeripheral: Boolean) =
-        alsoLinkedAsPeripheral && swiftGreater(myName, peerName)
-
-    /** Swift compares Strings by Unicode scalar values (for NFC text); compare code points. */
-    fun swiftGreater(a: String, b: String): Boolean {
-        val x = a.codePoints().toArray(); val y = b.codePoints().toArray()
-        for (i in 0 until minOf(x.size, y.size)) if (x[i] != y[i]) return x[i] > y[i]
-        return x.size > y.size
     }
 }
