@@ -3,6 +3,8 @@
 // rooms (Town Square, name + code), and a Details sheet that says how a message arrived.
 package app.libre.android
 
+import androidx.compose.ui.text.style.TextAlign
+import app.libre.core.LinkStatusWords
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -117,6 +119,7 @@ fun MainScreen(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
     val rooms by mesh.rooms.collectAsState()
     val activeId by mesh.activeId.collectAsState()
     val peers by mesh.peers.collectAsState()
+    val entries by mesh.entries.collectAsState()
     val problem by mesh.problem.collectAsState()
     var tab by remember { mutableStateOf(Tab.CHAT) }
     var showRooms by remember { mutableStateOf(false) }
@@ -128,8 +131,10 @@ fun MainScreen(app: LibreApp, pendingLink: MutableState<JoinLink?>) {
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { showRooms = true }) {
                         Text(active?.displayName ?: "Libre", fontWeight = FontWeight.SemiBold)
-                        Text(if (peers.isEmpty()) "Looking for nearby devices" else "${peers.size} nearby via Bluetooth",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Wraps instead of truncating; shows what is still waiting to send.
+                        Text(LinkStatusWords.header(peers.size, entries.count { it.mine && it.sentTo.isEmpty() }),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center, softWrap = true)
                     }
                 },
                 actions = { IconButton({ showRooms = true }) { Icon(Icons.Filled.Add, "Rooms") } })
