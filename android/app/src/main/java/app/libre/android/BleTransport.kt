@@ -43,6 +43,7 @@ import android.os.ParcelUuid
 import android.util.Log
 import app.libre.core.BleChunker
 import app.libre.core.BleReassembler
+import app.libre.core.AdvertiseWatch
 import app.libre.core.ConnectPolicy
 import app.libre.core.FrameType
 import app.libre.core.Lane
@@ -99,6 +100,9 @@ class BleTransport(
     private val dropped = HashMap<String, String>()   // central device address -> peer key id (tie-break)
     private val book = PeerBook(identity)
     private val policy = ConnectPolicy(ConnectPolicy.Config.ANDROID)
+    /** Retries advertising after a failure (AdvertiseWatch); Android reports failures only by callback. */
+    private val advertiseWatch = AdvertiseWatch()
+    @Volatile private var advertising = false
     private val heard = HashMap<String, BluetoothDevice>()   // address -> device waiting for a connect slot
     private val reassembler = BleReassembler()
     private val serverMtu = HashMap<String, Int>()   // MTU a central negotiated with our server, by address
@@ -141,11 +145,15 @@ class BleTransport(
                 links.remove(l.key); pending.remove(addr)
             }
             startConnects()
+            if (server != null && advertiseWatch.check(adapter?.isEnabled == true, advertising) == AdvertiseWatch.Action.RESTART) {
+                try { advertise() } catch (e: SecurityException) { }
+            }
             handler.postDelayed(this, 2_000)
         }
     }
 
     fun stop() = handler.post {
+        advertising = false
         if (!running) return@post
         running = false
         handler.removeCallbacks(rescan)
@@ -339,12 +347,18 @@ class BleTransport(
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(true).build()
         val data = AdvertiseData.Builder().addServiceUuid(ParcelUuid(SERVICE)).setIncludeDeviceName(false).build()
+        advertiseWatch.attempted()
+        try { adv.stopAdvertising(advertiseCallback) } catch (e: IllegalStateException) { }
         adv.startAdvertising(settings, data, advertiseCallback)
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
-        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) { Log.i(TAG, "advertising as $displayName") }
-        override fun onStartFailure(errorCode: Int) { events.problem("Bluetooth advertising failed (code $errorCode).") }
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) { advertising = true; advertiseWatch.started(); Log.i(TAG, "advertising as $displayName") }
+        override fun onStartFailure(errorCode: Int) {
+            if (errorCode == ADVERTISE_FAILED_ALREADY_STARTED) { advertising = true; advertiseWatch.started(); return }
+            advertising = false; advertiseWatch.failed()
+            events.problem("Bluetooth advertising failed (code $errorCode). Trying again.")
+        }
     }
 
     private val serverCallback = object : BluetoothGattServerCallback() {
