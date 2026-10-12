@@ -1710,7 +1710,7 @@ final class MeshService: ObservableObject {
             memory.recordChat(from: label(for: displayName), text: text, at: message.createdAt, device: displayName)
         }
         if kind == .ask && isAIPeer {
-            // This Mac is the AI peer: answer locally, no mesh needed (Mac-only path for judges).
+            // This Mac is the AI peer: answer locally, no mesh needed (Mac-only path for testers).
             entry.sentTo = ["this Mac (AI peer)"]
             entries.append(entry)
             enqueueAsk(message, roomID: activeRoom.id)
