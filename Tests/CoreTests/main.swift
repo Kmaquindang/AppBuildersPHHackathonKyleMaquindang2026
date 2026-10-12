@@ -61,6 +61,7 @@ runBLERestoreTests()
 runBLETrustTests()
 runPeerSyncTests()
 runBatteryLogTests()
+runModerationTests()
 runAnswerStreamTests()
 await runOllamaStreamTests()
 
