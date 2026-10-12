@@ -1566,7 +1566,24 @@ final class MeshService: ObservableObject {
         switch WarmthPolicy.next(ready: modelWarm, busy: ollamaBusy, lastWarm: lastWarm) {
         case .check: checkOllama()
         case .refresh: refreshWarm()
-        case .wait: break
+        case .wait: glossRulesIfIdle()
+        }
+    }
+
+    private var glossing = false
+
+    /// AI Mac, while no question waits: the local model writes a short English and Tagalog
+    /// wording of up to 3 rules that have none yet (RuleGlosser, issue #8), so a question in one
+    /// language finds a rule written in another. New and edited rules get theirs within minutes.
+    private func glossRulesIfIdle() {
+        guard isAIPeer, aiEngine == .assistant, modelWarm, !ollamaBusy, !glossing, askQueue.depth == 0 else { return }
+        let mem = memory
+        guard !mem.rulesNeedingGloss.isEmpty else { return }
+        glossing = true
+        let client = makeClient()
+        Task { [weak self] in
+            await RuleGlosser.glossMissing(in: mem, llm: client, limit: 3)
+            self?.glossing = false
         }
     }
 

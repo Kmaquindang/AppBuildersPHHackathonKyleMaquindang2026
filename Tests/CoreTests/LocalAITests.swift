@@ -244,9 +244,15 @@ func runBenchmarkTests() async {
     check(!sc([], [], nil, "I don't know.", .noRule), "score: missing noRule flag fails")
     check(!sc([], [], true, "I don't know.", .noRule, intent: "add_task"), "score: routed elsewhere fails")
 
-    // Full run with a fake model. Every benchmark question is a plain question, so the intent
-    // call is skipped and each question makes exactly one model call.
-    var script: [Result<String, LLMError>] = []
+    // Full run with a fake model. First the run glosses each rule once (RuleGlosser, issue #8),
+    // as the AI Mac does when a rule is saved; the smoking rule gets an English wording. Every
+    // benchmark question is a plain question, so the intent call is skipped and each question
+    // makes exactly one model call.
+    var script: [Result<String, LLMError>] = rules.map { r in
+        r.title.hasPrefix("Bawal manigarilyo")
+            ? .success(#"{"en": "No smoking in or near the cement and paint storage", "tl": "Bawal manigarilyo malapit sa bodega"}"#)
+            : .success(#"{"en": "\#(r.title)", "tl": "\#(r.title)"}"#)
+    }
     for q in BenchmarkSuite.questions {
         check(QuestionRouter.isPlainQuestion(q.text), "benchmark question skips the intent call: \(q.text)")
         switch q.expect {
@@ -256,18 +262,18 @@ func runBenchmarkTests() async {
     }
     let fake = FakeLLM(script)
     let results = await BenchmarkSuite.run(llm: fake, model: "fake:1b")
-    // #8 (English question, Tagalog-titled rule) never reaches the model through keyword retrieval, so a
-    // citation of it cannot be real: since the QA fix (Oct 9, 9:30 PM) only rules the model was shown become chips.
-    check(results.count == 20 && results.filter { $0.question.id != 8 }.allSatisfy(\.correct) && !results[7].correct && fake.remaining == 0,
-          "benchmark run with fake model scores 19/20 (only #8, the known retrieval gap, fails)")
+    // #8 (English question, Tagalog-titled rule) used to miss: keyword retrieval never showed the rule to
+    // the model. With the rule's gloss it is shown, so its citation is real and becomes a chip.
+    check(results.count == 20 && results.allSatisfy(\.correct) && fake.remaining == 0,
+          "benchmark run with fake model scores 20/20 (#8 reaches the Tagalog rule through its gloss)")
     check(results.allSatisfy { $0.modelCalls == 1 && $0.tokensPerSecond == 50 }, "benchmark records calls (one per plain question) and speed")
-    check(results.filter { if case .cites = $0.question.expect { return true }; return false }.allSatisfy { !$0.reply.contains("[Rule") && $0.rulesUsed.count == ($0.question.id == 8 ? 0 : 1) }, "benchmark replies carry no tags; rules travel in rulesUsed")
+    check(results.filter { if case .cites = $0.question.expect { return true }; return false }.allSatisfy { !$0.reply.contains("[Rule") && $0.rulesUsed.count == 1 }, "benchmark replies carry no tags; rules travel in rulesUsed")
     let csv = BenchmarkReport.csv(results)
     check(csv.split(separator: "\n").count == 21 && csv.hasPrefix("id,language,model,expect,correct"), "benchmark CSV")
     let md = BenchmarkReport.markdown(header: .init(date: "2026-10-09", machine: "test", ollamaVersion: "0", digests: ["fake:1b": "abc"]), runs: [("fake:1b", results)])
-    check(md.contains("| fake:1b | 19/20 | 10/11 | 6/6 | 3/3 |"), "benchmark markdown summary row")
+    check(md.contains("| fake:1b | 20/20 | 11/11 | 6/6 | 3/3 |"), "benchmark markdown summary row")
     let s = BenchmarkSummary(model: "fake", results: results)
-    check(s.correct == 19 && s.byLanguage.count == 3, "benchmark summary")
+    check(s.correct == 20 && s.byLanguage.count == 3, "benchmark summary")
 }
 
 /// Chat-style answers: citation tags become chips, preambles go, plain questions skip the intent call.
