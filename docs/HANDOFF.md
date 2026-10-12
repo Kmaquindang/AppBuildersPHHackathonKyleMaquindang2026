@@ -53,3 +53,6 @@ Verdict on Oct 12: a foreground-only, unmeasured Bluetooth pipe under a Wi-Fi me
 - Oct 11: Bluetooth LE added next to Wi-Fi with the same sealed packets.
 - Oct 12: native Android app over Bluetooth only. Bluetooth-first work: signed hello (keyed by public key), connection cap and queue, priority lanes (media waits for Wi-Fi on Bluetooth-only links by default), relay jitter and duplicate cancel, advertiser watch, link status UI. Streaming answers over Bluetooth deferred (needs a protocol decision).
 - Repo is private (Kmaquindang/libre). Admin pushes to main have been used; prefer pull requests for review.
+
+## Open issues (Oct 12, 2026)
+#1 Bluetooth-only device test and measured speeds. #2 Streaming answers over Bluetooth. #3 Android real-device test. #4 Android foreground service and battery-aware scanning. #5 iOS background modes and state restoration. #6 Phone-to-phone history sync. #7 Battery measurements. #8 Benchmark miss #8. #9 Town Square moderation. #10 Voice transcription end to end and media speeds. #11 Reply language. #12 Persist known device keys. #13 Forced-relay round trip, Mac crash soak, real Android browser test.
