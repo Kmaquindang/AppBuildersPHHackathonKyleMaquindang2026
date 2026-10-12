@@ -140,7 +140,9 @@ public final class RelayEngine {
     // MARK: Incoming
 
     /// Core relay decision. `sender` is the display name of the directly connected peer it came from.
-    public func handleIncoming(_ message: MeshMessage, from sender: String, now: Date = Date()) -> RelayDecision {
+    /// `links` is how many direct links this device has: in a crowd a relayed broadcast keeps
+    /// fewer hops (RelayPolicy.forwardTTL).
+    public func handleIncoming(_ message: MeshMessage, from sender: String, now: Date = Date(), links: Int = 0) -> RelayDecision {
         if hasSeen(message.id, now: now) { return .duplicate }
         markSeen(message.id, now: now)
 
@@ -163,7 +165,7 @@ public final class RelayEngine {
         var forward: MeshMessage? = nil
         if needsToTravel && message.ttl > 1 {
             var copy = here
-            copy.ttl = message.ttl - 1
+            copy.ttl = RelayPolicy.forwardTTL(message.ttl - 1, links: links, broadcast: message.isBroadcast)
             forward = copy
         }
 

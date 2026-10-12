@@ -31,7 +31,8 @@ class RelayEngine(var selfName: String, private val seenLifetimeMs: Long = 300_0
     }
 
     @Synchronized
-    fun handleIncoming(p: Packet, sender: String, now: Long = System.currentTimeMillis()): Decision {
+    /** [links]: direct links this device has; in a crowd a relayed broadcast keeps fewer hops (RelayPolicy). */
+    fun handleIncoming(p: Packet, sender: String, now: Long = System.currentTimeMillis(), links: Int = 0): Decision {
         val dup = Decision(true, null, emptyList(), null, emptySet())
         val id = p.id ?: return dup
         if (hasSeen(id, now)) return dup
@@ -43,7 +44,7 @@ class RelayEngine(var selfName: String, private val seenLifetimeMs: Long = 300_0
         val forMe = isAddressedToMe(p)
         val ttl = p.ttl ?: 0
         val needsToTravel = p.destination == null || !forMe
-        val forward = if (needsToTravel && ttl > 1) p.rewritten(ttl - 1, hops) else null
+        val forward = if (needsToTravel && ttl > 1) p.rewritten(RelayPolicy.forwardTtl(ttl - 1, links, p.destination == null), hops) else null
         return Decision(false, if (forMe) p else null, hops, forward, hops.toSet())
     }
 

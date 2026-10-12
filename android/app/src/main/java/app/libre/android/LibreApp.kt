@@ -18,6 +18,8 @@ class LibreApp : Application() {
         super.onCreate()
         mesh = MeshController(filesDir.resolve("libre"))
         worker.scheduleWithFixedDelay({ runCatching { mesh.tick() } }, 5, 5, TimeUnit.SECONDS)
+        // Relay jitter (RelayScheduler): relays wait a few ms on the mesh thread.
+        mesh.postDelayed = { ms, block -> worker.schedule({ runCatching { block() } }, ms, TimeUnit.MILLISECONDS) }
     }
 
     fun run(block: (MeshController) -> Unit) { worker.execute { runCatching { block(mesh) } } }

@@ -125,6 +125,7 @@
 		B9DB47B44020E9CF957E89E8 /* LinkHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5C5D57E21C21698BEC8377 /* LinkHub.swift */; };
 		4B049D31AF166999BAA8E0C9 /* BLETransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6700A74783C9BE40291BD8 /* BLETransport.swift */; };
 		AD88362011456A08E76CC228 /* RelayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */; };
+		D28432AF7B1D1080C028090F /* RelayScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C1997FCF025C492CB3D5622 /* RelayScheduler.swift */; };
 		B4AD97EF952B86FB41C08179 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D22E702E09FB434DD2B72C3 /* ComposerView.swift */; };
 		B6AC3B8AA94B5FB7A1502FC4 /* AssistantPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FCCE0F059A8C72A40FAB4B /* AssistantPrompts.swift */; };
 		BA9C97588FBE1DF8D1348AA4 /* Compactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 030DCA88E0E635C2077D1DAA /* Compactor.swift */; };
@@ -159,6 +160,7 @@
 		E026911E7F1970D6B7261EC7 /* AIResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE00B82803B5BC7E8189CB /* AIResponder.swift */; };
 		EACB6168E58FEA7F0CFE0EF6 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB350FB658F2EBFC27F077E5 /* TasksView.swift */; };
 		EC1F0F60699E3B51F294312E /* RelayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */; };
+		CE4544998F70B57A776AE190 /* RelayScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C1997FCF025C492CB3D5622 /* RelayScheduler.swift */; };
 		ED0FC68D57F361B66B8E2B01 /* AIResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFE00B82803B5BC7E8189CB /* AIResponder.swift */; };
 		FAC18A04EE738239F7B5CBFA /* OrgMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A40BEF463B7C2A59CC2BDEE /* OrgMemory.swift */; };
 /* End PBXBuildFile section */
@@ -182,6 +184,7 @@
 		16F146780F3C887A53042E80 /* MeshPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPayload.swift; sourceTree = "<group>"; };
 		1C176FBE8674D50159130528 /* ChatTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineView.swift; sourceTree = "<group>"; };
 		1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayEngine.swift; sourceTree = "<group>"; };
+		0C1997FCF025C492CB3D5622 /* RelayScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayScheduler.swift; sourceTree = "<group>"; };
 		2E0E62E7D791102E2CA3E009 /* NameMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameMatcher.swift; sourceTree = "<group>"; };
 		30AE14CEF94F6031C7ECF593 /* Libre-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Libre-macOS.entitlements"; sourceTree = "<group>"; };
 		431C4A30F2DC33FD33AA66BD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -368,6 +371,7 @@
 				9CC4FDF8B8A237B5985DDBF8 /* Media.swift */,
 				623462451D13DCBF40BBB8C7 /* RoomKDF.swift */,
 				1E7B27A1DE956B3A027F4C78 /* RelayEngine.swift */,
+				0C1997FCF025C492CB3D5622 /* RelayScheduler.swift */,
 				4C632BFB760E3187EF396C9B /* Timeline.swift */,
 				C3B19CE870DF17B6ABF249F3 /* BLEFraming.swift */,
 				E4CAEBB3F4EA5C3BA77699B0 /* BLEPriority.swift */,
@@ -590,6 +594,7 @@
 				AC4447733E6A4CC6ADF44754 /* Media.swift in Sources */,
 				8230A9767A518B38A41E3398 /* RoomKDF.swift in Sources */,
 				AD88362011456A08E76CC228 /* RelayEngine.swift in Sources */,
+				D28432AF7B1D1080C028090F /* RelayScheduler.swift in Sources */,
 				7D4837C3BF810561ADD9BCF2 /* RulesView.swift in Sources */,
 				958306C2DD2E007F6F30720E /* KnowledgeView.swift in Sources */,
 				80A47A96085CBD726F4B4BB7 /* SnapshotRunner.swift in Sources */,
@@ -673,6 +678,7 @@
 				0BCE9F1471893FE817BF29D7 /* Media.swift in Sources */,
 				DFC00EAC75830B2C32923246 /* RoomKDF.swift in Sources */,
 				EC1F0F60699E3B51F294312E /* RelayEngine.swift in Sources */,
+				CE4544998F70B57A776AE190 /* RelayScheduler.swift in Sources */,
 				D9F91C4038CEB3949860EC97 /* RulesView.swift in Sources */,
 				8CF7B0FE975619DE4B515B7B /* KnowledgeView.swift in Sources */,
 				2E84A0E277444B77776C9B07 /* SnapshotRunner.swift in Sources */,
