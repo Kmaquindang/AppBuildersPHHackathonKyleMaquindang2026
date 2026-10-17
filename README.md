@@ -8,8 +8,6 @@ Libre is open source under the [MIT License](LICENSE). We share it to be transpa
 
 <p align="center"><img src="docs/images/libre-logo.png" alt="Libre logo: signal bars with a sparkle. Walang signal? Libre lang." width="560"></p>
 
-![Libre on iPhone after the UI pass](docs/screenshots/2026-10-09_2320_iphone_after_ui_pass.png)
-
 No internet. No cost. Your own knowledge.
 
 ## In one minute
@@ -275,13 +273,7 @@ Added Oct 11, 2026, so Libre still works with Wi-Fi switched off.
 - iPhone 12 (relay and ask device). App installed and running Oct 9.
 
 ## Screenshots
-From the first 3-device run on Oct 9, 2026 at about 5:23 PM PHT (MacBook Air M3 as AI laptop, iPhone 14 Pro Max, iPhone 12), while the app was called Pasa. These were taken on an early build, before the one-chat, display-name and iMessage-style changes (Oct 9, 9 PM PHT): the chat now has grouped bubbles, rule chips, typing dots and a room-name title, and the proof badge moved into the long-press Details sheet. The iPhone screens after the final UI pass (Oct 9, about 11:20 PM PHT, taken just before the rename back to Libre, so the hint text still says @pasa) are below the early run.
-
-| Mac (AI laptop) | iPhone 14 Pro Max: rule arrives over 2 hops | iPhone 12: answer from the Mac's local AI |
-|---|---|---|
-| ![Mac (AI laptop)](docs/screenshots/2026-10-09_1723_mac_ai_peer.jpg) | ![iPhone 14 Pro Max rules](docs/screenshots/2026-10-09_1723_iphone14_rules_2hop.png) | ![iPhone 12 answer](docs/screenshots/2026-10-09_1723_iphone12_answer_2hop.jpg) |
-
-![iPhone Chat, Tasks, Knowledge and Settings after the final UI pass](docs/screenshots/2026-10-09_2320_iphone_after_ui_pass.png)
+The early screenshots from the Oct 9, 2026 device runs were removed because they showed personal device and machine names. New screenshots with synthetic names will be added.
 
 ## Measured performance
 Real numbers only, from the first 3-device run on Oct 9, 2026 (about 5:23 PM PHT). Devices: MacBook Air M3 16 GB (AI laptop, Ollama), iPhone 14 Pro Max, iPhone 12. Everything offline, peer-to-peer Wi-Fi. Model times come from the Mac dashboard; the round trip is measured on the iPhone 12 with its own clock.
