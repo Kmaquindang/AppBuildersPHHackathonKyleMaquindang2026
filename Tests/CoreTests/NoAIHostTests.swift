@@ -1,4 +1,4 @@
-// NoAIHostTests.swift: the "No AI computer nearby" line (Kyle, Oct 9 2026, 10:42 PM PHT).
+// NoAIHostTests.swift: the "No AI computer nearby" line (owner, Oct 9 2026, 10:42 PM PHT).
 // Shown only from the AI status heartbeat; promises an answer only while the ask is saved.
 
 import Foundation

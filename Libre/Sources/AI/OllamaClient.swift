@@ -109,7 +109,7 @@ public struct OllamaClient: StreamingLLMClient {
     ///
     /// The warm-up asks for the SAME context size as every chat call (num_ctx 8192). Without it
     /// Ollama loads the model at its default 4096 and the next question reloads it at 8192,
-    /// which cost about 3 to 6 s on the first ask after every warm refresh (measured on Kyle's
+    /// which cost about 3 to 6 s on the first ask after every warm refresh (measured on the owner's
     /// MacBook Air M3, Oct 9 2026: chat after a plain warm-up 3973 ms with 3146 ms of load,
     /// after a matched warm-up 721 ms with 5 ms of load).
     public static let keepAlive = "60m"

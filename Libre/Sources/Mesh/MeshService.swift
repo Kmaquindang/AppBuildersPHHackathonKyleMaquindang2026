@@ -416,7 +416,7 @@ final class MeshService: ObservableObject {
         let rosterMap = (store.dictionary(forKey: Keys.roster) as? [String: String]) ?? [:]
         let savedPerson = PeopleDirectory.clean(store.string(forKey: Keys.personName) ?? "")
         #if os(macOS)
-        // Round 2: an AI Mac nobody named shows as "Kyle's Mac" (first word of the macOS user name),
+        // Round 2: an AI Mac nobody named shows as "Ana's Mac" (first word of the macOS user name),
         // not the raw computer name. Not saved, so a name typed later (or already saved) always wins.
         let person = savedPerson.isEmpty ? MacName.suggested(fullUserName: NSFullUserName(), hostName: Host.current().localizedName) : savedPerson
         #else

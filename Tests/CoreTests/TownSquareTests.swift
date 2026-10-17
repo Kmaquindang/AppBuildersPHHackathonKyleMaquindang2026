@@ -1,4 +1,4 @@
-// TownSquareTests.swift: the open room is shown as "Town Square" (Kyle, Oct 9 2026, 10:41 PM
+// TownSquareTests.swift: the open room is shown as "Town Square" (owner, Oct 9 2026, 10:41 PM
 // PHT). Display only: the internal label, key and tag stay the same for older builds.
 
 import Foundation

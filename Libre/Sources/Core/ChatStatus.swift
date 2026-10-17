@@ -35,7 +35,7 @@ public enum AskCoalescer {
 }
 
 extension AskCoalescer {
-    /// How long an answered question counts as "Answered above" (round 2, Kyle's 8:55 PM screenshot:
+    /// How long an answered question counts as "Answered above" (round 2, owner 8:55 PM screenshot:
     /// the same Christmas tree question was sent and answered twice).
     public static let answeredWindow: TimeInterval = 10 * 60
 
@@ -110,7 +110,7 @@ public enum StarterChipPolicy {
         ("My tasks", "my tasks"),
         ("Our rules", "what are our rules?"),
     ]
-    /// At most 3 chips, only in an empty chat (Kyle, Oct 9 11:03 PM: keep the screen minimal).
+    /// At most 3 chips, only in an empty chat (owner, Oct 9 11:03 PM: keep the screen minimal).
     public static let maxChips = 3
 
     public static func visible(entriesEmpty: Bool, afterOnboarding: Bool = false, canSend: Bool, typing: Bool) -> Bool {
@@ -191,7 +191,7 @@ public enum StatusWords {
         }
     }
 
-    /// Chat header subtitle: one short line ("Kyle's Mac nearby", "No one nearby").
+    /// Chat header subtitle: one short line ("Teacher's Mac nearby", "No one nearby").
     /// - Parameters:
     ///   - aiMac: name of the AI Mac serving this room, when one is heard.
     ///   - firstPeer: name of a linked device, for "Ana nearby".

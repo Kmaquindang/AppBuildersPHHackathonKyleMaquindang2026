@@ -1,4 +1,4 @@
-// LibraryTests.swift: Pasa Knowledge (room library, RAG), Kyle's 10:11 and 10:12 PM requests.
+// LibraryTests.swift: Pasa Knowledge (room library, RAG), owner 10:11 and 10:12 PM requests.
 // Chunking, BM25, hybrid merge, citations, excerpt cap, role filter, versioning, limits,
 // delete, export/import, prompt construction (injection, locked rule wins), abstain, keyword-only
 // fallback, txt/md extraction (docx and PDF on the Mac build).

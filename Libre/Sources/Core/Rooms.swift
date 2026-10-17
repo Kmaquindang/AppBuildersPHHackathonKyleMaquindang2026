@@ -72,7 +72,7 @@ public struct Room: Codable, Equatable, Identifiable, Sendable {
     public var isDefault: Bool { key == RoomCrypto.defaultKey }
     /// What people see. The open room's internal label stays "DEFAULT" (and its key and tag are
     /// unchanged), so older builds, saved chat and rules keep working; only the name shown changes
-    /// (Kyle, Oct 9 2026, 10:41 PM PHT).
+    /// (owner, Oct 9 2026, 10:41 PM PHT).
     public var displayName: String { isDefault ? Room.townSquareName : label }
     /// One line under the open room wherever it is listed or picked.
     public var subtitle: String? { isDefault ? Room.townSquareSubtitle : nil }
