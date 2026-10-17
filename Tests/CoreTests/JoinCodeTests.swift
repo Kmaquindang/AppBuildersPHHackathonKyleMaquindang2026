@@ -1,4 +1,4 @@
-// JoinCodeTests.swift: "Create your room" with a short code and a QR join link (Kyle, Oct 9, 2026,
+// JoinCodeTests.swift: "Create your room" with a short code and a QR join link (owner, Oct 9, 2026,
 // 10:17 PM PHT): code alphabet, link build and parse, expiry, code proofs, approval, rotation.
 
 import Foundation

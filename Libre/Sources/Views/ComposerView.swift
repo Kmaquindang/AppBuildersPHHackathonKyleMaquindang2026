@@ -1,5 +1,5 @@
 // ComposerView.swift
-// iMessage-style composer (round 2, Kyle's 8:55 PM screenshot):
+// iMessage-style composer (round 2, owner 8:55 PM screenshot):
 // - One "+" button on the left opens a menu: Photo, Voice note.
 // - A rounded field. Trailing inside it: the mic while the field is empty (touch and hold to
 //   record, release to send), the send arrow (arrow.up.circle.fill) as soon as there is text.

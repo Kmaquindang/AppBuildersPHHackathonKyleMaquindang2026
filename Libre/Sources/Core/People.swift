@@ -71,9 +71,9 @@ public enum MarkdownLite {
     }
 }
 
-/// Default name for an AI Mac whose owner never typed one (round 2): "Kyle's Mac" from the first
-/// word of the macOS full user name, else the computer name cleaned up ("kyles-macbook-air" ->
-/// "Kyles MacBook Air", "Kyle's MaC" -> "Kyle's Mac"). An explicitly set name always wins; the
+/// Default name for an AI Mac whose owner never typed one (round 2): "Ana's Mac" from the first
+/// word of the macOS full user name, else the computer name cleaned up ("anas-macbook-air" ->
+/// "Anas MacBook Air", "Ana's MaC" -> "Ana's Mac"). An explicitly set name always wins; the
 /// caller only uses this when the saved name is empty.
 public enum MacName {
     public static func suggested(fullUserName: String?, hostName: String?) -> String {

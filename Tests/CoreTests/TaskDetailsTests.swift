@@ -1,4 +1,4 @@
-// TaskDetailsTests.swift: task card details (Kyle, Oct 9, 2026, 9:50 PM PHT): status with Overdue,
+// TaskDetailsTests.swift: task card details (owner, Oct 9, 2026, 9:50 PM PHT): status with Overdue,
 // relative age, board order, owner or admin Done, backward-compatible decoding.
 
 import Foundation
