@@ -18,8 +18,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Use the runner's Android SDK
+      - name: Use the Android SDK preinstalled on the runner
         run: rm -f android/local.properties
       - name: Unit tests
         working-directory: android
