@@ -1,5 +1,5 @@
 // ChatTimelineView.swift
-// iMessage-style timeline (Oct 9 night redesign, after Kyle's 8:33 PM screenshot):
+// iMessage-style timeline (Oct 9 night redesign, after owner 8:33 PM screenshot):
 // - Your bubbles on the right in blue, other people on the left in gray, Pasa AI on the left in
 //   soft purple with a small sparkle avatar.
 // - Consecutive messages from one sender are grouped; other people's name shows once above their

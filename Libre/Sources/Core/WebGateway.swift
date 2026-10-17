@@ -1,5 +1,5 @@
 // WebGateway.swift
-// Pasa browser gateway (Kyle, Oct 9 2026, 10:46 PM PHT): the AI Mac serves a small web chat on the
+// Pasa browser gateway (owner, Oct 9 2026, 10:46 PM PHT): the AI Mac serves a small web chat on the
 // local network so Android phones (or any browser) can join a room. Pure Swift, tested on Linux.
 // The Mac app runs the listener (Mesh/WebGatewayServer.swift) and bridges web members into the
 // room as relayed members ("Ana (via Mac)"). This file holds everything that can be tested

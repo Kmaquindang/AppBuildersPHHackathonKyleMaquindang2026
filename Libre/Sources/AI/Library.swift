@@ -323,7 +323,7 @@ public struct LibraryHit: Equatable, Sendable {
 
 public enum LibrarySearch {
     /// Cosine at or above this counts as relevant without a shared keyword (nomic-embed-text with
-    /// the search_query / search_document prefixes). Calibrated on Kyle's Mac, Oct 9 2026 10:32 PM
+    /// the search_query / search_document prefixes). Calibrated on the owner's Mac, Oct 9 2026 10:32 PM
     /// PHT: matching passages scored 0.81 to 0.82, an unrelated field-trip question 0.61 against the
     /// best passage. At 0.60 that unrelated passage got in and the model mixed it into the answer,
     /// so the floor is 0.70.

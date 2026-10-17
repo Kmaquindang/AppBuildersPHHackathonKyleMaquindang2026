@@ -1,5 +1,5 @@
 // JoinCode.swift
-// Pasa: "Create your room" with a short code (Kyle, Oct 9, 2026, 10:17 PM PHT).
+// Pasa: "Create your room" with a short code (owner, Oct 9, 2026, 10:17 PM PHT).
 //
 // A code room is found by its NAME and entered with a short generated CODE:
 // - Room tag and base key come from the name only (HKDF of a fixed domain plus the name), so the

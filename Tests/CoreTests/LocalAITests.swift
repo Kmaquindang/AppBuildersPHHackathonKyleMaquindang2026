@@ -300,7 +300,7 @@ func runAnswerStyleTests() async {
     let fake = st("Yes, until 7 PM. [Rule: Night visits allowed v1]")
     check(fake.text == "Yes, until 7 PM." && fake.rulesUsed.isEmpty && fake.unverifiedRules == ["[Rule: Night visits allowed v1]"] && fake.noRule, "style: invented rule goes to unverifiedRules, never rulesUsed")
     let math = st("No saved team rule covers this. General advice, not a team rule: 10+69 equals 79.")
-    check(math.text == "10+69 equals 79." && math.noRule, "style: Kyle's 8:33 PM bubble loses both preambles: \(math.text)")
+    check(math.text == "10+69 equals 79." && math.noRule, "style: owner 8:33 PM bubble loses both preambles: \(math.text)")
     check(AnswerStyle.title(in: "[Rule: No site visits after 5 PM v2]") == "No site visits after 5 PM" && AnswerStyle.kind(in: "[Note: Monday huddle]") == "Note", "style: chip title and kind")
 
     // Router
@@ -375,16 +375,16 @@ func runChatLayoutTests() {
     check(TypingState.of(pending: 1, isAIPeer: false, ai: .asleep) == .note(TypingState.asleepLine) && TypingState.of(pending: 1, isAIPeer: true, ai: .unknown) == .typing, "typing: asleep line; the Mac itself types")
 
     // Header
-    check(StatusWords.subtitle(linked: 1, nearby: 1, isAIPeer: false, ai: .awake, aiMac: "Kyle's Mac", firstPeer: "Kyle's Mac") == "Kyle's Mac nearby", "header: Mac nearby")
-    check(StatusWords.subtitle(linked: 3, nearby: 3, isAIPeer: false, ai: .awake, aiMac: "Kyle's Mac", firstPeer: "Ana") == "Kyle's Mac and 2 more nearby", "header: Mac and more")
+    check(StatusWords.subtitle(linked: 1, nearby: 1, isAIPeer: false, ai: .awake, aiMac: "Teacher's Mac", firstPeer: "Teacher's Mac") == "Teacher's Mac nearby", "header: Mac nearby")
+    check(StatusWords.subtitle(linked: 3, nearby: 3, isAIPeer: false, ai: .awake, aiMac: "Teacher's Mac", firstPeer: "Ana") == "Teacher's Mac and 2 more nearby", "header: Mac and more")
     check(StatusWords.subtitle(linked: 0, nearby: 0, isAIPeer: false, ai: .unknown, aiMac: nil, firstPeer: nil) == "No one nearby", "header: no one nearby")
-    check(StatusWords.subtitle(linked: 0, nearby: 0, isAIPeer: false, ai: .asleep, aiMac: "Kyle's Mac", firstPeer: nil) == "Kyle's Mac is asleep", "header: Mac asleep")
+    check(StatusWords.subtitle(linked: 0, nearby: 0, isAIPeer: false, ai: .asleep, aiMac: "Teacher's Mac", firstPeer: nil) == "Teacher's Mac is asleep", "header: Mac asleep")
     check(StatusWords.subtitle(linked: 2, nearby: 2, isAIPeer: true, ai: .unknown, aiMac: nil, firstPeer: "Ana") == "Ana and 1 more nearby", "header: on the Mac")
     check(StatusWords.aiReady(isAIPeer: false, ai: .awake) && !StatusWords.aiReady(isAIPeer: false, ai: .asleep), "header: AI dot")
 
     // Legacy answers in history display clean.
     let legacy = AnswerStyle.display(body: "No saved team rule covers this. General advice, not a team rule: 10+69 equals 79.", rulesUsed: nil, unverified: nil)
-    check(legacy.text == "10+69 equals 79." && legacy.rulesUsed.isEmpty, "display: Kyle's old bubble shows clean")
+    check(legacy.text == "10+69 equals 79." && legacy.rulesUsed.isEmpty, "display: the old bubble shows clean")
     let legacy2 = AnswerStyle.display(body: "No. [Rule: No site visits after 5 PM v1] Also [Rule: Night v1] (unverified).", rulesUsed: nil, unverified: nil)
     check(legacy2.rulesUsed == ["[Rule: No site visits after 5 PM v1]"] && legacy2.unverifiedRules == ["[Rule: Night v1]"] && !legacy2.text.contains("["), "display: old tags become chips: \(legacy2.text)")
     let modern = AnswerStyle.display(body: "No, visits end at 5 PM.", rulesUsed: ["[Rule: No site visits after 5 PM v1]"], unverified: nil)

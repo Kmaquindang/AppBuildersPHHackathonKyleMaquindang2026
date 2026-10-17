@@ -46,7 +46,7 @@ func runChatStatusTests() {
     check(StatusWords.offlineBanner(linked: 1, queued: 6) == nil && StatusWords.offlineBanner(linked: 0, queued: 0) == nil, "no banner when linked or nothing queued")
 }
 
-/// Round 2 UI review (Kyle's 8:54 and 8:55 PM iPhone 14 screenshots).
+/// Round 2 UI review (owner 8:54 and 8:55 PM iPhone 14 screenshots).
 func runRound2UITests() {
     let t0 = Date(timeIntervalSince1970: 1_791_549_180)
 
@@ -109,9 +109,9 @@ func runRound2UITests() {
     check(weatherPrompt.contains(LiveInfo.note) && !treePrompt.contains(LiveInfo.note), "round2: live-info note only on live questions")
 
     // 8. Mac default name.
-    check(MacName.suggested(fullUserName: "Kyle Maquindang", hostName: "Kyle’s MacBook Air") == "Kyle's Mac", "round2: Mac name from the user's first name")
-    check(MacName.suggested(fullUserName: "", hostName: "kyles-macbook-air.local") == "Kyles MacBook Air", "round2: Mac name from the host name")
-    check(MacName.suggested(fullUserName: nil, hostName: "Kyle's MaC") == "Kyle's Mac", "round2: host name casing cleaned")
+    check(MacName.suggested(fullUserName: "Ana Reyes", hostName: "Ana’s MacBook Air") == "Ana's Mac", "round2: Mac name from the user's first name")
+    check(MacName.suggested(fullUserName: "", hostName: "anas-macbook-air.local") == "Anas MacBook Air", "round2: Mac name from the host name")
+    check(MacName.suggested(fullUserName: nil, hostName: "Ana's MaC") == "Ana's Mac", "round2: host name casing cleaned")
     check(MacName.suggested(fullUserName: nil, hostName: nil) == "Mac", "round2: fallback Mac")
 }
 
