@@ -93,7 +93,7 @@ enum MacSection: String, CaseIterable, Identifiable, Hashable {
 }
 #endif
 
-/// One Knowledge place: the room's rules first, then its documents (Kyle, Oct 9 11:03 PM).
+/// One Knowledge place: the room's rules first, then its documents (owner, Oct 9 11:03 PM).
 struct KnowledgeTab: View {
     @EnvironmentObject private var mesh: MeshService
     var body: some View {
@@ -112,7 +112,7 @@ struct KnowledgeTab: View {
 /// Timeline and composer under an iMessage-style title (room name, AI dot, one short subtitle).
 /// Tapping the title opens the connection sheet: devices, links, AI status, internet state,
 /// forced relay. Your own name lives in Settings, not in the header.
-/// Round 2 (Kyle's 8:55 PM screenshot: old bubbles showed through the title and gear): on iPhone
+/// Round 2 (owner 8:55 PM screenshot: old bubbles showed through the title and gear): on iPhone
 /// the top bar is our own frosted `.bar` strip in the top safe area inset, and the composer sits
 /// in the bottom inset, so messages scroll under both and the timeline's content insets keep the
 /// first and last bubble clear of them. Text never sits on top of text.

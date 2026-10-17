@@ -162,7 +162,7 @@ public enum TypingState: Equatable, Sendable {
 }
 
 
-/// No AI host Mac reachable in the room (Kyle, Oct 9 2026, 10:42 PM PHT).
+/// No AI host Mac reachable in the room (owner, Oct 9 2026, 10:42 PM PHT).
 public enum NoAIHost {
     public static let queuedLine = "No AI computer nearby. Your question is saved and will be answered when the Mac is back."
     public static let askAgainLine = "No AI computer nearby. Ask again when the Mac is nearby."

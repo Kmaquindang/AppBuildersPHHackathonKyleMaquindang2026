@@ -317,7 +317,7 @@ struct PhotoViewer: View {
     }
 }
 
-/// Round 2 (Kyle's 8:55 PM screenshot: a squared gray-blue box with the transcript floating in
+/// Round 2 (owner 8:55 PM screenshot: a squared gray-blue box with the transcript floating in
 /// gray italics outside it). Your own voice notes are a normal blue bubble with white play button,
 /// waveform and duration; other people's use the gray bubble. The transcript lives inside the
 /// bubble under the waveform in smaller text.

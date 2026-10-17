@@ -65,7 +65,7 @@ struct SettingsView: View {
 
 }
 
-/// Everything that is not needed day to day, in one place (Kyle, Oct 9 11:03 PM): device id, the
+/// Everything that is not needed day to day, in one place (owner, Oct 9 11:03 PM): device id, the
 /// AI peer and models, AI activity and proof (the old Assistant tab), daily summary and photo
 /// checks, admins, memory backup, browser joins, the forced relay test, the tour and stats.
 struct AdvancedSettingsView: View {
